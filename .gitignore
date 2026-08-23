@@ -40,3 +40,6 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### DB credentials (no subir al repo) ###
+src/main/resources/db.properties
