@@ -8,33 +8,37 @@ Se escribe con `/cierre`, siempre con confirmación de Guido. Procedimiento en
 
 ## Dónde estamos
 
-Los dos repos son esqueletos que todavía no tienen nada del dominio. El backend
-levanta un `HttpServer` en `:8080` con un único endpoint (`GET /api/health`) que
-verifica la conexión a Postgres. El frontend es el scaffold de Vite con un
-placeholder que intenta chequear la API. Lo que sí está terminado es la
-infraestructura de contexto para trabajar con IA: `AGENTS.md`, `docs/` y la
-configuración de Claude Code, todo versionado dentro de los repos.
+La capa de contexto para IA (`AGENTS.md`, `docs/`, `.claude/`) ya está
+commiteada y confirmada en GitHub, en `origin/feature/guido` (rama propia,
+todavía no mergeada a `main`). Del lado del dominio los dos repos siguen en
+skeleton, pero el Hito 0 ya arrancó: el bug `/api/ping` vs `/api/health` está
+corregido en el working tree del frontend, y el entorno de desarrollo del
+frontend (que estaba roto en Windows) ya funciona.
 
 ## En qué quedé
 
-- Backend (`TIP - Backend`): `Main.java` con `handleHealth`, `DatabaseConnection`
-  leyendo `db.properties`, README completo. Último commit de código: "Subo Readme"
-  (2026-08-23).
-- Frontend (`TIP - Frontend`): clonado el 2026-08-25, sin commits propios
-  todavía. `App.tsx` con el placeholder y el chequeo de conexión.
-- Sesión del 2026-08-28: se escribió toda la capa de contexto —`AGENTS.md` en los
-  dos repos, `docs/` completo en el backend, `CLAUDE.md` en los dos repos, y
-  `.claude/` (comandos `/retomar` y `/cierre`, subagente `revisor`,
-  `settings.json` con el frontend como directorio adicional) en el backend.
+- **Backend:** se recuperó el commit `5f68501` ("docs: contexto de proyecto y
+  configuracion de Claude Code"), que había quedado en HEAD desprendida sin
+  rama. Se creó la rama local `feature/guido` sobre ese commit y se pusheó a
+  `origin/feature/guido`. Verificado con `git fetch` + comparación de SHAs que
+  el push llegó bien a GitHub.
+- **Frontend** (`TIP - Frontend`): cuatro cosas sin commitear todavía:
+  - `src/App.tsx` — corregido para llamar a `GET /api/health` con el tipo
+    `HealthResponse` (antes `/api/ping` + `PingResponse`), siguiendo `API.md`.
+  - `package.json` / `package-lock.json` — cambiaron por el arreglo del
+    entorno: se agregó `@rolldown/binding-win32-x64-msvc` como
+    `optionalDependency` para destrabar un bug de npm (npm/cli#4828) que no
+    instalaba el binario nativo de Rolldown en Windows.
+  - `AGENTS.md` y `CLAUDE.md` del frontend — siguen `untracked`, sin commitear.
 
 ## Qué sigue
 
+Commitear lo pendiente del frontend (el fix de `App.tsx` y la capa de contexto
+`AGENTS.md`/`CLAUDE.md` pueden ir en commits separados). Después, seguir con el
 **Hito 0 del roadmap**, en este orden:
 
-1. Corregir `../TIP - Frontend/src/App.tsx` para que llame a `GET /api/health`
-   (hoy llama a `/api/ping`, que no existe, y por eso la home dice "offline"
-   siempre). Sirve además para verificar que la sesión puede escribir en el repo
-   del frontend.
+1. ~~Corregir `../TIP - Frontend/src/App.tsx` para que llame a `GET /api/health`~~
+   — hecho, falta commitear.
 2. Agregar `src/main/resources/db.properties.example` al repo del backend: el
    README lo manda a copiar y no existe.
 3. Limpiar el token de GitHub embebido en el remote del backend y revocarlo.
@@ -65,6 +69,20 @@ Lo que se probó y no funcionó, con el motivo. Se agrega, no se reemplaza.
   El contenido (`AGENTS.md` y `docs/`) se reusó tal cual —era markdown plano a
   propósito— y solo hubo que rehacer la capa de punteros. Se puede borrar
   `TIP\opencode.json` y `TIP\.opencode\`.
+- **2026-08-28** — El error de Rolldown en Windows ("Cannot find native
+  binding") no se resolvió solo borrando `node_modules` + `package-lock.json`
+  y reinstalando (la solución que sugiere el propio mensaje de error). La causa
+  real era el bug npm/cli#4828 combinado con Node por debajo del `engines`
+  mínimo (`v20.17.0` vs `^20.19.0` que piden Vite 8 / rolldown). Se resolvió
+  instalando el binding a mano (`npm install @rolldown/binding-win32-x64-msvc
+  --save-optional`) y actualizando Node a `20.20.2` vía
+  `winget upgrade --id OpenJS.NodeJS.20`.
+- **2026-08-28** — Un commit (`5f68501`) se hizo estando en HEAD desprendida
+  tras un `git checkout origin/<rama>`, lo que lo dejó sin rama que lo sostenga
+  (git avisa "leaving N commits behind" en este caso). Se recupera con
+  `git branch <rama> <sha>` + checkout + push, sin pérdida de trabajo mientras
+  no se corra `git gc` antes de rescatarlo. Confirmado con `git fetch` +
+  comparación de SHAs que el push efectivamente llegó a GitHub.
 
 ## Historial
 
@@ -78,3 +96,8 @@ Una línea por sesión.
   `docs/` (PROJECT, STATE, ROADMAP, API, SETUP, guías) y configuración de Claude
   Code versionada en `.claude/`. Se detectó la desalineación `/api/ping` vs
   `/api/health`.
+- **2026-08-28** — Corregido `/api/ping` → `/api/health` en `App.tsx` (Hito 0
+  #1, sin commitear). Resuelto bug de entorno del frontend en Windows (Node
+  desactualizado + npm/cli#4828 con Rolldown). Recuperado y pusheado a
+  `origin/feature/guido` el commit de la capa de contexto que había quedado en
+  HEAD desprendida — confirmado en GitHub con `git fetch`.
