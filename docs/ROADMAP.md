@@ -13,16 +13,18 @@ pedido, cuando toca planificar.
 Cosas chicas que hoy hacen que el esqueleto no funcione del todo. Salen en una
 sesión corta y sacan ruido de encima.
 
-- [ ] **`App.tsx` llama a `/api/ping`, que no existe.** El backend expone
+- [x] **`App.tsx` llama a `/api/ping`, que no existe.** El backend expone
       `/api/health`. Hoy el indicador de la home dice "offline" siempre.
       Corregir la ruta y el `type` de la respuesta según `API.md`.
-- [ ] **Falta `db.properties.example` en el repo del backend.** El README y
+- [x] **Falta `db.properties.example` en el repo del backend.** El README y
       `DatabaseConnection.java` le dicen a quien clona que lo copie, y no existe.
       Quien clone hoy no puede levantar el backend sin preguntarle a alguien.
 - [ ] **El remote del backend tiene un token de GitHub embebido en la URL**
-      (`.git/config` local, no está en el repo). Reemplazarlo por la URL limpia y
-      usar credential manager o SSH. Revocar ese token.
-- [ ] **Fijar la versión de Java en `build.gradle.kts`** con un toolchain
+      (`.git/config` local, no está en el repo). Reemplazado el remote local por
+      la URL limpia (2026-08-28). Falta que **Tomás** revoque el token desde su
+      cuenta de GitHub — el token es suyo, no de Guido, así que no aparece en la
+      lista de tokens de Guido.
+- [x] **Fijar la versión de Java en `build.gradle.kts`** con un toolchain
       explícito, para que no dependa del JDK que tenga cada uno instalado.
 
 ## Hito 1 — Decisiones transversales
