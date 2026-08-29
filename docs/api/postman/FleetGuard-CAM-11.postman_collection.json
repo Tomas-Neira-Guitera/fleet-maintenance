@@ -1,0 +1,362 @@
+{
+  "info": {
+    "name": "FleetGuard — CAM-11 DVIR API",
+    "description": "Colección para probar los 3 endpoints del contrato de inspecciones (CAM-11): GET /api/vehicles, POST /api/photos, POST /api/inspections/{vehicleId}. Corresponde a docs/api/openapi.yaml del repo fleet-maintenance.\n\n## Antes de arrancar\n1. Levantá el backend: `./gradlew bootRun` (o `./gradlew run` según quede el script) — por defecto en `http://localhost:8080`.\n2. Todavía no hay endpoint para crear vehículos (fuera de alcance de CAM-11), así que necesitás al menos una fila en la tabla `vehicle` para poder probar. Ejemplo de insert directo en Postgres (ajustá según tus nombres de columna reales):\n   ```sql\n   insert into vehicle (id, plate, brand, model, accessories)\n   values (gen_random_uuid(), 'AB123CD', 'Mercedes-Benz', 'Sprinter', 'faja,traca');\n   ```\n3. Importá también el archivo de entorno `FleetGuard-Local.postman_environment.json` y seleccionalo arriba a la derecha en Postman.\n\n## Orden recomendado (carpeta \"Flujo feliz\")\n1. **Vehicles → Listar vehículos** — guarda automáticamente el primer vehículo encontrado en `vehicleId`/`vehiclePlate`.\n2. **Photos → Subir foto de defecto** — adjuntá cualquier imagen; guarda `photoUrl`/`photoId`.\n3. **Inspections → Pre-trip con defecto bloqueante** (o la de éxito sin defectos) — abre un viaje para `vehicleId`.\n4. **Inspections → Post-trip éxito** — cierra ese viaje.\n\nLas carpetas \"Casos de error\" tienen ejemplos de 409 y 422 para verificar las reglas de validación del contrato.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" }
+  ],
+  "item": [
+    {
+      "name": "Vehicles",
+      "item": [
+        {
+          "name": "Listar vehículos",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Driver-Id", "value": "{{driverId}}" },
+              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles"]
+            },
+            "description": "GET /api/vehicles — lista con estado (available/on-trip) y accesorios. Guarda el primer vehículo de la respuesta en las variables de entorno vehicleId/vehiclePlate para el resto de la colección."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('devuelve un array', () => Array.isArray(body));",
+                  "if (Array.isArray(body) && body.length > 0) {",
+                  "  const v = body[0];",
+                  "  pm.environment.set('vehicleId', v.id);",
+                  "  pm.environment.set('vehiclePlate', v.plate);",
+                  "  console.log('vehicleId guardado:', v.id, v.plate, v.status);",
+                  "} else {",
+                  "  console.warn('No hay vehículos en la base — insertá al menos uno (ver descripción de la colección) antes de seguir.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Photos",
+      "item": [
+        {
+          "name": "Subir foto de defecto",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Driver-Id", "value": "{{driverId}}" },
+              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/photos",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "photos"]
+            },
+            "description": "POST /api/photos — subida en 2 pasos (paso 1). Elegí un archivo image/jpeg o image/png de menos de 8MB en el campo 'file'. Guarda photoUrl/photoId para usarlos en defect.photoUrl de una inspección."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "if (body.photoUrl) {",
+                  "  pm.environment.set('photoUrl', body.photoUrl);",
+                  "  pm.environment.set('photoId', body.photoId);",
+                  "  console.log('photoUrl guardada:', body.photoUrl);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Obtener foto subida",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/photos/{{photoId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "photos", "{{photoId}}"]
+            },
+            "description": "GET /api/photos/{id} — sirve el archivo subido. Detalle de implementación (no forma parte del OpenAPI formal) para verificar que photoUrl resuelve a algo real."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Inspections — Flujo feliz",
+      "item": [
+        {
+          "name": "Pre-trip — sin defectos",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Driver-Id", "value": "{{driverId}}" },
+              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    { \"itemId\": \"ext-luces\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-neumaticos\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-carroceria\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-km\", \"numberValue\": 82430 },\n    { \"itemId\": \"int-documentacion\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-testigos\", \"outcome\": \"ok\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "inspections", "{{vehicleId}}"]
+            },
+            "description": "Abre un viaje para {{vehicleId}}. Requiere haber corrido antes 'Listar vehículos' para tener vehicleId seteado, y que ese vehículo esté 'available' (sin viaje abierto)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('abre el viaje (trip.status = open)', () => body.trip && body.trip.status === 'open');",
+                  "pm.test('sin defectos bloqueantes', () => body.inspection.hasBlockingDefect === false);",
+                  "if (body.trip) pm.environment.set('tripId', body.trip.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pre-trip — con defecto bloqueante (usa foto subida)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Driver-Id", "value": "{{driverId}}" },
+              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    { \"itemId\": \"ext-luces\", \"outcome\": \"ok\" },\n    {\n      \"itemId\": \"ext-neumaticos\",\n      \"outcome\": \"defect\",\n      \"defect\": {\n        \"severity\": \"blocking\",\n        \"description\": \"Neumático delantero derecho con corte visible en el lateral, se ve la trama por dentro.\",\n        \"photoUrl\": \"{{photoUrl}}\"\n      }\n    },\n    { \"itemId\": \"ext-carroceria\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-km\", \"numberValue\": 82430 },\n    { \"itemId\": \"int-documentacion\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-testigos\", \"outcome\": \"ok\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "inspections", "{{vehicleId}}"]
+            },
+            "description": "Igual que 'Pre-trip — sin defectos' pero reporta Neumáticos como defecto bloqueante. Corré antes 'Subir foto de defecto' para tener {{photoUrl}} seteada. Usa un vehicleId que esté 'available' (si ya corriste la request anterior sobre el mismo vehículo, va a dar 409 — probá con otro vehículo o mirá la carpeta de errores)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('hasBlockingDefect = true', () => body.inspection.hasBlockingDefect === true);",
+                  "if (body.trip) pm.environment.set('tripId', body.trip.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Post-trip — cierra el viaje",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Driver-Id", "value": "{{driverId}}" },
+              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"post-trip\",\n  \"answers\": [\n    { \"itemId\": \"post-danos\", \"outcome\": \"ok\" },\n    { \"itemId\": \"post-luces\", \"outcome\": \"ok\" },\n    { \"itemId\": \"post-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"post-km\", \"numberValue\": 82611 }\n  ],\n  \"notes\": \"Todo normal, sin novedades.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "inspections", "{{vehicleId}}"]
+            },
+            "description": "Requiere que {{vehicleId}} tenga un viaje abierto (corré primero alguna de las dos requests de Pre-trip de esta misma carpeta)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('cierra el viaje (trip.status = closed)', () => body.trip && body.trip.status === 'closed');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Inspections — Casos de error",
+      "item": [
+        {
+          "name": "409 — Pre-trip sobre vehículo ya en viaje",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Driver-Id", "value": "{{driverId}}" },
+              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    { \"itemId\": \"ext-luces\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-neumaticos\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-carroceria\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-km\", \"numberValue\": 82430 },\n    { \"itemId\": \"int-documentacion\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-testigos\", \"outcome\": \"ok\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "inspections", "{{vehicleId}}"]
+            },
+            "description": "Corré esta request DESPUÉS de cualquiera de las pre-trip de 'Flujo feliz' sobre el mismo vehicleId (que le dejó un viaje abierto), sin correr antes el post-trip. Debería dar 409 VEHICLE_ON_TRIP."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+                  "const body = pm.response.json();",
+                  "pm.test('error = VEHICLE_ON_TRIP', () => body.error === 'VEHICLE_ON_TRIP');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 — Post-trip sin viaje abierto",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Driver-Id", "value": "{{driverId}}" },
+              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"post-trip\",\n  \"answers\": [\n    { \"itemId\": \"post-danos\", \"outcome\": \"ok\" },\n    { \"itemId\": \"post-luces\", \"outcome\": \"ok\" },\n    { \"itemId\": \"post-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"post-km\", \"numberValue\": 82611 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "inspections", "{{vehicleId}}"]
+            },
+            "description": "Corré esta request sobre un vehículo que esté 'available' (sin viaje abierto). Debería dar 409 NO_OPEN_TRIP."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+                  "const body = pm.response.json();",
+                  "pm.test('error = NO_OPEN_TRIP', () => body.error === 'NO_OPEN_TRIP');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 — Defecto bloqueante sin foto",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Driver-Id", "value": "{{driverId}}" },
+              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    { \"itemId\": \"ext-luces\", \"outcome\": \"ok\" },\n    {\n      \"itemId\": \"ext-neumaticos\",\n      \"outcome\": \"defect\",\n      \"defect\": {\n        \"severity\": \"blocking\",\n        \"description\": \"Corte visible en el lateral.\"\n      }\n    },\n    { \"itemId\": \"ext-carroceria\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-km\", \"numberValue\": 82430 },\n    { \"itemId\": \"int-documentacion\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-testigos\", \"outcome\": \"ok\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "inspections", "{{vehicleId}}"]
+            },
+            "description": "Defecto bloqueante sin photoUrl. Debería dar 422 con un detalle sobre ext-neumaticos. Usá un vehículo 'available' (sin viaje abierto) para que el 422 no quede tapado por un 409."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 Unprocessable Entity', () => pm.response.to.have.status(422));",
+                  "const body = pm.response.json();",
+                  "pm.test('trae details', () => Array.isArray(body.details) && body.details.length > 0);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 — Falta ítem obligatorio (kilómetros)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Driver-Id", "value": "{{driverId}}" },
+              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    { \"itemId\": \"ext-luces\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-neumaticos\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-carroceria\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-documentacion\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-testigos\", \"outcome\": \"ok\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "inspections", "{{vehicleId}}"]
+            },
+            "description": "Falta la respuesta de 'int-km' (obligatoria). Debería dar 422 con un detail para int-km. Usá un vehículo 'available'."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 Unprocessable Entity', () => pm.response.to.have.status(422));",
+                  "const body = pm.response.json();",
+                  "pm.test('trae details', () => Array.isArray(body.details) && body.details.length > 0);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
