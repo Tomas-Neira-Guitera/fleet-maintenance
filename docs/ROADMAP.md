@@ -78,8 +78,8 @@ los demás (handler, acceso a datos, pantalla, manejo de errores).
   primer endpoint de dominio, no antes: hoy no hay lógica que testear.
 - **Sin CI/CD.** Cuando haya tests, un workflow que corra `./gradlew build` y
   `npm run build` en cada push.
-- **`Main.java` va a crecer demasiado.** Cuando pase de unos pocos endpoints, se
-  parte en handlers separados. Se decide cuando duela, no antes.
+- ~~**`Main.java` va a crecer demasiado.**~~ Resuelto el 2026-08-28: se separó
+  en capas (`controller`/`model`/`dao`), ver `PROJECT.md`.
 - **JSON a mano.** Ver `PROJECT.md` para el criterio de cuándo revisarlo.
 - **Contrato en markdown.** Ver `API.md` para los tres disparadores de migración
   a OpenAPI.

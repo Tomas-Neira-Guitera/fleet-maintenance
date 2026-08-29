@@ -16,13 +16,31 @@ con el frontend). El estado de avance vive en `docs/STATE.md`.
 
 ## Estructura hoy
 
+Arquitectura en capas, desde 2026-08-28 (ver el porqué en `docs/PROJECT.md`):
+
 ```
 src/main/java/org/example/
-├── Main.java                # levanta el HttpServer en :8080 y registra los handlers
-└── DatabaseConnection.java  # abre conexiones JDBC leyendo db.properties
+├── Main.java                 # bootstrap: levanta el HttpServer y registra las rutas
+├── DatabaseConnection.java   # abre conexiones JDBC leyendo db.properties
+├── controller/                # un handler por endpoint; arma el HttpExchange
+│   ├── HealthController.java
+│   └── DefectoController.java
+├── model/                     # entidades: campos + toJson() propio
+│   ├── HealthStatus.java
+│   └── Defecto.java
+├── dao/                       # acceso a datos: SQL con PreparedStatement, devuelve modelos
+│   └── DefectoDao.java
+└── util/
+    ├── Json.java              # escape de strings para JSON armado a mano
+    └── HttpResponses.java     # helper para mandar una respuesta JSON
 src/main/resources/
-└── db.properties            # credenciales locales — está en .gitignore
+└── db.properties             # credenciales locales — está en .gitignore
 ```
+
+**Un endpoint nuevo toca las tres capas:** el modelo (campos + `toJson()`), el
+DAO si hace falta acceso a datos, y el controller que arma la respuesta y se
+registra en `Main.java`. Los helpers de `util/` son compartidos, no se
+duplican por endpoint.
 
 `rootProject.name` es `TIP`, por eso el jar sale como `TIP-1.0-SNAPSHOT.jar`.
 

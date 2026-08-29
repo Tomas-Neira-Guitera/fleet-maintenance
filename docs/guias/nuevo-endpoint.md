@@ -16,24 +16,25 @@ transversales (forma del error, paginación, auth) que conviene cerrar ahora.
 
 ## 2. Backend (`TIP - Backend`)
 
-1. Escribí el handler siguiendo el molde de `Main.handleHealth`:
-   - abrí la conexión con `DatabaseConnection.getConnection()` dentro de un
-     try-with-resources
-   - consultá con `PreparedStatement`, nunca concatenando valores
-   - armá el JSON con `String.format`, escapando comillas de lo que venga de
-     afuera
-   - seteá `Content-Type: application/json` y el status code correcto
-   - escribí el body con `sendResponseHeaders` + `getResponseBody()`
-2. Registralo en `main()`: `server.createContext("/api/loquesea", Main::handleLoQueSea);`
-3. Probalo con curl o Postman antes de tocar el frontend:
+Sigue la arquitectura en capas de `AGENTS.md` → "Estructura hoy":
+
+1. **Modelo** (`model/`): una clase con los campos del `API.md` y un
+   `toJson()` propio, usando `Json.escape()` de `util/` para lo que venga de
+   afuera.
+2. **DAO** (`dao/`), si hay acceso a datos: consultá con `PreparedStatement`
+   dentro de un try-with-resources dentro de `DatabaseConnection.getConnection()`,
+   nunca concatenando valores. Devolvé instancias del modelo, no `ResultSet`
+   crudo.
+3. **Controller** (`controller/`): arma la respuesta (llama al DAO, arma el
+   status code) y la manda con `HttpResponses.sendJson()`.
+4. Registralo en `Main.main()`:
+   `server.createContext("/api/loquesea", LoQueSeaController::handle);`
+5. Probalo con curl o Postman antes de tocar el frontend:
    ```bash
    curl -i http://localhost:8080/api/loquesea
    ```
    Verificá que la respuesta sea **idéntica** a lo que dice `API.md`. Si no lo
    es, corregí el código o corregí el contrato, pero que queden iguales.
-
-`Main.java` va a crecer. Cuando se vuelva incómodo de leer, ahí se parte en
-handlers separados — no antes, y anotando la decisión en `PROJECT.md`.
 
 ## 3. Frontend (`TIP - Frontend`)
 

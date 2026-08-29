@@ -52,6 +52,15 @@ se revisa acá y se anota el cambio con fecha.
 revisará cuando haya suficientes endpoints con payloads anidados como para que
 el `String.format` sea un peligro real.
 
+**Arquitectura en capas en el backend (`controller`/`model`/`dao`), desde
+2026-08-28.** Reemplaza la decisión anterior de "un handler por endpoint en
+`Main.java`, se separa cuando duela". Se cambió a pedido de Guido, antes de
+que doliera de verdad (solo había dos endpoints) — el criterio pasó a ser
+mantener la misma estructura desde el principio en vez de refactorizar más
+adelante. El molde queda anotado en `AGENTS.md` → "Estructura hoy". Costo
+aceptado: más archivos por endpoint nuevo (modelo, DAO si aplica, controller)
+en vez de un solo método en `Main.java`.
+
 **Repos separados.** Se despliegan y evolucionan por separado, y el equipo puede
 trabajar en uno sin tocar el otro.
 

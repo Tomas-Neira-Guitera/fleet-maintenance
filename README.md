@@ -40,6 +40,15 @@ db.password=tu_password
 
 > `db.properties` está en `.gitignore` — nunca se sube al repo.
 
+## Base de datos
+
+Todavía no hay herramienta de migraciones (ver `docs/STATE.md`). El schema se
+aplica a mano con `psql`:
+
+```bash
+psql -U postgres -d TIP -f sql/schema.sql
+```
+
 ## Scripts
 
 - `./gradlew run` — levanta el servidor
@@ -49,6 +58,7 @@ db.password=tu_password
 ## Endpoints
 
 - `GET /api/health` — chequea que el servidor esté arriba y que la conexión a Postgres (base `TIP`) funcione correctamente.
+- `GET /api/defectos` — listado de defectos ordenado por gravedad y fecha.
 
 ## Estructura
 

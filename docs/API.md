@@ -57,9 +57,52 @@ Chequea que el servidor esté arriba y que la conexión a Postgres funcione.
 }
 ```
 
-Implementado en `Main.handleHealth`.
+Implementado en `HealthController.handle`.
 
 ---
+
+### `GET /api/defectos`
+
+[CAM-13](https://fleet-maintenance.atlassian.net/browse/CAM-13) — listado de
+defectos ordenado por gravedad y fecha, para que el técnico priorice qué
+intervenciones atender primero.
+
+**Request** — sin parámetros, sin body. Sin paginación ni autenticación por
+ahora (quedan como decisiones pendientes del roadmap, no bloquean esta card).
+
+**200 OK**
+```json
+[
+  {
+    "id": 1,
+    "gravedad": "alto",
+    "fecha": "2026-08-28T14:32:07.481Z",
+    "descripcion": "Pastillas de freno gastadas",
+    "patente": "AB123CD"
+  }
+]
+```
+
+| Campo | Tipo | Qué es |
+|---|---|---|
+| `id` | number | identificador del defecto |
+| `gravedad` | string | enum: `"bajo"` \| `"medio"` \| `"alto"` |
+| `fecha` | string | fecha de reporte, ISO-8601 UTC |
+| `descripcion` | string | descripción libre del defecto |
+| `patente` | string | patente del vehículo asociado |
+
+Orden: `gravedad` descendente (alto → medio → bajo), luego `fecha`
+descendente (más reciente primero). Si no hay defectos, devuelve `[]`.
+
+**500 Internal Server Error** — no se pudo conectar a Postgres o falló la query
+```json
+{
+  "error": "mensaje de la SQLException"
+}
+```
+
+Implementado en `DefectoController.handle` (consulta en `DefectoDao`). Tabla en
+`sql/schema.sql`.
 
 ## Por definir
 
@@ -69,7 +112,6 @@ nunca después:
 - Login y sesión — `POST /api/auth/login`, forma del token, cómo viaja
 - Flota — alta, baja, listado y detalle de vehículos
 - Inspecciones — crear, listar, ver resultado
-- Defectos — los que salen de una inspección
 - Órdenes de trabajo — abrir, asignar, cerrar
 - Mantenimiento preventivo — planes y vencimientos
 
