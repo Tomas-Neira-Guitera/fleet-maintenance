@@ -1,0 +1,313 @@
+openapi: 3.0.3
+info:
+  title: FleetGuard API — Inspecciones DVIR (CAM-11)
+  description: >
+    Contrato para la carga de inspecciones pre-trip / post-trip del chofer.
+    Cubre el listado de vehículos, la subida de fotos de defectos y el envío
+    de la inspección. No cubre login/roles (se asume Authorization: Bearer
+    <token> resuelto por un mecanismo de auth a definir aparte) ni la gestión
+    de defectos/órdenes de trabajo del lado de mantenimiento (son consumidores
+    de los datos que este contrato genera, no parte de él).
+  version: "1.0"
+
+servers:
+  - url: http://localhost:8080
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/vehicles:
+    get:
+      summary: Listar vehículos de la flota con su estado
+      description: >
+        Devuelve todos los vehículos con su estado actual (disponible / en viaje)
+        y sus accesorios, para que el chofer elija uno. El estado se calcula
+        server-side a partir de si el vehículo tiene un viaje abierto.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VehicleSummary"
+
+  /api/photos:
+    post:
+      summary: Subir la foto de un defecto (paso 1 de 2)
+      description: >
+        Subida independiente de la foto. El chofer saca la foto y se sube en
+        cuanto está lista, antes de enviar la inspección completa — así una
+        conexión inestable no obliga a reintentar todo el formulario. La URL
+        devuelta se referencia luego en el campo defect.photoUrl del envío
+        de la inspección.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: image/jpeg o image/png, máx. 8MB.
+      responses:
+        "201":
+          description: Foto subida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhotoUploadResult"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+
+  /api/photos/{photoId}:
+    get:
+      summary: Servir el binario de una foto subida
+      description: >
+        Devuelve el contenido de la foto (Content-Type segun el archivo
+        original). Es lo que resuelve la photoUrl devuelta por
+        POST /api/photos -- sin este endpoint esa URL no apuntaria a nada.
+      parameters:
+        - name: photoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: No existe una foto con ese id
+
+  /api/inspections/{vehicleId}:
+    post:
+      summary: Enviar una inspección pre-trip o post-trip
+      description: >
+        Recurso separado de /api/vehicles: /api/vehicles es la entidad vehículo
+        (CRUD e info de flota — CAM-11 solo consume el GET, el resto lo define
+        la historia de gestión de flota); /api/inspections es el recurso que
+        concentra todo lo relacionado a crear/consultar inspecciones, tomando
+        el vehículo como referencia en el path en vez de anidarse bajo él.
+        Endpoint único para ambos tipos de inspección; el server valida que
+        el `type` enviado sea coherente con el estado actual del vehículo:
+        pre-trip solo si NO tiene viaje abierto (lo abre), post-trip solo si
+        SÍ tiene uno abierto (lo cierra). El chofer y la fecha/hora del envío
+        se resuelven server-side (token de auth y reloj del servidor) — nunca
+        se confían del body, aunque el cliente los mande.
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InspectionSubmission"
+      responses:
+        "201":
+          description: Inspección registrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InspectionResult"
+        "404":
+          description: Vehículo inexistente
+        "409":
+          description: >
+            El `type` enviado no es válido para el estado actual del vehículo
+            (ej. pre-trip sobre un vehículo que ya está "en viaje", o post-trip
+            sobre uno sin viaje abierto).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                vehicleOnTrip:
+                  value: { error: "VEHICLE_ON_TRIP", message: "El vehículo ya tiene un pre-trip abierto." }
+                noOpenTrip:
+                  value: { error: "NO_OPEN_TRIP", message: "El vehículo no tiene un viaje abierto para cerrar." }
+        "422":
+          description: Faltan respuestas obligatorias o un defecto no cumple sus reglas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    PayloadTooLarge:
+      description: La foto supera el tamaño máximo permitido (8MB)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    UnsupportedMediaType:
+      description: El archivo no es image/jpeg ni image/png
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+  schemas:
+    VehicleStatus:
+      type: string
+      enum: [available, on-trip]
+
+    VehicleSummary:
+      type: object
+      required: [id, plate, brand, model, status, accessories]
+      properties:
+        id: { type: string }
+        plate: { type: string, example: "AB123CD" }
+        brand: { type: string, example: "Mercedes-Benz" }
+        model: { type: string, example: "Sprinter" }
+        status:
+          $ref: "#/components/schemas/VehicleStatus"
+        accessories:
+          type: array
+          description: Determina qué ítems extra suma el checklist pre-trip.
+          items:
+            type: string
+            enum: [faja, traca, grua, rampa]
+
+    PhotoUploadResult:
+      type: object
+      required: [photoId, photoUrl]
+      properties:
+        photoId: { type: string }
+        photoUrl: { type: string, format: uri }
+
+    DefectSeverity:
+      type: string
+      enum: [non-blocking, blocking]
+
+    DefectDetail:
+      type: object
+      required: [severity, description]
+      properties:
+        severity:
+          $ref: "#/components/schemas/DefectSeverity"
+        description:
+          type: string
+          minLength: 1
+        photoUrl:
+          type: string
+          format: uri
+          description: >
+            Requerido por el servidor cuando severity=blocking (ver reglas de
+            validación en CAM-11-dvir-contract.md). Viene de POST /api/photos.
+
+    ChecklistAnswer:
+      type: object
+      required: [itemId]
+      description: >
+        El cliente manda solo lo que el chofer completó; el servidor resuelve
+        la definición del ítem (label/sección/tipo/si es obligatorio) por su
+        propio catálogo — no confía en metadata que mande el cliente.
+      properties:
+        itemId:
+          type: string
+          example: neumaticos
+        outcome:
+          type: string
+          enum: [ok, defect]
+          description: Presente en ítems tipo check.
+        numberValue:
+          type: number
+          description: Presente en ítems tipo número (ej. kilómetros).
+        defect:
+          $ref: "#/components/schemas/DefectDetail"
+
+    InspectionSubmission:
+      type: object
+      required: [type, answers]
+      properties:
+        type:
+          type: string
+          enum: [pre-trip, post-trip]
+        answers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChecklistAnswer"
+        notes:
+          type: string
+          description: Campo general de novedades, opcional (típicamente post-trip).
+
+    Trip:
+      type: object
+      properties:
+        id: { type: string }
+        vehicleId: { type: string }
+        status: { type: string, enum: [open, closed] }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time, nullable: true }
+
+    Inspection:
+      type: object
+      properties:
+        id: { type: string }
+        tripId: { type: string }
+        vehicleId: { type: string }
+        driverId: { type: string, description: Resuelto del token, no del body. }
+        type: { type: string, enum: [pre-trip, post-trip] }
+        timestamp: { type: string, format: date-time, description: Reloj del servidor. }
+        odometerKm: { type: number }
+        answers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChecklistAnswer"
+        notes: { type: string }
+        hasBlockingDefect: { type: boolean }
+
+    InspectionResult:
+      type: object
+      properties:
+        inspection:
+          $ref: "#/components/schemas/Inspection"
+        trip:
+          $ref: "#/components/schemas/Trip"
+
+    ApiError:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }
+
+    ValidationError:
+      allOf:
+        - $ref: "#/components/schemas/ApiError"
+        - type: object
+          properties:
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  itemId: { type: string }
+                  message: { type: string }
