@@ -8,56 +8,54 @@ Se escribe con `/cierre`, siempre con confirmación de Guido. Procedimiento en
 
 ## Dónde estamos
 
-La capa de contexto para IA (`AGENTS.md`, `docs/`, `.claude/`) ya está
-commiteada y confirmada en GitHub, en `origin/feature/guido` (rama propia,
-todavía no mergeada a `main`). Del lado del dominio los dos repos siguen en
-skeleton, pero el Hito 0 ya arrancó: el bug `/api/ping` vs `/api/health` está
-corregido en el working tree del frontend, y el entorno de desarrollo del
-frontend (que estaba roto en Windows) ya funciona.
+Hito 0 del roadmap está cerrado. El primer endpoint de dominio,
+`GET /api/defectos` (CAM-13), está implementado con una arquitectura en capas
+nueva (`controller`/`model`/`dao`/`util`) que reemplaza el molde anterior de
+un handler por endpoint, probado a mano y pusheado. El frontend recuperó su
+capa de contexto de IA y el fix de `/api/health`, todo commiteado. Falta: el
+frontend todavía no consume `/api/defectos`.
 
 ## En qué quedé
 
-- **Backend:** se recuperó el commit `5f68501` ("docs: contexto de proyecto y
-  configuracion de Claude Code"), que había quedado en HEAD desprendida sin
-  rama. Se creó la rama local `feature/guido` sobre ese commit y se pusheó a
-  `origin/feature/guido`. Verificado con `git fetch` + comparación de SHAs que
-  el push llegó bien a GitHub.
-- **Frontend** (`TIP - Frontend`): cuatro cosas sin commitear todavía:
-  - `src/App.tsx` — corregido para llamar a `GET /api/health` con el tipo
-    `HealthResponse` (antes `/api/ping` + `PingResponse`), siguiendo `API.md`.
-  - `package.json` / `package-lock.json` — cambiaron por el arreglo del
-    entorno: se agregó `@rolldown/binding-win32-x64-msvc` como
-    `optionalDependency` para destrabar un bug de npm (npm/cli#4828) que no
-    instalaba el binario nativo de Rolldown en Windows.
-  - `AGENTS.md` y `CLAUDE.md` del frontend — siguen `untracked`, sin commitear.
+- **Backend** (`617aa8b` en `origin/feature/guido`): `GET /api/defectos` —
+  tabla `defectos` en `sql/schema.sql` (aplicada a mano en Postgres local, sin
+  herramienta de migraciones todavía), refactor completo a capas (`Main.java`
+  quedó solo como bootstrap), contrato en `API.md`. Decisión de la
+  arquitectura en capas documentada con fecha y motivo en `PROJECT.md`, molde
+  nuevo en `AGENTS.md` y `docs/guias/nuevo-endpoint.md`.
+- **Frontend** (`0eff382` en `origin/feature/guido`): `App.tsx` corregido a
+  `/api/health`, `AGENTS.md`/`CLAUDE.md` commiteados, fix de Rolldown en
+  Windows.
+- **Jira**: card [CAM-13](https://fleet-maintenance.atlassian.net/browse/CAM-13)
+  completada con criterios de aceptación y contrato técnico.
+- **Postman**: colección "TIP - Fleet Maintenance" (workspace TIP) con el
+  request `Defectos - Listado` agregado.
+- Pendiente sin resolver: Tomás todavía no revocó el PAT de GitHub que tenía
+  embebido en el remote del backend.
+- `.idea/misc.xml` sigue modificado sin commitear en el backend, dos sesiones
+  seguidas — no se tocó a propósito, no está claro qué lo cambia (¿el IDE al
+  releer el toolchain de Java?). Vale la pena revisarlo en algún momento.
 
 ## Qué sigue
 
-Commitear lo pendiente del frontend (el fix de `App.tsx` y la capa de contexto
-`AGENTS.md`/`CLAUDE.md` pueden ir en commits separados). Después, seguir con el
-**Hito 0 del roadmap**, en este orden:
-
-1. ~~Corregir `../TIP - Frontend/src/App.tsx` para que llame a `GET /api/health`~~
-   — hecho, falta commitear.
-2. Agregar `src/main/resources/db.properties.example` al repo del backend: el
-   README lo manda a copiar y no existe.
-3. Limpiar el token de GitHub embebido en el remote del backend y revocarlo.
-4. Fijar el toolchain de Java en `build.gradle.kts`.
-
-Después de eso, cerrar las decisiones transversales del Hito 1 (forma del error,
-paginación, auth, modelo de datos) antes de escribir el primer endpoint de
-dominio.
+Consumir `GET /api/defectos` desde el frontend: componente que liste los
+defectos ordenados por gravedad y fecha, con los tres estados
+(cargando/ok/error), siguiendo `docs/guias/nuevo-endpoint.md` paso 3. El
+contrato ya está en `API.md`, solo falta el lado frontend.
 
 ## Decisiones abiertas
 
-- **Forma del error de la API.** Qué claves tiene siempre una respuesta de error.
-  Bloquea: cualquier endpoint que pueda fallar por regla de negocio.
-- **Paginación.** Si los listados la tienen y con qué parámetros.
-  Bloquea: el primer endpoint de listado (flota).
-- **Autenticación.** Qué mecanismo, qué header, qué pasa cuando falta.
-  Bloquea: el hito de login y, en cascada, todo lo que va protegido.
-- **Modelo de datos.** Entidades, relaciones, y si el schema se versiona en el
-  repo y cómo se aplica. Bloquea: todo el dominio.
+- **Forma del error de la API.** Sigue sin cerrar: hoy conviven dos formas
+  (`/api/health` devuelve `{status, error}`, `/api/defectos` devuelve solo
+  `{error}`). Bloquea: unificarlo antes de que un tercer endpoint copie un
+  estilo distinto.
+- **Paginación.** Sigue abierta, quedó explícitamente fuera de alcance de
+  CAM-13.
+- **Autenticación.** Sigue abierta.
+- **Modelo de datos / versionado de schema.** Parcialmente resuelto de forma
+  pragmática para `defectos`: `sql/schema.sql` como convención informal,
+  corrida a mano con `psql`. Falta decidir si alcanza así o hace falta algo
+  más formal a medida que crezcan las tablas.
 
 ## Callejones sin salida
 
@@ -83,6 +81,11 @@ Lo que se probó y no funcionó, con el motivo. Se agrega, no se reemplaza.
   `git branch <rama> <sha>` + checkout + push, sin pérdida de trabajo mientras
   no se corra `git gc` antes de rescatarlo. Confirmado con `git fetch` +
   comparación de SHAs que el push efectivamente llegó a GitHub.
+- **2026-08-28** — El mismo problema de detached HEAD que ya estaba anotado
+  para el backend (`git checkout origin/<rama>` en vez de la rama local) pasó
+  también en el frontend. Se resolvió con
+  `git switch -c feature/guido --track origin/feature/guido`, sin perder los
+  cambios sin commitear que había en el working tree.
 
 ## Historial
 
@@ -101,3 +104,11 @@ Una línea por sesión.
   desactualizado + npm/cli#4828 con Rolldown). Recuperado y pusheado a
   `origin/feature/guido` el commit de la capa de contexto que había quedado en
   HEAD desprendida — confirmado en GitHub con `git fetch`.
+- **2026-08-28** — Cerrado Hito 0 completo (toolchain Java,
+  `db.properties.example`, remote sin token — con el hallazgo de que el PAT
+  era de Tomás, no de Guido). Completada la card CAM-13 en Jira. Implementado
+  `GET /api/defectos` con refactor a arquitectura en capas a pedido explícito
+  de Guido. Probado a mano (datos, vacío, caracteres especiales, DB caída) y
+  revisado por el subagente `revisor` en dos pasadas. Agregado el request a
+  la colección de Postman. Commiteado y pusheado en los dos repos a
+  `origin/feature/guido` (backend `617aa8b`, frontend `0eff382`).
