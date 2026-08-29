@@ -8,7 +8,9 @@ El frontend la toma de `VITE_API_BASE_URL`.
 
 Convenciones: todas las rutas cuelgan de `/api`. Respuestas siempre JSON con
 `Content-Type: application/json`. Los errores devuelven un objeto con al menos
-la clave `error`.
+la clave `error`. Todas las respuestas llevan `Access-Control-Allow-Origin: *`
+(sin restricción de origen) — aceptable mientras no haya autenticación por
+cookies ni datos sensibles reales; revisar si eso cambia.
 
 ---
 
