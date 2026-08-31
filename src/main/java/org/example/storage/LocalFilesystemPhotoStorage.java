@@ -14,12 +14,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * MVP implementation of PhotoStorage: writes files to a local directory on
- * disk (default ./uploads/photos, see application.yml
- * fleetguard.photos.storage-dir) and serves them back through
- * GET /api/photos/{id} (see PhotoController). Good enough for local dev and
- * demos; swap for an S3/GCS-backed implementation before this needs to run
- * across multiple instances or survive a redeploy.
+ * Implementación MVP de PhotoStorage: escribe archivos en un directorio local
+ * (default ./uploads/photos, ver application.yml). Alcanza para dev/demos;
+ * reemplazar por S3/GCS antes de correr en múltiples instancias.
  */
 @Component
 public class LocalFilesystemPhotoStorage implements PhotoStorage {

@@ -11,9 +11,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 /**
- * Uniform error shape across the whole API: {error, message} plus details[]
- * for validation errors -- see CAM-11-dvir-contract.md section 6. Keep this
- * as the one place new domain exceptions get mapped to HTTP responses.
+ * Formato de error uniforme en toda la API: {error, message} + details[] para
+ * validación (ver CAM-11-dvir-contract.md sección 6). Es el único lugar donde
+ * se mapean nuevas excepciones de dominio a respuestas HTTP.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {

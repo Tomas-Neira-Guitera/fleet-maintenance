@@ -21,9 +21,9 @@ paths:
     get:
       summary: Listar vehículos de la flota con su estado
       description: >
-        Devuelve todos los vehículos con su estado actual (disponible / en viaje)
-        y sus accesorios, para que el chofer elija uno. El estado se calcula
-        server-side a partir de si el vehículo tiene un viaje abierto.
+        Devuelve todos los vehículos con su estado actual (disponible / en viaje),
+        para que el chofer elija uno. El estado se calcula server-side a partir
+        de si el vehículo tiene un viaje abierto.
       responses:
         "200":
           description: OK
@@ -180,7 +180,7 @@ components:
 
     VehicleSummary:
       type: object
-      required: [id, plate, brand, model, status, accessories]
+      required: [id, plate, brand, model, status]
       properties:
         id: { type: string }
         plate: { type: string, example: "AB123CD" }
@@ -188,12 +188,6 @@ components:
         model: { type: string, example: "Sprinter" }
         status:
           $ref: "#/components/schemas/VehicleStatus"
-        accessories:
-          type: array
-          description: Determina qué ítems extra suma el checklist pre-trip.
-          items:
-            type: string
-            enum: [faja, traca, grua, rampa]
 
     PhotoUploadResult:
       type: object

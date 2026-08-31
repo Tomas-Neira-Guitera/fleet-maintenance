@@ -1,5 +1,5 @@
 package org.example.dto;
 
-/** Matches components.schemas.PhotoUploadResult in openapi.yaml. */
+/** Coincide con components.schemas.PhotoUploadResult de openapi.yaml. */
 public record PhotoUploadResultDto(String photoId, String photoUrl) {
 }

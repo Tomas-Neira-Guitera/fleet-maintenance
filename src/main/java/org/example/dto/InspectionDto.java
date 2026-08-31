@@ -2,7 +2,7 @@ package org.example.dto;
 
 import java.util.List;
 
-/** Matches components.schemas.Inspection in openapi.yaml. */
+/** Coincide con components.schemas.Inspection de openapi.yaml. */
 public record InspectionDto(
         String id,
         String tripId,

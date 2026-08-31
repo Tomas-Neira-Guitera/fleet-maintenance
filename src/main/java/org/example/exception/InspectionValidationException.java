@@ -4,7 +4,7 @@ import java.util.List;
 
 import org.example.dto.ValidationErrorDetail;
 
-/** 422 response per CAM-11-dvir-contract.md section 4. */
+/** Respuesta 422 según CAM-11-dvir-contract.md sección 4. */
 public class InspectionValidationException extends RuntimeException {
 
     private final List<ValidationErrorDetail> details;

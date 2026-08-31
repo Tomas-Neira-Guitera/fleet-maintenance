@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.UUID;
 
-/** Business logic for GET /api/vehicles -- see openapi.yaml. */
+/** Lógica de negocio de GET /api/vehicles -- ver openapi.yaml. */
 @Service
 public class VehicleService {
 

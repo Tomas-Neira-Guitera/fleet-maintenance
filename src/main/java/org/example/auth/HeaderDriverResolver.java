@@ -5,11 +5,8 @@ import org.example.exception.MissingDriverHeaderException;
 import org.springframework.stereotype.Component;
 
 /**
- * TEMPORARY stand-in for real auth (see DriverResolver javadoc). Reads
- * X-Driver-Id / X-Driver-Name instead of resolving the driver from a verified
- * Authorization: Bearer token. Replace this implementation -- not its
- * call sites -- when the real auth story (CAM-11 contract: "historia aparte")
- * lands.
+ * Stand-in temporal para auth real (ver javadoc de DriverResolver). Lee
+ * X-Driver-Id / X-Driver-Name en vez de un Authorization: Bearer verificado.
  */
 @Component
 public class HeaderDriverResolver implements DriverResolver {

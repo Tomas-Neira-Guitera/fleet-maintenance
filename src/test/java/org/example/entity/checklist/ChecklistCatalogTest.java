@@ -1,4 +1,4 @@
-package org.example.checklist;
+package org.example.entity.checklist;
 
 import org.junit.jupiter.api.Test;
 
@@ -7,12 +7,12 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Guards that the server-side catalog stays in lockstep with fleet-maintenance-fe's checklistDefinitions.ts. */
+/** Guarda que el catálogo server-side siga igual a checklistDefinitions.ts del frontend. */
 class ChecklistCatalogTest {
 
     @Test
     void preTripBaseItemsMatchTheFrontendDefinitionsExactly() {
-        List<ChecklistItemDef> items = ChecklistCatalog.preTripItems(List.of());
+        List<ChecklistItemDef> items = ChecklistCatalog.preTripItems();
         List<String> ids = items.stream().map(ChecklistItemDef::id).toList();
 
         assertEquals(List.of("ext-luces", "ext-neumaticos", "ext-carroceria", "ext-fugas",
@@ -20,17 +20,6 @@ class ChecklistCatalogTest {
 
         assertTrue(items.stream().filter(i -> i.id().equals("int-km")).findFirst().orElseThrow().required());
         assertTrue(items.stream().filter(i -> !i.id().equals("int-km")).noneMatch(ChecklistItemDef::required));
-    }
-
-    @Test
-    void accessoriesAppendExactlyOneItemEachInOrder() {
-        List<ChecklistItemDef> items = ChecklistCatalog.preTripItems(
-                List.of(AccessoryKey.FAJA, AccessoryKey.RAMPA));
-        List<String> ids = items.stream().map(ChecklistItemDef::id).toList();
-
-        assertEquals(9, ids.size());
-        assertEquals("accessory-faja", ids.get(7));
-        assertEquals("accessory-rampa", ids.get(8));
     }
 
     @Test
