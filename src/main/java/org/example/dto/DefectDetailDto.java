@@ -1,5 +1,5 @@
 package org.example.dto;
 
-/** Matches components.schemas.DefectDetail in openapi.yaml. */
+/** Coincide con components.schemas.DefectDetail de openapi.yaml. */
 public record DefectDetailDto(String severity, String description, String photoUrl) {
 }

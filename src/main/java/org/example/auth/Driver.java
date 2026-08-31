@@ -1,5 +1,5 @@
 package org.example.auth;
 
-/** The driver making the request, resolved server-side -- never trusted from the request body. */
+/** Chofer de la request, resuelto server-side -- nunca se confía en el body. */
 public record Driver(String id, String name) {
 }

@@ -1,6 +1,6 @@
 package org.example.dto;
 
-/** Matches components.schemas.Trip in openapi.yaml. */
+/** Coincide con components.schemas.Trip de openapi.yaml. */
 public record TripDto(
         String id,
         String vehicleId,

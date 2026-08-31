@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** GET /vehicles (served at /api/vehicles via server.servlet.context-path) -- see openapi.yaml. The rest of the vehicle CRUD belongs to fleet management, out of CAM-11's scope. */
+/** GET /vehicles, servido en /api/vehicles -- ver openapi.yaml. El resto del CRUD queda fuera del alcance de CAM-11. */
 @RestController
 @RequestMapping("/vehicles")
 public class VehicleController {

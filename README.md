@@ -55,7 +55,7 @@ spring:
 Implementados para CAM-11 (inspecciones DVIR del chofer) — contrato completo en
 `docs/api/openapi.yaml` y `docs/api/CAM-11-dvir-contract.md`:
 
-- `GET /api/vehicles` — lista de vehículos con estado (disponible/en viaje) y accesorios.
+- `GET /api/vehicles` — lista de vehículos con estado (disponible/en viaje).
 - `POST /api/photos` — sube la foto de un defecto (multipart), devuelve `photoUrl`.
 - `GET /api/photos/{id}` — sirve la foto subida (implementación local, ver más abajo).
 - `POST /api/inspections/{vehicleId}` — envía una inspección pre-trip o post-trip.
@@ -75,12 +75,12 @@ src/main/java/org/example/
 ├── controller/                  # @RestController: bind/validación HTTP, delegan a service/
 ├── service/                     # lógica de negocio (casos de uso) -- incluye InspectionValidator
 ├── repository/                  # interfaces Spring Data JpaRepository
-├── entity/                      # entidades @Entity + enums/converters que las acompañan
+├── entity/                      # entidades @Entity + enums que las acompañan
+│   └── checklist/               # catálogo server-side del checklist (espejo de checklistDefinitions.ts)
 ├── dto/                         # DTOs de request/response que matchean openapi.yaml, + ApiError/ValidationError
 ├── mapper/                      # entidad <-> DTO
 ├── exception/                   # excepciones de dominio + @RestControllerAdvice uniforme (404/409/422/...)
 ├── storage/                     # PhotoStorage (interfaz) + implementación local -- infraestructura, no repo JPA
-├── checklist/                   # catálogo server-side del checklist (espejo de checklistDefinitions.ts) -- dato de dominio, no una capa
 └── auth/                        # DriverResolver (interfaz) + stand-in por header, TEMPORAL hasta que exista auth real -- transversal, no una capa
 ```
 
@@ -99,9 +99,6 @@ controller, sino que se centraliza una sola vez en `server.servlet.context-path`
   `X-Driver-Id`/`X-Driver-Name` en vez de resolver el chofer de un token verificado. Se
   reemplaza por una implementación real de `auth.DriverResolver` cuando exista la
   historia de login/roles — el resto de la app depende de la interfaz, no del header.
-- **`Vehicle.accessories`**: se mapea con un `AttributeConverter` (string separada por
-  comas) en vez de un `text[]` de Postgres, para no sumar una dependencia extra
-  (hibernate-types) solo por esto. Ver `entity/StringListConverter.java`.
 - **Esquema de datos**: `spring.jpa.hibernate.ddl-auto: update` — suficiente para este
   MVP en movimiento rápido. Agregar Flyway/Liquibase es un buen próximo paso, pero
   queda fuera de este alcance.
@@ -114,3 +111,5 @@ controller, sino que se centraliza una sola vez en `server.servlet.context-path`
 - Herramienta de migraciones (Flyway/Liquibase) en vez de `ddl-auto: update`.
 - Resto del CRUD de `/api/vehicles` (alta, baja, edición, ficha completa) — historia de
   gestión de flota.
+- Checklist configurable por accesorios del vehículo (faja/traca/grúa/rampa) — se sacó
+  de esta historia, ver `docs/api/CAM-11-dvir-contract.md`.

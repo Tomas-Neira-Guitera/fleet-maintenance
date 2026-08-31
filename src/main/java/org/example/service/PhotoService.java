@@ -10,7 +10,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import java.util.Optional;
 import java.util.Set;
 
-/** Business logic for POST /api/photos + GET /api/photos/{id} -- see openapi.yaml. */
+/** Lógica de negocio de POST /api/photos + GET /api/photos/{id} -- ver openapi.yaml. */
 @Service
 public class PhotoService {
 

@@ -5,6 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.UUID;
 
-/** Not consumed by CAM-11 (no GET /api/defects here) -- exists so the future defect-listing story has a repository ready. */
+/** No se usa en CAM-11 (no hay GET /api/defects) -- listo para la futura historia de defectos. */
 public interface DefectRepository extends JpaRepository<Defect, UUID> {
 }

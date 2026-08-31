@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** POST /api/inspections/{vehicleId} -- see openapi.yaml and CAM-11-dvir-contract.md. */
+/** POST /api/inspections/{vehicleId} -- ver openapi.yaml y CAM-11-dvir-contract.md. */
 @RestController
 @RequestMapping("/inspections")
 public class InspectionController {

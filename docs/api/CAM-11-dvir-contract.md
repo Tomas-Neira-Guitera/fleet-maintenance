@@ -10,7 +10,7 @@ se conecte la API real, el reemplazo de la capa mock del frontend sea mínimo.
 
 | Método | Endpoint | Qué hace |
 |---|---|---|
-| GET | `/api/vehicles` | Lista de vehículos con estado (disponible/en viaje) y accesorios |
+| GET | `/api/vehicles` | Lista de vehículos con estado (disponible/en viaje) |
 | POST | `/api/photos` | Sube una foto de defecto, devuelve una URL (paso 1 de 2) |
 | GET | `/api/photos/{photoId}` | Sirve el binario de una foto subida (a lo que apunta la photoUrl) |
 | POST | `/api/inspections/{vehicleId}` | Envía una inspección pre-trip o post-trip (paso 2) |
@@ -21,7 +21,7 @@ se conecte la API real, el reemplazo de la capa mock del frontend sea mínimo.
 dentro del otro:
 
 - **`/api/vehicles`** es la entidad vehículo — CAM-11 solo necesita `GET /api/vehicles`
-  (lista con estado y accesorios), pero el recurso queda reservado para el resto del
+  (lista con estado), pero el recurso queda reservado para el resto del
   CRUD y operaciones de flota que va a definir la historia de gestión de flota (alta,
   baja, edición, ficha completa, etc.) sin que eso choque con esto.
 - **`/api/inspections`** concentra todo lo relacionado a crear (y, más adelante,
@@ -45,7 +45,8 @@ de los dos campos.
 ### 2. El servidor es dueño de la definición del checklist
 El cliente manda solo `itemId` + lo que el chofer completó (`outcome`, `numberValue`,
 `defect`). El servidor resuelve label/sección/tipo/obligatoriedad de cada ítem contra su
-propio catálogo (que combina la lista fija con los accesorios del vehículo — ver CAM-11 v2).
+propio catálogo (una lista fija; la expansión por accesorios del vehículo quedó
+fuera de alcance de esta historia, ver sección "Fuera de alcance").
 Esto es lo que permite, más adelante, cambiar o agregar ítems del checklist sin tocar el
 frontend ni romper inspecciones ya enviadas con la definición vieja.
 
@@ -97,7 +98,7 @@ No es parte formal del contrato, pero como el backend usa JDBC plano sin ORM, pu
 tiempo tenerlo como punto de partida:
 
 ```sql
-vehicles(id, plate, brand, model, accessories text[])
+vehicles(id, plate, brand, model)
 trips(id, vehicle_id, status, started_at, ended_at)
 inspections(id, trip_id, vehicle_id, driver_id, type, "timestamp", odometer_km, notes, has_blocking_defect)
 inspection_answers(id, inspection_id, item_id, outcome, number_value)
@@ -108,4 +109,6 @@ defects(id, inspection_answer_id, severity, description, photo_url, created_at, 
 
 - Login/roles y el mecanismo real detrás de `Authorization: Bearer` (historia aparte).
 - `GET /api/defects` y todo lo de gestión de defectos/órdenes de trabajo (features 5.2/5.3).
-- Checklist configurable por tipo de vehículo más allá de accesorios (Etapa 2 del roadmap).
+- Checklist configurable por accesorios del vehículo (ítems extra por faja/traca/grúa/
+  rampa): se evaluó para esta historia pero se decidió diferirlo a una historia futura;
+  el checklist queda con la lista fija únicamente por ahora.

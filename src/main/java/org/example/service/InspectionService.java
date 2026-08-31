@@ -7,7 +7,6 @@ import org.example.entity.InspectionAnswer;
 import org.example.entity.InspectionType;
 import org.example.mapper.InspectionMapper;
 import org.example.repository.InspectionRepository;
-import org.example.checklist.AccessoryKey;
 import org.example.entity.Defect;
 import org.example.entity.DefectSeverity;
 import org.example.exception.InspectionValidationException;
@@ -31,7 +30,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Core CAM-11 use case: POST /api/inspections/{vehicleId}. See CAM-11-dvir-contract.md sections 4 and 5. */
+/** Caso de uso central de CAM-11: POST /api/inspections/{vehicleId}. Ver CAM-11-dvir-contract.md secciones 4 y 5. */
 @Service
 public class InspectionService {
 
@@ -74,13 +73,8 @@ public class InspectionService {
             throw new VehicleStateConflictException("NO_OPEN_TRIP", "El vehículo no tiene un viaje abierto para cerrar.");
         }
 
-        List<AccessoryKey> accessories = vehicle.getAccessories().stream()
-                .map(AccessoryKey::fromCode)
-                .flatMap(Optional::stream)
-                .toList();
-
         List<ChecklistAnswerDto> answers = submission.answers() == null ? List.of() : submission.answers();
-        InspectionValidator.ValidationOutcome outcome = validator.validate(type, accessories, answers);
+        InspectionValidator.ValidationOutcome outcome = validator.validate(type, answers);
 
         Instant now = Instant.now();
         Trip trip;

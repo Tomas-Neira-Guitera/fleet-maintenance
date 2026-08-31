@@ -1,5 +1,5 @@
 package org.example.dto;
 
-/** Matches components.schemas.ApiError in openapi.yaml. */
+/** Coincide con components.schemas.ApiError de openapi.yaml. */
 public record ApiError(String error, String message) {
 }

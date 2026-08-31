@@ -38,7 +38,7 @@ public class Defect {
     @Column(nullable = false)
     private Instant createdAt;
 
-    /** Reserved for the future defect-management story; always "open" for now. */
+    /** Reservado para la futura gestión de defectos; por ahora siempre "open". */
     @Column(nullable = false)
     private String status = "open";
 

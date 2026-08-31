@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-/** POST /photos (step 1 of 2) + GET /photos/{id} (served at /api/photos via server.servlet.context-path) so the returned photoUrl actually resolves. See openapi.yaml. */
+/** POST /photos (paso 1 de 2) + GET /photos/{id}, servidos en /api/photos. Ver openapi.yaml. */
 @RestController
 @RequestMapping("/photos")
 public class PhotoController {

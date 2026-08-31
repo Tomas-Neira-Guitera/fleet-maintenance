@@ -1,6 +1,5 @@
 package org.example.service;
 
-import org.example.checklist.AccessoryKey;
 import org.example.entity.InspectionType;
 import org.example.exception.InspectionValidationException;
 import org.example.dto.ChecklistAnswerDto;
@@ -33,7 +32,7 @@ class InspectionValidatorTest {
     @Test
     void acceptsAMinimalValidPreTripSubmission() {
         InspectionValidator.ValidationOutcome outcome =
-                validator.validate(InspectionType.PRE_TRIP, List.of(), minimalValidPreTripAnswers());
+                validator.validate(InspectionType.PRE_TRIP, minimalValidPreTripAnswers());
 
         assertEquals(12345.0, outcome.odometerKm());
         assertFalse(outcome.hasBlockingDefect());
@@ -47,31 +46,9 @@ class InspectionValidatorTest {
                 .toList();
 
         InspectionValidationException ex = assertThrows(InspectionValidationException.class,
-                () -> validator.validate(InspectionType.PRE_TRIP, List.of(), answers));
+                () -> validator.validate(InspectionType.PRE_TRIP, answers));
 
         assertTrue(ex.getDetails().stream().anyMatch(d -> d.itemId().equals("int-km")));
-    }
-
-    @Test
-    void addsTheExtraAccessoryItemToTheCatalogButDoesNotRequireItLikeTheFrontendCatalog() {
-        // Mirrors checklistDefinitions.ts: accessory items aren't flagged `required`
-        // there either, so the server must not invent a stricter rule than the
-        // catalog it's supposed to mirror -- only km items are required.
-        InspectionValidator.ValidationOutcome outcome =
-                validator.validate(InspectionType.PRE_TRIP, List.of(AccessoryKey.GRUA), minimalValidPreTripAnswers());
-
-        assertEquals(7, outcome.recognizedAnswers().size());
-    }
-
-    @Test
-    void acceptsTheAccessoryItemWhenAnswered() {
-        List<ChecklistAnswerDto> answers = new java.util.ArrayList<>(minimalValidPreTripAnswers());
-        answers.add(new ChecklistAnswerDto("accessory-grua", "ok", null, null));
-
-        InspectionValidator.ValidationOutcome outcome =
-                validator.validate(InspectionType.PRE_TRIP, List.of(AccessoryKey.GRUA), answers);
-
-        assertEquals(8, outcome.recognizedAnswers().size());
     }
 
     @Test
@@ -80,7 +57,7 @@ class InspectionValidatorTest {
         answers.add(new ChecklistAnswerDto("some-made-up-item", "ok", null, null));
 
         InspectionValidator.ValidationOutcome outcome =
-                validator.validate(InspectionType.PRE_TRIP, List.of(), answers);
+                validator.validate(InspectionType.PRE_TRIP, answers);
 
         assertEquals(7, outcome.recognizedAnswers().size());
         assertTrue(outcome.recognizedAnswers().stream().noneMatch(a -> a.itemId().equals("some-made-up-item")));
@@ -94,7 +71,7 @@ class InspectionValidatorTest {
                 new DefectDetailDto("non-blocking", "Foco trasero tenue", null)));
 
         InspectionValidator.ValidationOutcome outcome =
-                validator.validate(InspectionType.PRE_TRIP, List.of(), answers);
+                validator.validate(InspectionType.PRE_TRIP, answers);
 
         assertFalse(outcome.hasBlockingDefect());
     }
@@ -107,7 +84,7 @@ class InspectionValidatorTest {
                 new DefectDetailDto("non-blocking", "", null)));
 
         InspectionValidationException ex = assertThrows(InspectionValidationException.class,
-                () -> validator.validate(InspectionType.PRE_TRIP, List.of(), answers));
+                () -> validator.validate(InspectionType.PRE_TRIP, answers));
 
         assertTrue(ex.getDetails().stream().anyMatch(d -> d.itemId().equals("ext-luces")));
     }
@@ -120,7 +97,7 @@ class InspectionValidatorTest {
                 new DefectDetailDto("blocking", "Neumático pinchado", null)));
 
         InspectionValidationException ex = assertThrows(InspectionValidationException.class,
-                () -> validator.validate(InspectionType.PRE_TRIP, List.of(), answers));
+                () -> validator.validate(InspectionType.PRE_TRIP, answers));
 
         assertTrue(ex.getDetails().stream().anyMatch(d -> d.itemId().equals("ext-neumaticos")));
     }
@@ -133,7 +110,7 @@ class InspectionValidatorTest {
                 new DefectDetailDto("blocking", "Neumático pinchado", "http://localhost:8080/api/photos/abc")));
 
         InspectionValidator.ValidationOutcome outcome =
-                validator.validate(InspectionType.PRE_TRIP, List.of(), answers);
+                validator.validate(InspectionType.PRE_TRIP, answers);
 
         assertTrue(outcome.hasBlockingDefect());
     }
@@ -145,12 +122,12 @@ class InspectionValidatorTest {
                 new ChecklistAnswerDto("post-luces", "ok", null, null),
                 new ChecklistAnswerDto("post-fugas", "ok", null, null),
                 new ChecklistAnswerDto("post-km", null, 12400.0, null),
-                // A pre-trip-only itemId sent by mistake should be ignored, not crash.
+                // Un itemId de pre-trip enviado por error debe ignorarse, no romper.
                 new ChecklistAnswerDto("int-km", null, 1.0, null)
         );
 
         InspectionValidator.ValidationOutcome outcome =
-                validator.validate(InspectionType.POST_TRIP, List.of(), answers);
+                validator.validate(InspectionType.POST_TRIP, answers);
 
         assertEquals(12400.0, outcome.odometerKm());
         assertEquals(4, outcome.recognizedAnswers().size());
