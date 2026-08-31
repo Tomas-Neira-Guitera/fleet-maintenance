@@ -59,6 +59,7 @@ Implementados para CAM-11 (inspecciones DVIR del chofer) — contrato completo e
 - `POST /api/photos` — sube la foto de un defecto (multipart), devuelve `photoUrl`.
 - `GET /api/photos/{id}` — sirve la foto subida (implementación local, ver más abajo).
 - `POST /api/inspections/{vehicleId}` — envía una inspección pre-trip o post-trip.
+- `GET /api/defects` — lista de defectos reportados, para mantenimiento (CAM-13).
 
 Requieren, además del `Authorization: Bearer <token>` que pide el contrato (todavía no
 hay auth real), un header **temporal** `X-Driver-Id` (y opcionalmente `X-Driver-Name`)
@@ -106,8 +107,8 @@ controller, sino que se centraliza una sola vez en `server.servlet.context-path`
 ## Próximos pasos (fuera de este alcance)
 
 - Login/roles reales (reemplaza `auth.HeaderDriverResolver`).
-- `GET /api/defects` y gestión de defectos/órdenes de trabajo (el modelo de datos ya
-  contempla la tabla `defects`, ver `entity/Defect.java`).
+- Gestión de defectos/órdenes de trabajo más allá del listado (`GET /api/defects` ya
+  está implementado, ver `entity/Defect.java`).
 - Herramienta de migraciones (Flyway/Liquibase) en vez de `ddl-auto: update`.
 - Resto del CRUD de `/api/vehicles` (alta, baja, edición, ficha completa) — historia de
   gestión de flota.

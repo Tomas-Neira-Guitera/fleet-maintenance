@@ -14,6 +14,7 @@ se conecte la API real, el reemplazo de la capa mock del frontend sea mínimo.
 | POST | `/api/photos` | Sube una foto de defecto, devuelve una URL (paso 1 de 2) |
 | GET | `/api/photos/{photoId}` | Sirve el binario de una foto subida (a lo que apunta la photoUrl) |
 | POST | `/api/inspections/{vehicleId}` | Envía una inspección pre-trip o post-trip (paso 2) |
+| GET | `/api/defects` | Lista de defectos reportados, para mantenimiento (CAM-13) |
 
 ### División de recursos
 
@@ -84,18 +85,18 @@ y las de validación (422) suman `details: [{ itemId, message }]`. Mantener esto
 en todos los endpoints del backend, no solo estos tres, para que el frontend pueda manejar
 errores de forma genérica.
 
-### 7. Defectos como dato consumido por otra historia
-Cada respuesta con `outcome: "defect"` debería, del lado del servidor, generar también un
-registro de "defecto" reutilizable por el equipo de mantenimiento (feature 5.2 de la
-propuesta de producto — listado de defectos por gravedad/fecha). Ese listado (`GET
-/api/defects` o similar) no es parte de este contrato porque pertenece a otra historia,
-pero vale la pena que el modelo de datos del backend contemple una tabla `defects`
-relacionada a `inspection_answers` desde ahora, para no tener que migrar datos después.
+### 7. Defectos como dato consumido por mantenimiento (CAM-13)
+Cada respuesta con `outcome: "defect"` genera del lado del servidor un registro de
+"defecto" (tabla `defects`, relacionada 1 a 1 con `inspection_answers`). `GET /api/defects`
+expone ese listado para el equipo de mantenimiento, ordenado por severidad (blocking
+primero) y luego por fecha más reciente. Usa la misma taxonomía de dos niveles
+(`blocking`/`non-blocking`) que las reglas de validación de la sección 4 — no la de tres
+niveles (bajo/medio/alto) que se evaluó y se descartó para no romper esas reglas.
 
 ## Sugerencia de esquema de datos (Postgres, orientativo)
 
-No es parte formal del contrato, pero como el backend usa JDBC plano sin ORM, puede ahorrar
-tiempo tenerlo como punto de partida:
+No es parte formal del contrato — el backend ya lo implementa vía JPA/Hibernate
+(`ddl-auto: update`) sobre este mismo modelo:
 
 ```sql
 vehicles(id, plate, brand, model)
@@ -108,7 +109,7 @@ defects(id, inspection_answer_id, severity, description, photo_url, created_at, 
 ## Fuera de alcance de este contrato
 
 - Login/roles y el mecanismo real detrás de `Authorization: Bearer` (historia aparte).
-- `GET /api/defects` y todo lo de gestión de defectos/órdenes de trabajo (features 5.2/5.3).
+- Órdenes de trabajo de mantenimiento y todo lo que consuma `GET /api/defects` más allá de listarlo (feature 5.3).
 - Checklist configurable por accesorios del vehículo (ítems extra por faja/traca/grúa/
   rampa): se evaluó para esta historia pero se decidió diferirlo a una historia futura;
   el checklist queda con la lista fija únicamente por ahora.

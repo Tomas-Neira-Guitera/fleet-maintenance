@@ -2,13 +2,14 @@ openapi: 3.0.3
 info:
   title: FleetGuard API — Inspecciones DVIR (CAM-11)
   description: >
-    Contrato para la carga de inspecciones pre-trip / post-trip del chofer.
-    Cubre el listado de vehículos, la subida de fotos de defectos y el envío
-    de la inspección. No cubre login/roles (se asume Authorization: Bearer
-    <token> resuelto por un mecanismo de auth a definir aparte) ni la gestión
-    de defectos/órdenes de trabajo del lado de mantenimiento (son consumidores
-    de los datos que este contrato genera, no parte de él).
-  version: "1.0"
+    Contrato para la carga de inspecciones pre-trip / post-trip del chofer y
+    para la consulta de los defectos que generan (CAM-13). Cubre el listado
+    de vehículos, la subida de fotos de defectos, el envío de la inspección
+    y el listado de defectos. No cubre login/roles (se asume Authorization:
+    Bearer <token> resuelto por un mecanismo de auth a definir aparte) ni las
+    órdenes de trabajo de mantenimiento (son consumidoras de este listado,
+    no parte de él).
+  version: "1.1"
 
 servers:
   - url: http://localhost:8080
@@ -151,6 +152,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ValidationError"
+  /api/defects:
+    get:
+      summary: Listar defectos reportados en inspecciones
+      description: >
+        Devuelve todos los defectos (severity blocking/non-blocking) generados
+        por respuestas de inspección con outcome=defect, ordenados por
+        severidad (blocking primero) y luego por fecha, más reciente primero.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DefectSummary"
+
 
 components:
   securitySchemes:
@@ -285,6 +303,19 @@ components:
           $ref: "#/components/schemas/Inspection"
         trip:
           $ref: "#/components/schemas/Trip"
+
+    DefectSummary:
+      type: object
+      required: [id, severity, description, createdAt, status]
+      properties:
+        id: { type: string }
+        severity:
+          $ref: "#/components/schemas/DefectSeverity"
+        description: { type: string }
+        photoUrl: { type: string, format: uri, nullable: true }
+        createdAt: { type: string, format: date-time }
+        vehiclePlate: { type: string, nullable: true, description: Puede faltar si el vehículo fue eliminado. }
+        status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
 
     ApiError:
       type: object

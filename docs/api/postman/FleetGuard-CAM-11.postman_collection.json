@@ -5,7 +5,10 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:8080" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    }
   ],
   "item": [
     {
@@ -16,13 +19,24 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-Driver-Id", "value": "{{driverId}}" },
-              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
+              },
+              {
+                "key": "X-Driver-Name",
+                "value": "{{driverName}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/vehicles",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "vehicles"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles"
+              ]
             },
             "description": "GET /api/vehicles — lista con estado (available/on-trip). Guarda el primer vehículo de la respuesta en las variables de entorno vehicleId/vehiclePlate para el resto de la colección."
           },
@@ -58,19 +72,34 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Driver-Id", "value": "{{driverId}}" },
-              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
+              },
+              {
+                "key": "X-Driver-Name",
+                "value": "{{driverName}}"
+              }
             ],
             "body": {
               "mode": "formdata",
               "formdata": [
-                { "key": "file", "type": "file", "src": [] }
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
               ]
             },
             "url": {
               "raw": "{{baseUrl}}/api/photos",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "photos"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "photos"
+              ]
             },
             "description": "POST /api/photos — subida en 2 pasos (paso 1). Elegí un archivo image/jpeg o image/png de menos de 8MB en el campo 'file'. Guarda photoUrl/photoId para usarlos en defect.photoUrl de una inspección."
           },
@@ -99,8 +128,14 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/photos/{{photoId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "photos", "{{photoId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "photos",
+                "{{photoId}}"
+              ]
             },
             "description": "GET /api/photos/{id} — sirve el archivo subido. Detalle de implementación (no forma parte del OpenAPI formal) para verificar que photoUrl resuelve a algo real."
           }
@@ -115,9 +150,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Driver-Id", "value": "{{driverId}}" },
-              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
+              },
+              {
+                "key": "X-Driver-Name",
+                "value": "{{driverName}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -125,8 +169,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "inspections", "{{vehicleId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
             },
             "description": "Abre un viaje para {{vehicleId}}. Requiere haber corrido antes 'Listar vehículos' para tener vehicleId seteado, y que ese vehículo esté 'available' (sin viaje abierto)."
           },
@@ -151,9 +201,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Driver-Id", "value": "{{driverId}}" },
-              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
+              },
+              {
+                "key": "X-Driver-Name",
+                "value": "{{driverName}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -161,8 +220,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "inspections", "{{vehicleId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
             },
             "description": "Igual que 'Pre-trip — sin defectos' pero reporta Neumáticos como defecto bloqueante. Corré antes 'Subir foto de defecto' para tener {{photoUrl}} seteada. Usa un vehicleId que esté 'available' (si ya corriste la request anterior sobre el mismo vehículo, va a dar 409 — probá con otro vehículo o mirá la carpeta de errores)."
           },
@@ -186,9 +251,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Driver-Id", "value": "{{driverId}}" },
-              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
+              },
+              {
+                "key": "X-Driver-Name",
+                "value": "{{driverName}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -196,8 +270,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "inspections", "{{vehicleId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
             },
             "description": "Requiere que {{vehicleId}} tenga un viaje abierto (corré primero alguna de las dos requests de Pre-trip de esta misma carpeta)."
           },
@@ -225,9 +305,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Driver-Id", "value": "{{driverId}}" },
-              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
+              },
+              {
+                "key": "X-Driver-Name",
+                "value": "{{driverName}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -235,8 +324,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "inspections", "{{vehicleId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
             },
             "description": "Corré esta request DESPUÉS de cualquiera de las pre-trip de 'Flujo feliz' sobre el mismo vehicleId (que le dejó un viaje abierto), sin correr antes el post-trip. Debería dar 409 VEHICLE_ON_TRIP."
           },
@@ -259,9 +354,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Driver-Id", "value": "{{driverId}}" },
-              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
+              },
+              {
+                "key": "X-Driver-Name",
+                "value": "{{driverName}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -269,8 +373,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "inspections", "{{vehicleId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
             },
             "description": "Corré esta request sobre un vehículo que esté 'available' (sin viaje abierto). Debería dar 409 NO_OPEN_TRIP."
           },
@@ -293,9 +403,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Driver-Id", "value": "{{driverId}}" },
-              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
+              },
+              {
+                "key": "X-Driver-Name",
+                "value": "{{driverName}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -303,8 +422,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "inspections", "{{vehicleId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
             },
             "description": "Defecto bloqueante sin photoUrl. Debería dar 422 con un detalle sobre ext-neumaticos. Usá un vehículo 'available' (sin viaje abierto) para que el 422 no quede tapado por un 409."
           },
@@ -327,9 +452,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Driver-Id", "value": "{{driverId}}" },
-              { "key": "X-Driver-Name", "value": "{{driverName}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
+              },
+              {
+                "key": "X-Driver-Name",
+                "value": "{{driverName}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -337,8 +471,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "inspections", "{{vehicleId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
             },
             "description": "Falta la respuesta de 'int-km' (obligatoria). Debería dar 422 con un detail para int-km. Usá un vehículo 'available'."
           },
@@ -351,6 +491,51 @@
                   "pm.test('422 Unprocessable Entity', () => pm.response.to.have.status(422));",
                   "const body = pm.response.json();",
                   "pm.test('trae details', () => Array.isArray(body.details) && body.details.length > 0);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Defects",
+      "item": [
+        {
+          "name": "Listar defectos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
+              },
+              {
+                "key": "X-Driver-Name",
+                "value": "{{driverName}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/defects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "defects"
+              ]
+            },
+            "description": "GET /api/defects — defectos reportados en inspecciones, ordenados por severidad (blocking primero) y fecha descendente. Para ver datos hace falta haber corrido antes un post-trip con al menos una respuesta outcome=defect."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('devuelve un array', () => Array.isArray(body));"
                 ]
               }
             }

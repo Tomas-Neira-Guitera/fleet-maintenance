@@ -57,6 +57,10 @@ public class Defect {
         this.inspectionAnswer = inspectionAnswer;
     }
 
+    public InspectionAnswer getInspectionAnswer() {
+        return inspectionAnswer;
+    }
+
     public UUID getId() {
         return id;
     }

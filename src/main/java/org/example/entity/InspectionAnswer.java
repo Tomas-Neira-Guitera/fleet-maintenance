@@ -53,6 +53,10 @@ public class InspectionAnswer {
         this.inspection = inspection;
     }
 
+    public Inspection getInspection() {
+        return inspection;
+    }
+
     public void attachDefect(Defect defect) {
         this.defect = defect;
         defect.setInspectionAnswer(this);
