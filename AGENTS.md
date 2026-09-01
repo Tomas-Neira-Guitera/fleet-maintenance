@@ -6,78 +6,85 @@ con el frontend). El estado de avance vive en `docs/STATE.md`.
 
 ## Stack
 
+Migrado a Spring Boot el 2026-08-31 (ver el porqué en `docs/PROJECT.md`).
+
 | Qué | Con qué |
 |---|---|
 | Lenguaje | Java 21 |
 | Build | Gradle 8.14, Kotlin DSL (`build.gradle.kts`) |
-| Servidor HTTP | `com.sun.net.httpserver.HttpServer` (viene con el JDK) |
-| Base de datos | PostgreSQL, driver JDBC `org.postgresql:postgresql:42.7.4` |
-| Tests | JUnit 5 (ya configurado, `src/test/java` todavía vacío) |
+| Framework | Spring Boot 3.3.x (Spring MVC + Spring Data JPA + Hibernate) |
+| Base de datos | PostgreSQL, `ddl-auto: update` (sin Flyway/Liquibase todavía) |
+| Tests | JUnit 5 + `spring-boot-starter-test` |
 
 ## Estructura hoy
 
-Arquitectura en capas, desde 2026-08-28 (ver el porqué en `docs/PROJECT.md`):
+Package-by-layer, heredada de la migración de Tomás (CAM-11) sobre el molde de
+capas que ya existía:
 
 ```
 src/main/java/org/example/
-├── Main.java                 # bootstrap: levanta el HttpServer y registra las rutas
-├── DatabaseConnection.java   # abre conexiones JDBC leyendo db.properties
-├── controller/                # un handler por endpoint; arma el HttpExchange
-│   ├── HealthController.java
-│   └── DefectoController.java
-├── model/                     # entidades: campos + toJson() propio
-│   ├── HealthStatus.java
-│   └── Defecto.java
-├── dao/                       # acceso a datos: SQL con PreparedStatement, devuelve modelos
-│   └── DefectoDao.java
-└── util/
-    ├── Json.java              # escape de strings para JSON armado a mano
-    └── HttpResponses.java     # helper para mandar una respuesta JSON
-src/main/resources/
-└── db.properties             # credenciales locales — está en .gitignore
+├── FleetGuardApplication.java   # entry point Spring Boot
+├── controller/                  # @RestController: bind/validación HTTP, delegan a service/
+├── service/                     # lógica de negocio (casos de uso)
+├── repository/                  # interfaces Spring Data JpaRepository
+├── entity/                      # entidades @Entity + enums que las acompañan
+│   └── checklist/                   # catálogo server-side del checklist (espejo de checklistDefinitions.ts en el FE)
+├── dto/                          # DTOs de request/response, + ApiError/ValidationError
+├── mapper/                       # entidad <-> DTO
+├── exception/                    # excepciones de dominio + @RestControllerAdvice uniforme
+├── storage/                      # PhotoStorage (interfaz) + implementación local
+└── auth/                         # DriverResolver (interfaz) + stand-in por header, TEMPORAL hasta login real
 ```
 
-**Un endpoint nuevo toca las tres capas:** el modelo (campos + `toJson()`), el
-DAO si hace falta acceso a datos, y el controller que arma la respuesta y se
-registra en `Main.java`. Los helpers de `util/` son compartidos, no se
-duplican por endpoint.
+**Un endpoint nuevo toca varias capas:** entidad (si hace falta tabla nueva),
+repository, service con la lógica, DTOs de entrada/salida, mapper entidad↔DTO,
+y el controller que expone la ruta. El prefijo `/api` se centraliza una sola
+vez en `server.servlet.context-path` (`application.yml`) — los controllers
+mapean rutas planas (`/vehicles`, no `/api/vehicles`).
 
 `rootProject.name` es `TIP`, por eso el jar sale como `TIP-1.0-SNAPSHOT.jar`.
 
 ## Reglas
 
-**Sin frameworks.** Nada de Spring, Micronaut, Javalin, Jackson, Hibernate ni
-similares. Es una decisión deliberada del equipo, no una deuda pendiente. Si una
-tarea parece pedir un framework, la respuesta correcta es resolverla con el JDK
-y avisarme, no agregar la dependencia.
+**Spring Boot es el framework del equipo**, no una deuda ni una excepción. La
+regla vieja de "sin frameworks" quedó revertida — ver `docs/PROJECT.md` para
+el porqué y la fecha. Lo que sigue vigente es no sumar frameworks *adicionales*
+sin decidirlo primero (ver la regla siguiente).
 
-**Agregar una dependencia es una decisión, no un detalle.** Proponela y esperá
-confirmación. La única que hay hoy es el driver de Postgres.
+**Agregar una dependencia nueva sigue siendo una decisión, no un detalle.**
+Proponela y esperá confirmación antes de sumarla a `build.gradle.kts`.
 
-**JDBC directo, siempre con `PreparedStatement`.** Nunca concatenes valores
-dentro del SQL. Cerrá siempre `Connection`, `Statement` y `ResultSet` con
-try-with-resources, como hace `handleHealth` en `Main.java`.
+**JPA + `PreparedStatement` implícito de Spring Data.** No armar SQL a mano
+salvo que haga falta un `@Query` explícito — en ese caso, siempre con parámetros
+nombrados/posicionales, nunca concatenando valores.
 
-**JSON a mano por ahora.** Se arma con `String.format` y se escapan las comillas
-de los valores que vienen de afuera. Cuando esto empiece a doler de verdad,
-discutimos meter una librería; hasta entonces, a mano.
+**JSON vía Jackson (default de Spring MVC).** Ya no se arma a mano. Los DTOs
+son `record`s; para que Jackson los deserialice desde JSON sin `@JsonCreator`
+extra, `build.gradle.kts` agrega `-parameters` al compilador.
 
-**Un endpoint nuevo se registra en `Main.java`** con `server.createContext(...)`.
-El procedimiento completo, de punta a punta con el frontend, está en
-`docs/guias/nuevo-endpoint.md`.
+**Un endpoint nuevo se registra solo** con las anotaciones de Spring
+(`@RestController`, `@RequestMapping`) — no hay un lugar central donde
+"registrarlo" a mano. El procedimiento de punta a punta con el frontend
+(desactualizado tras esta migración, revisar antes de seguirlo al pie de la
+letra) está en `docs/guias/nuevo-endpoint.md`.
 
 **Todo endpoint nuevo se anota en `docs/API.md` en el mismo cambio.** No después.
-Es el único lugar donde el frontend ve qué existe.
+Es el único lugar donde el frontend ve qué existe. (CAM-11 documentó lo suyo en
+`docs/api/openapi.yaml` + `docs/api/CAM-11-dvir-contract.md` en vez de acá —
+pendiente decidir si `API.md` pasa a ser un índice que apunta a esos archivos,
+o si se vuelca todo a `API.md` de nuevo. Ver `docs/STATE.md`.)
 
-**Nunca commitees `src/main/resources/db.properties`.** Tiene credenciales y está
-ignorado a propósito.
+**Nunca commitees `src/main/resources/application-local.yml`.** Tiene
+credenciales y está ignorado a propósito — reemplaza al viejo
+`db.properties`/`db.properties.example`.
 
 ## Comandos
 
 ```bash
-./gradlew run      # levanta el servidor en http://localhost:8080
-./gradlew build    # compila, corre tests y empaqueta
-./gradlew test     # solo tests
+./gradlew bootRun       # levanta el servidor en http://localhost:8080
+./gradlew build         # compila, corre tests y empaqueta
+./gradlew test          # solo tests
+./gradlew compileJava   # solo compila
 ```
 
 ## El otro repo

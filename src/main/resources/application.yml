@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: fleet-maintenance
+  config:
+    # application-local.yml is gitignored -- copy application-local.yml.example
+    # to it and put your local Postgres credentials there instead of editing
+    # this file. Mirrors the old db.properties / db.properties.example pattern.
+    import: optional:classpath:application-local.yml
+  datasource:
+    url: jdbc:postgresql://localhost:5432/TIP
+    username: postgres
+    password: ""
+  jpa:
+    hibernate:
+      # MVP: no migration tool (Flyway/Liquibase) is set up yet, so Hibernate
+      # manages the schema directly. Revisit before this goes to production.
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  servlet:
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 8MB
+
+server:
+  port: 8080
+  servlet:
+    # Centralizes the /api prefix here instead of repeating it on every
+    # @RestController's @RequestMapping -- controllers map plain paths like
+    # /vehicles, /photos, /inspections/{vehicleId}.
+    context-path: /api
+
+fleetguard:
+  cors:
+    # Origenes permitidos para que el frontend (Vite) consuma la API en dev.
+    allowed-origins: http://localhost:5173,http://127.0.0.1:5173
+  photos:
+    # Local-filesystem photo storage (see storage/LocalFilesystemPhotoStorage).
+    # Swap PhotoStorage's implementation for a cloud-backed one later; nothing
+    # else in the app should need to change.
+    storage-dir: ./uploads/photos

@@ -30,30 +30,30 @@ CREATE DATABASE "TIP";
 
 ## 3. Credenciales del backend
 
-`src/main/resources/db.properties` está en `.gitignore`, así que no viene en el
-clone. Crealo con este contenido y tu password:
+`src/main/resources/application-local.yml` está en `.gitignore`, así que no
+viene en el clone. Copiá el ejemplo y completá tu password:
 
-```
-db.host=localhost
-db.port=5432
-db.name=TIP
-db.user=postgres
-db.password=tu_password
+```bash
+cp src/main/resources/application-local.yml.example src/main/resources/application-local.yml
 ```
 
-> Ojo: el README y `DatabaseConnection.java` mencionan un
-> `db.properties.example` que hoy **no existe en el repo**. Está anotado en
-> `ROADMAP.md` para agregarlo.
+```yaml
+spring:
+  datasource:
+    username: postgres
+    password: tu_password
+```
 
 ## 4. Levantar el backend
 
 ```bash
 cd "TIP - Backend"
-./gradlew run
+./gradlew bootRun
 ```
 
-Verificar: `curl http://localhost:8080/api/health` tiene que devolver
-`{"status":"UP","database":"TIP",...}`.
+Verificar: `curl http://localhost:8080/api/defects` tiene que devolver `[]` (o
+la lista de defectos si ya cargaste datos) sin pedir autenticación. Todavía no
+hay un endpoint de health en Spring Boot — ver `docs/API.md`.
 
 ## 5. Levantar el frontend
 

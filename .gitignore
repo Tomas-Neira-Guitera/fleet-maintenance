@@ -43,3 +43,7 @@ bin/
 
 ### DB credentials (no subir al repo) ###
 src/main/resources/db.properties
+
+### FleetGuard local config / data (no subir al repo) ###
+src/main/resources/application-local.yml
+/uploads/

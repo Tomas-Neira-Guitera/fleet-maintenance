@@ -1,6 +1,7 @@
 plugins {
-    id("java")
-    application
+    java
+    id("org.springframework.boot") version "3.3.4"
+    id("io.spring.dependency-management") version "1.1.6"
 }
 
 group = "org.example"
@@ -17,15 +18,25 @@ repositories {
 }
 
 dependencies {
-    implementation("org.postgresql:postgresql:42.7.4")
+    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+    implementation("org.springframework.boot:spring-boot-starter-validation")
+    runtimeOnly("org.postgresql:postgresql:42.7.4")
 
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-application {
-    mainClass.set("org.example.Main")
+springBoot {
+    mainClass.set("org.example.FleetGuardApplication")
+}
+
+tasks.withType<JavaCompile> {
+    // Needed so Jackson can deserialize DTO records from their constructor
+    // parameter names alone (no extra @JsonCreator boilerplate needed).
+    options.compilerArgs.add("-parameters")
 }
 
 tasks.test {

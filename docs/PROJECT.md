@@ -24,8 +24,11 @@ cerrada: cuando se cierre, se anota acá.
   tiempo o por uso.
 - **Login y roles** — quién entra y qué puede hacer.
 
-Hoy no hay nada de esto implementado: los dos repos son esqueletos que se hablan
-por un endpoint de health.
+Implementado hoy: **Inspecciones** (DVIR pre/post-trip) y **Defectos** (nacen de
+una respuesta de checklist), vía CAM-11. Ver `docs/STATE.md` para el detalle y
+`docs/api/openapi.yaml` para el contrato. El resto del dominio (flota más allá
+del listado, órdenes de trabajo, mantenimiento preventivo, login/roles) sigue
+sin construir.
 
 ## Arquitectura
 
@@ -41,25 +44,41 @@ Se comunican por REST sobre `http://localhost:8080`. El frontend toma esa URL de
 
 ## Decisiones y por qué
 
-**Backend sin frameworks.** `com.sun.net.httpserver.HttpServer` del JDK y JDBC
-pelado, sin Spring ni ORM. Es una decisión del equipo: en un TIP se aprende más
-viendo cómo funciona un servidor HTTP y una query que aprendiendo a configurar
-un framework. Costo aceptado: más código repetido (parseo de rutas, armado de
-JSON, manejo de conexiones). Si en algún momento ese costo supera al beneficio,
-se revisa acá y se anota el cambio con fecha.
+**Backend con Spring Boot, desde 2026-08-31.** Reemplaza la decisión anterior
+("sin frameworks", ver más abajo el porqué original). Guido y Tomás venían
+trabajando cada uno en su propio stack (`HttpServer`/JDBC a mano en un repo,
+Spring Boot en el otro) y habían hablado de converger — Tomás migró primero su
+parte (CAM-11, PR
+[`fleet-maintenance#2`](https://github.com/Tomas-Neira-Guitera/fleet-maintenance/pull/2))
+y la mergeó a `develop` antes de que se terminara de decidir formalmente entre
+los dos. Guido confirmó adoptar ese stack como el del equipo y se hizo el merge
+de `develop` a `feature/guido`, descartando la implementación vieja
+(`HttpServer`/JDBC/JSON a mano) por completo. Costo aceptado: se pierde el
+valor pedagógico original de escribir el servidor HTTP a mano; a cambio, todo
+el equipo trabaja sobre el mismo stack sin tener que mantener dos arquitecturas
+en paralelo.
 
-**JSON armado a mano.** Corolario de lo anterior. Sin Jackson ni Gson. Se
-revisará cuando haya suficientes endpoints con payloads anidados como para que
-el `String.format` sea un peligro real.
+**Backend sin frameworks — decisión original, revertida el 2026-08-31 (ver
+arriba).** `com.sun.net.httpserver.HttpServer` del JDK y JDBC pelado, sin
+Spring ni ORM. Fue una decisión del equipo: en un TIP se aprende más viendo
+cómo funciona un servidor HTTP y una query que aprendiendo a configurar un
+framework. Se mantiene acá como registro histórico de por qué el proyecto
+empezó así.
 
-**Arquitectura en capas en el backend (`controller`/`model`/`dao`), desde
-2026-08-28.** Reemplaza la decisión anterior de "un handler por endpoint en
-`Main.java`, se separa cuando duela". Se cambió a pedido de Guido, antes de
-que doliera de verdad (solo había dos endpoints) — el criterio pasó a ser
-mantener la misma estructura desde el principio en vez de refactorizar más
-adelante. El molde queda anotado en `AGENTS.md` → "Estructura hoy". Costo
-aceptado: más archivos por endpoint nuevo (modelo, DAO si aplica, controller)
-en vez de un solo método en `Main.java`.
+**JSON vía Jackson, desde 2026-08-31.** Corolario de la migración a Spring
+Boot — reemplaza el JSON armado a mano con `String.format`. Los DTOs son
+`record`s de Java; Jackson los deserializa desde el JSON de entrada usando los
+nombres de los parámetros del constructor (compilador con `-parameters`, sin
+`@JsonCreator` manual).
+
+**Arquitectura en capas en el backend, desde 2026-08-28 — vigente, con capas
+nuevas desde 2026-08-31.** Arrancó como `controller`/`model`/`dao` (reemplazando
+"un handler por endpoint en `Main.java`") a pedido de Guido, antes de que
+doliera de verdad. Con la migración a Spring Boot se suman `service`,
+`repository`, `dto`, `mapper` y `exception` — las capas que trae Tomás de CAM-11.
+El criterio de fondo no cambió: mantener la misma estructura desde el principio
+en vez de refactorizar más adelante. El molde queda anotado en `AGENTS.md` →
+"Estructura hoy".
 
 **Repos separados.** Se despliegan y evolucionan por separado, y el equipo puede
 trabajar en uno sin tocar el otro.
@@ -105,7 +124,11 @@ que se repite idéntico muchas veces, ahí se evalúa convertirla.
 
 ## Convenciones
 
-- Java: paquete `org.example`, un handler por endpoint en `Main.java` por ahora.
+- Java: paquete `org.example`, package-by-layer (ver `AGENTS.md`).
 - Frontend: Oxlint como linter, TypeScript estricto vía `tsc -b` en el build.
 - Sin CI/CD todavía. Sin convención de nombres de commit todavía.
-- Rama única `main` en los dos repos. Sin PRs por ahora.
+- **Ramas y PRs, desde 2026-08-31.** Ya no es rama única sin PRs: hay `main`,
+  `develop` y ramas de feature (`feature/guido`, `feature/CAM-11-dvir-checklist`)
+  en los dos repos, con PRs de feature branches hacia `develop`/`main` en
+  GitHub. El flujo exacto (¿todo pasa por `develop`? ¿quién aprueba?) todavía no
+  está escrito en ningún lado — anotado como decisión abierta en `STATE.md`.

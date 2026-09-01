@@ -1,0 +1,7 @@
+# Copiar a application-local.yml (gitignored, junto a este archivo) y
+# completar la password de tu usuario local de Postgres.
+spring:
+  datasource:
+    username: postgres
+    password: tu_password
+    # url: jdbc:postgresql://localhost:5432/TIP

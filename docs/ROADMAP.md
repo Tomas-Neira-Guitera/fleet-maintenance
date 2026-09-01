@@ -55,9 +55,13 @@ los demás (handler, acceso a datos, pantalla, manejo de errores).
 
 ## Hito 4 — Inspecciones y defectos
 
-- [ ] Modelo y endpoints de inspecciones.
-- [ ] Defectos como resultado de una inspección.
-- [ ] Pantallas de carga y consulta.
+- [x] Modelo y endpoints de inspecciones — CAM-11, ver `docs/api/openapi.yaml`.
+- [x] Defectos como resultado de una inspección — `GET /api/defects`.
+- [ ] Pantalla de carga de inspección en el frontend (`InspectionFlow.tsx` ya
+      existe; falta conectarla a la API real en vez de la capa mock).
+- [ ] Pantalla de consulta/listado de defectos en el frontend — la vieja
+      (`DefectosList.tsx`, CAM-13) se descartó en el merge del 2026-08-31 porque
+      apuntaba al contrato viejo; hay que rehacerla contra `GET /api/defects`.
 
 ## Hito 5 — Órdenes de trabajo
 
@@ -79,7 +83,9 @@ los demás (handler, acceso a datos, pantalla, manejo de errores).
 - **Sin CI/CD.** Cuando haya tests, un workflow que corra `./gradlew build` y
   `npm run build` en cada push.
 - ~~**`Main.java` va a crecer demasiado.**~~ Resuelto el 2026-08-28: se separó
-  en capas (`controller`/`model`/`dao`), ver `PROJECT.md`.
-- **JSON a mano.** Ver `PROJECT.md` para el criterio de cuándo revisarlo.
-- **Contrato en markdown.** Ver `API.md` para los tres disparadores de migración
-  a OpenAPI.
+  en capas (`controller`/`model`/`dao`), y esas capas se sumaron a Spring Boot
+  el 2026-08-31 (ya no hay `Main.java`, ver `PROJECT.md`).
+- ~~**JSON a mano.**~~ Resuelto el 2026-08-31: Jackson vía Spring MVC.
+- **Contrato en markdown vs. OpenAPI, conviven los dos.** `API.md` para lo
+  viejo/pendiente, `docs/api/openapi.yaml` para CAM-11. Ver `API.md` para el
+  detalle y los disparadores de migración originales.

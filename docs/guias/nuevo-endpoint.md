@@ -16,20 +16,25 @@ transversales (forma del error, paginación, auth) que conviene cerrar ahora.
 
 ## 2. Backend (`TIP - Backend`)
 
-Sigue la arquitectura en capas de `AGENTS.md` → "Estructura hoy":
+Sigue la arquitectura en capas de `AGENTS.md` → "Estructura hoy" (actualizada
+tras la migración a Spring Boot del 2026-08-31):
 
-1. **Modelo** (`model/`): una clase con los campos del `API.md` y un
-   `toJson()` propio, usando `Json.escape()` de `util/` para lo que venga de
-   afuera.
-2. **DAO** (`dao/`), si hay acceso a datos: consultá con `PreparedStatement`
-   dentro de un try-with-resources dentro de `DatabaseConnection.getConnection()`,
-   nunca concatenando valores. Devolvé instancias del modelo, no `ResultSet`
-   crudo.
-3. **Controller** (`controller/`): arma la respuesta (llama al DAO, arma el
-   status code) y la manda con `HttpResponses.sendJson()`.
-4. Registralo en `Main.main()`:
-   `server.createContext("/api/loquesea", LoQueSeaController::handle);`
-5. Probalo con curl o Postman antes de tocar el frontend:
+1. **Entidad** (`entity/`), si hace falta tabla nueva: clase `@Entity` con
+   `@Id`/`@GeneratedValue` y las columnas.
+2. **Repository** (`repository/`): interfaz que extiende `JpaRepository` (o
+   `CrudRepository`). Spring Data genera la implementación — no se escribe SQL
+   a mano salvo que haga falta un `@Query` explícito.
+3. **DTOs** (`dto/`): `record`s de request/response con los campos de
+   `API.md`/`openapi.yaml`. No exponer la entidad JPA directamente.
+4. **Mapper** (`mapper/`): función entidad ↔ DTO.
+5. **Service** (`service/`): la lógica de negocio — llama al repository,
+   aplica reglas, lanza excepciones de dominio (`exception/`) si algo no
+   cierra.
+6. **Controller** (`controller/`): `@RestController` con `@RequestMapping`
+   (ruta plana, sin `/api` — el prefijo lo pone `server.servlet.context-path`).
+   Delega todo al service, no pone lógica acá.
+7. No hace falta "registrar" nada a mano: Spring detecta el `@RestController`
+   solo. Probalo con curl o Postman antes de tocar el frontend:
    ```bash
    curl -i http://localhost:8080/api/loquesea
    ```
