@@ -57,11 +57,13 @@ los demás (handler, acceso a datos, pantalla, manejo de errores).
 
 - [x] Modelo y endpoints de inspecciones — CAM-11, ver `docs/api/openapi.yaml`.
 - [x] Defectos como resultado de una inspección — `GET /api/defects`.
-- [ ] Pantalla de carga de inspección en el frontend (`InspectionFlow.tsx` ya
-      existe; falta conectarla a la API real en vez de la capa mock).
-- [ ] Pantalla de consulta/listado de defectos en el frontend — la vieja
-      (`DefectosList.tsx`, CAM-13) se descartó en el merge del 2026-08-31 porque
-      apuntaba al contrato viejo; hay que rehacerla contra `GET /api/defects`.
+- [x] Pantalla de carga de inspección en el frontend — `InspectionFlow.tsx`,
+      contra la API real (sin mocks).
+- [x] Pantalla de consulta/listado de defectos en el frontend —
+      `DefectsList.tsx`, reemplaza a la vieja `DefectosList.tsx` (CAM-13,
+      descartada en el merge del 2026-08-31 por apuntar al contrato viejo).
+      Agregada una navegación simple de tabs (Flota/Defectos) en `App.tsx` —
+      todavía sin router, ver decisión abierta en `STATE.md`.
 
 ## Hito 5 — Órdenes de trabajo
 

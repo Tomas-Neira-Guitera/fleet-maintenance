@@ -1,83 +1,115 @@
 # Estado — FleetGuard
 
-Última actualización: **2026-08-29**
-Se escribe con `/cierre`, siempre con confirmación de Guido. Procedimiento en
-`guias/sesiones.md`.
+Última actualización: **2026-08-31**
+Se escribe con `/cierre`, normalmente con confirmación de Guido. Esta vez
+Guido pidió explícitamente que se actualizara la documentación en el momento,
+como parte del propio trabajo de integración — no se esperó al cierre de
+sesión para redactarla.
 
 ---
 
 ## Dónde estamos
 
-CAM-13 cerrada de punta a punta: el listado de defectos ahora se ve en el
-frontend (`http://localhost:5173`) con los tres estados (cargando/ok/error),
-consumiendo `GET /api/defectos` tal como está documentado en `API.md`. De
-paso se destapó y arregló un bug de CORS que bloqueaba **toda** comunicación
-frontend→backend (no solo defectos, también `/api/health`) — probablemente
-estaba ahí desde el principio del proyecto, recién se notó al conectar el
-primer fetch real desde el navegador.
+Convergencia de stack con Tomás: él había migrado su parte a Spring Boot
+(CAM-11, PR
+[`fleet-maintenance#2`](https://github.com/Tomas-Neira-Guitera/fleet-maintenance/pull/2))
+y ya la mergeó a `develop` en los dos repos antes de que se terminara de
+hablar la decisión entre los dos. Guido confirmó adoptar ese stack, así que
+esta sesión se usó para mergear `develop` → `feature/guido` en backend y
+frontend, adoptar el modelo de datos de defectos de Tomás (se descarta el
+propio de CAM-13), y dejar la documentación al día con el cambio de stack.
+Guido pidió después específicamente cubrir el hueco de UI que dejaba esa
+adopción: se construyó `DefectsList.tsx`, la pantalla de listado de defectos
+contra `GET /api/defects`, con una navegación simple de tabs (Flota/Defectos)
+en `App.tsx`. Verificado de punta a punta con datos reales: se cargó
+`docs/db/seed-vehicles.sql`, se completó una inspección real desde la UI
+(`AB123CD`, defecto no bloqueante en "Neumáticos") y el defecto generado por
+el backend apareció correctamente en la pantalla nueva — patente, fecha y tag
+de gravedad.
 
 ## En qué quedé
 
-- **Backend** (`41c2656` en `origin/feature/guido`): `HttpResponses.sendJson`
-  agrega `Access-Control-Allow-Origin: *` a toda respuesta, documentado en
-  `API.md`. Nuevo `.claude/launch.json` para levantar el preview del
-  frontend desde Claude Code.
-- **Frontend** (`71cb44c` en `origin/feature/guido`): componente nuevo
-  `DefectosList.tsx` + `DefectosList.css`, integrado en `App.tsx`. Primer
-  paso real del sistema de diseño "Cuidado preventivo" que pasó Guido
-  (paleta cálida `#F6F2EA`/salvia/ámbar/terracota, tipografías Space
-  Grotesk + Inter + IBM Plex Mono vía Google Fonts) aplicado como variables
-  CSS centralizadas en `index.css`, pensado para ser barato de ajustar
-  cuando se unifique con el diseño del compañero de equipo.
-- Revisado por el subagente `revisor` en una pasada: sin hallazgos
-  bloqueantes. Único señalamiento (documentar el header CORS en `API.md`)
-  ya aplicado.
-- Probado a mano en los dos lados: los tres estados del componente, headers
-  de CORS, fuentes cargando correctamente — confirmado con automatización
-  de navegador de mi lado, y repetido por Guido en su propio entorno.
-- **Gotcha resuelto de la sesión**: un proceso Java quedó corriendo en el
-  puerto 8080 después de las pruebas y rompía el "Run" desde IntelliJ
-  (`BUILD FAILED`, exit value 1, sin pista clara de la causa real). Ver
-  Callejones sin salida.
+- **Backend** (`d7e9dd0` en `feature/guido`, commit de merge — **sin
+  pushear**): adoptado Spring Boot 3.3.4 completo (Spring MVC + Spring Data
+  JPA). Se descartó toda la arquitectura vieja (`Main.java`,
+  `HttpServer`/JDBC, `HealthController`, `DefectoController`/`DefectoDao`,
+  JSON a mano, `sql/schema.sql`, `db.properties`) porque sobrevivía el merge
+  sin conflicto (nunca se tocó desde el ancestro común de las dos ramas) y
+  quedaba duplicada junto a los equivalentes en Spring Boot. `GET
+  /api/defectos` (contrato en español, tabla independiente) queda
+  reemplazado por `GET /api/defects` de Tomás (inglés, atado 1 a 1 a una
+  respuesta de inspección DVIR — ver `docs/API.md`). `GET /api/health` no
+  tiene equivalente todavía en Spring Boot.
+  Documentación actualizada en el mismo cambio: `AGENTS.md`, `PROJECT.md`
+  (la reversión de "sin frameworks" queda anotada con fecha y motivo),
+  `API.md` (ahora apunta a `docs/api/openapi.yaml` como fuente principal
+  para CAM-11), `ROADMAP.md`, `SETUP.md` y `guias/nuevo-endpoint.md`.
+- **Frontend** (`d7fa2ee` en `feature/guido`, commit de merge — **sin
+  pushear**): adoptada la UI de CAM-11 de Tomás (`VehicleList` →
+  `InspectionFlow`, servicios reales sin mocks). Se descartó
+  `DefectosList.tsx`/`.css` (CAM-13) porque apuntaba al contrato viejo. La
+  paleta "Cuidado preventivo" de Guido **no se perdió**: Tomás ya la había
+  portado a `src/styles/tokens.css` con los mismos valores, solo renombró
+  las variables. Resueltos a mano los conflictos de `App.tsx`/`App.css`/
+  `index.css` (a favor de la versión de Tomás) y un `<link>` de Google Fonts
+  duplicado en `index.html`. `AGENTS.md` actualizado.
+- **Frontend, segundo commit** (pendiente de crear al cierre de esta sesión):
+  pantalla nueva `DefectsList.tsx` + `services/defectsService.ts` + tipo
+  `DefectSummary` en `types/domain.ts`, contra `GET /api/defects`. `App.tsx`
+  suma una navegación de tabs (Flota/Defectos) — sigue sin router, es un
+  `useState` simple como el resto de la navegación de CAM-11. Estilos nuevos
+  en `App.css` (`.top-nav`, `.defect-summary-item__info/__meta`,
+  `.photo-link`) reusando los tokens existentes.
+- Verificado con build + test en los dos repos (`./gradlew build`,
+  `npm run build`, `npm run lint`, todo verde) y con los dos servidores
+  levantados de verdad y probados desde el navegador, incluyendo un flujo de
+  inspección real de punta a punta (no solo listas vacías).
+- **Gotcha nuevo de la sesión**: parar el backend con `TaskStop` sobre la
+  tarea de `./gradlew bootRun` no basta — Gradle forkea la JVM de Spring
+  Boot en un proceso hijo que sigue escuchando en el puerto 8080 después de
+  que la tarea "termina". Se soluciona igual que la vez anterior:
+  `netstat -ano | grep 8080` y `taskkill /PID <pid> /F` sobre el PID real de
+  Spring Boot (mismo PID que loguea `Started FleetGuardApplication`).
 - Pendiente sin resolver: Tomás todavía no revocó el PAT de GitHub que tenía
   embebido en el remote del backend.
-- `.idea/misc.xml` sigue modificado sin commitear en el backend, tres
-  sesiones seguidas — no se tocó a propósito, no está claro qué lo cambia
-  (¿el IDE al releer el toolchain de Java?). Vale la pena revisarlo en algún
-  momento.
+- `.idea/misc.xml`: el cambio local de siempre (JDK_19 → JDK_21) volvió a
+  aparecer y se dejó en un `git stash` sin aplicar (`wip antes de merge de
+  develop`) para no mezclarlo con el merge — sigue sin soltarse, Guido puede
+  hacer `git stash drop` si no lo necesita.
 
 ## Qué sigue
 
-No quedó decidido explícitamente cuál es el próximo paso — quedan dos
-caminos abiertos, a elegir la próxima sesión:
-
-- **Seguir el backlog de Jira** (épica
-  [CAM-7](https://fleet-maintenance.atlassian.net/browse/CAM-7)): candidatas
-  son [CAM-12](https://fleet-maintenance.atlassian.net/browse/CAM-12)
-  (reporte de defectos con foto) o
-  [CAM-14](https://fleet-maintenance.atlassian.net/browse/CAM-14) (crear
-  orden de trabajo desde un defecto).
-- **Frontend**: si se arma un layout de varias pantallas (el dashboard de
-  referencia que mostró Guido, con sidebar y navegación), hace falta elegir
-  un router antes — no hay ninguno instalado todavía. Es una decisión a
-  proponer, no a instalar de pasada (`AGENTS.md`).
+- **Pushear y abrir PR.** El merge quedó local en `feature/guido` en los dos
+  repos — falta `git push` y abrir el PR de `feature/guido` → `develop` en
+  cada uno, que era el objetivo original de esta sesión. Pendiente de que
+  Guido revise el resultado primero.
+- **Consolidar `API.md` con `docs/api/openapi.yaml`.** Hoy conviven las dos
+  fuentes de contrato; decidir si `API.md` pasa a ser solo índice o si se
+  vuelve a todo a un único lugar.
+- **Evaluar Spring Actuator** como reemplazo de `GET /api/health`.
+- **Flujo de ramas/PRs formal.** Ya no es rama única sin PRs (hay `main`,
+  `develop`, `feature/*` con PRs reales) pero no está escrito en ningún lado
+  cómo funciona el flujo completo (¿todo pasa por `develop`? ¿quién
+  aprueba?) — conviene hablarlo con Tomás y anotarlo en `PROJECT.md`.
 
 ## Decisiones abiertas
 
-- **Forma del error de la API.** Sigue sin cerrar: conviven
-  `{status, error}` (`/api/health`) y `{error}` (`/api/defectos`). Bloquea:
-  unificarlo antes de que un tercer endpoint copie un estilo distinto.
-- **Paginación.** Sigue abierta, fuera de alcance de CAM-13.
-- **Autenticación.** Sigue abierta. Mientras no exista, las respuestas
-  llevan `Access-Control-Allow-Origin: *` sin restricción — aceptable hoy
-  (sin cookies, sin datos sensibles), pero hay que acotarlo el día que se
-  agregue auth con cookies (anotado en `API.md`).
-- **Router del frontend.** Nueva. Ninguno elegido todavía; hace falta antes
-  de armar navegación multi-pantalla. Candidato natural: react-router, pero
-  es una decisión a proponer formalmente.
-- **Modelo de datos / versionado de schema.** Sin cambios respecto a la
-  sesión anterior — `sql/schema.sql` como convención informal, corrida a
-  mano.
+- **Forma del error de la API.** CAM-11 ya usa
+  `{ error: "<CÓDIGO>", message: "<texto>" }` de hecho (ver
+  `docs/api/CAM-11-dvir-contract.md` sección 6) pero falta confirmarla como
+  convención para todo el backend.
+- **Paginación.** Sigue abierta.
+- **Autenticación.** Sigue abierta. CAM-11 resuelve la identidad con un
+  header temporal `X-Driver-Id` (`auth.HeaderDriverResolver`) hasta que
+  exista login real. CORS ya no es `*` — está restringido por config a
+  `localhost:5173`/`127.0.0.1:5173`.
+- **Router del frontend.** Sigue sin elegirse; no hizo falta para CAM-11
+  porque la navegación es un `useState` simple (`Route`) en `App.tsx`.
+- **Modelo de datos / versionado de schema.** Cambió de convención: ya no es
+  `sql/schema.sql` a mano, ahora es JPA con `ddl-auto: update`. Sin
+  Flyway/Liquibase todavía — anotado como próximo paso en el README del
+  backend.
+- **Consolidación de `API.md` y `openapi.yaml`.** Nueva, ver "Qué sigue".
 
 ## Callejones sin salida
 
@@ -116,6 +148,13 @@ Lo que se probó y no funcionó, con el motivo. Se agrega, no se reemplaza.
   `netstat -ano | grep 8080` (compara el PID contra el que arranca
   IntelliJ) y se soluciona matando el proceso viejo. Vale la pena recordar
   cerrar los procesos de background al terminar una sesión de prueba.
+- **2026-08-31** — Repetición del problema anterior, con una vuelta de
+  rosca: parar la tarea en background de `./gradlew bootRun` (con la
+  herramienta de tareas de Claude Code) no libera el puerto 8080, porque
+  Gradle forkea la JVM de Spring Boot en un proceso hijo separado que
+  sigue vivo. Hace falta matar ese PID específico
+  (`netstat -ano | grep 8080` → `taskkill /PID <pid> /F`), no alcanza con
+  parar la tarea que lo lanzó.
 
 ## Historial
 
@@ -149,3 +188,19 @@ Una línea por sesión.
   bloqueaba todo fetch del frontend. Revisado por el subagente `revisor` sin
   hallazgos bloqueantes. Commiteado y pusheado en los dos repos a
   `origin/feature/guido` (backend `41c2656`, frontend `71cb44c`).
+- **2026-08-31** — Confirmado (leyendo el PR de GitHub) que Tomás había
+  migrado su parte a Spring Boot con arquitectura en capas (CAM-11) y ya
+  mergeó ese trabajo a `develop` en los dos repos. Guido confirmó adoptar
+  ese stack como el del equipo, se mergeó `develop` → `feature/guido` en
+  backend y frontend (se descartó la arquitectura vieja y el contrato de
+  `/api/defectos`, se adoptó `GET /api/defects` de Tomás), y se actualizó
+  toda la documentación (`AGENTS.md`, `PROJECT.md`, `API.md`, `ROADMAP.md`,
+  `SETUP.md`, guías) para reflejar el cambio de stack. A pedido de Guido, se
+  construyó además la pantalla de listado de defectos que quedaba pendiente
+  (`DefectsList.tsx` contra `GET /api/defects`, con nav de tabs en `App.tsx`)
+  para no perder del todo el trabajo propio de CAM-13 en la integración.
+  Verificado de punta a punta con datos reales (vehículos seedeados,
+  inspección completa desde la UI, defecto resultante visible en la lista
+  nueva). Commiteado en local en los dos repos (backend `d7e9dd0`, frontend
+  `d7fa2ee` + un segundo commit con la pantalla de defectos) — **falta
+  pushear y abrir el PR a `develop`**, pendiente de revisión de Guido.
