@@ -1,96 +1,78 @@
 # Estado — FleetGuard
 
-Última actualización: **2026-08-31**
-Se escribe con `/cierre`, normalmente con confirmación de Guido. Esta vez
-Guido pidió explícitamente que se actualizara la documentación en el momento,
-como parte del propio trabajo de integración — no se esperó al cierre de
-sesión para redactarla.
+Última actualización: **2026-09-01**
+Se escribe con `/cierre`, siempre con confirmación de Guido. Procedimiento en
+`guias/sesiones.md`.
 
 ---
 
 ## Dónde estamos
 
-Convergencia de stack con Tomás: él había migrado su parte a Spring Boot
-(CAM-11, PR
-[`fleet-maintenance#2`](https://github.com/Tomas-Neira-Guitera/fleet-maintenance/pull/2))
-y ya la mergeó a `develop` en los dos repos antes de que se terminara de
-hablar la decisión entre los dos. Guido confirmó adoptar ese stack, así que
-esta sesión se usó para mergear `develop` → `feature/guido` en backend y
-frontend, adoptar el modelo de datos de defectos de Tomás (se descarta el
-propio de CAM-13), y dejar la documentación al día con el cambio de stack.
-Guido pidió después específicamente cubrir el hueco de UI que dejaba esa
-adopción: se construyó `DefectsList.tsx`, la pantalla de listado de defectos
-contra `GET /api/defects`, con una navegación simple de tabs (Flota/Defectos)
-en `App.tsx`. Verificado de punta a punta con datos reales: se cargó
-`docs/db/seed-vehicles.sql`, se completó una inspección real desde la UI
-(`AB123CD`, defecto no bloqueante en "Neumáticos") y el defecto generado por
-el backend apareció correctamente en la pantalla nueva — patente, fecha y tag
-de gravedad.
+Terminada la convergencia con el stack de Tomás: los merges de `develop` a
+`feature/guido` quedaron committeados y verificados en los dos repos, con la
+pantalla de defectos reconstruida contra el contrato nuevo. Guido probó todo
+de punta a punta por su cuenta (levantó el backend a mano, entendió los logs
+de Spring Boot). Además quedó documentada una visión de largo plazo para la
+vista de administrador (mock real, commiteado en el repo) y se revisó el
+backlog de Jira para arrancar la próxima sesión por ahí.
 
 ## En qué quedé
 
-- **Backend** (`d7e9dd0` en `feature/guido`, commit de merge — **sin
-  pushear**): adoptado Spring Boot 3.3.4 completo (Spring MVC + Spring Data
-  JPA). Se descartó toda la arquitectura vieja (`Main.java`,
-  `HttpServer`/JDBC, `HealthController`, `DefectoController`/`DefectoDao`,
-  JSON a mano, `sql/schema.sql`, `db.properties`) porque sobrevivía el merge
-  sin conflicto (nunca se tocó desde el ancestro común de las dos ramas) y
-  quedaba duplicada junto a los equivalentes en Spring Boot. `GET
-  /api/defectos` (contrato en español, tabla independiente) queda
-  reemplazado por `GET /api/defects` de Tomás (inglés, atado 1 a 1 a una
-  respuesta de inspección DVIR — ver `docs/API.md`). `GET /api/health` no
-  tiene equivalente todavía en Spring Boot.
-  Documentación actualizada en el mismo cambio: `AGENTS.md`, `PROJECT.md`
-  (la reversión de "sin frameworks" queda anotada con fecha y motivo),
-  `API.md` (ahora apunta a `docs/api/openapi.yaml` como fuente principal
-  para CAM-11), `ROADMAP.md`, `SETUP.md` y `guias/nuevo-endpoint.md`.
-- **Frontend** (`d7fa2ee` en `feature/guido`, commit de merge — **sin
-  pushear**): adoptada la UI de CAM-11 de Tomás (`VehicleList` →
-  `InspectionFlow`, servicios reales sin mocks). Se descartó
-  `DefectosList.tsx`/`.css` (CAM-13) porque apuntaba al contrato viejo. La
-  paleta "Cuidado preventivo" de Guido **no se perdió**: Tomás ya la había
-  portado a `src/styles/tokens.css` con los mismos valores, solo renombró
-  las variables. Resueltos a mano los conflictos de `App.tsx`/`App.css`/
-  `index.css` (a favor de la versión de Tomás) y un `<link>` de Google Fonts
-  duplicado en `index.html`. `AGENTS.md` actualizado.
-- **Frontend, segundo commit** (pendiente de crear al cierre de esta sesión):
-  pantalla nueva `DefectsList.tsx` + `services/defectsService.ts` + tipo
-  `DefectSummary` en `types/domain.ts`, contra `GET /api/defects`. `App.tsx`
-  suma una navegación de tabs (Flota/Defectos) — sigue sin router, es un
-  `useState` simple como el resto de la navegación de CAM-11. Estilos nuevos
-  en `App.css` (`.top-nav`, `.defect-summary-item__info/__meta`,
-  `.photo-link`) reusando los tokens existentes.
-- Verificado con build + test en los dos repos (`./gradlew build`,
-  `npm run build`, `npm run lint`, todo verde) y con los dos servidores
-  levantados de verdad y probados desde el navegador, incluyendo un flujo de
-  inspección real de punta a punta (no solo listas vacías).
-- **Gotcha nuevo de la sesión**: parar el backend con `TaskStop` sobre la
-  tarea de `./gradlew bootRun` no basta — Gradle forkea la JVM de Spring
-  Boot en un proceso hijo que sigue escuchando en el puerto 8080 después de
-  que la tarea "termina". Se soluciona igual que la vez anterior:
-  `netstat -ano | grep 8080` y `taskkill /PID <pid> /F` sobre el PID real de
-  Spring Boot (mismo PID que loguea `Started FleetGuardApplication`).
-- Pendiente sin resolver: Tomás todavía no revocó el PAT de GitHub que tenía
-  embebido en el remote del backend.
-- `.idea/misc.xml`: el cambio local de siempre (JDK_19 → JDK_21) volvió a
-  aparecer y se dejó en un `git stash` sin aplicar (`wip antes de merge de
-  develop`) para no mezclarlo con el merge — sigue sin soltarse, Guido puede
-  hacer `git stash drop` si no lo necesita.
+- **Backend** (`d7e9dd0` merge, `4996fd0` docs, `c13f320` mock — todos en
+  `feature/guido`, **sin pushear**): adoptado Spring Boot 3.3.4 completo,
+  descartada la arquitectura vieja (`HttpServer`/JDBC/JSON a mano) y el
+  contrato `GET /api/defectos`, reemplazado por `GET /api/defects` de Tomás.
+  Documentación (`AGENTS.md`, `PROJECT.md`, `API.md`, `ROADMAP.md`,
+  `SETUP.md`, guías) actualizada para reflejar el cambio de stack. Agregado
+  `docs/design/admin-dashboard-mock.png` + sección "Visión de referencia —
+  vista admin" en `ROADMAP.md`.
+- **Frontend** (`d7fa2ee` merge, `638d31f` pantalla de defectos — en
+  `feature/guido`, **sin pushear**): adoptada la UI de CAM-11 de Tomás,
+  descartado `DefectosList.tsx` viejo, construida `DefectsList.tsx` nueva
+  contra `GET /api/defects` con nav de tabs (Flota/Defectos) en `App.tsx`. La
+  paleta "Cuidado preventivo" se conserva vía `styles/tokens.css`.
+- Verificado con build + test en los dos repos y con un flujo real de punta a
+  punta (vehículos seedeados, inspección completa desde la UI, defecto
+  resultante visible en la lista nueva) — primero por mí, después replicado
+  por Guido corriendo `./gradlew bootRun` en su propia terminal.
+- Revisado el backlog de Jira (board CAM) a pedido de Guido: confirmado que
+  está incompleto como él decía. `CAM-43` (Login) sin descripción ni link al
+  épico de roles (`CAM-10`). `CAM-20` (US: Dashboard de estado de flota, bajo
+  el épico `CAM-9`) sí tiene historia de usuario y un mock adjunto — probable
+  el mismo que compartió acá. `CAM-37`/`38`/`39`/`40`/`44` son la misma idea
+  de dashboard trozada en cards sueltas, casi sin descripción y sin linkear
+  a `CAM-20` (salvo `CAM-44`).
+- El merge trajo tests nuevos de Tomás (`ChecklistCatalogTest`,
+  `DefectServiceTest`, `InspectionValidatorTest`) — cubren catálogo de
+  checklist, `DefectService` y `InspectionValidator`. No hay tests todavía de
+  ningún controller, de `VehicleService`/`PhotoService`, de los mappers ni de
+  `GlobalExceptionHandler`.
+- Gotcha nuevo, sin causa raíz confirmada: después de matar por PID el
+  proceso de Vite en `:5173`, apareció otro proceso nuevo escuchando ahí sin
+  que se corriera ningún comando que lo iniciara. Ver Callejones.
+- Sigue pendiente: Tomás no revocó el PAT de GitHub embebido en el remote
+  viejo. `.idea/misc.xml` volvió a aparecer modificado (JDK toolchain drift
+  de siempre) — no se toca.
 
 ## Qué sigue
 
-- **Pushear y abrir PR.** El merge quedó local en `feature/guido` en los dos
-  repos — falta `git push` y abrir el PR de `feature/guido` → `develop` en
-  cada uno, que era el objetivo original de esta sesión. Pendiente de que
-  Guido revise el resultado primero.
-- **Consolidar `API.md` con `docs/api/openapi.yaml`.** Hoy conviven las dos
-  fuentes de contrato; decidir si `API.md` pasa a ser solo índice o si se
-  vuelve a todo a un único lugar.
-- **Evaluar Spring Actuator** como reemplazo de `GET /api/health`.
-- **Flujo de ramas/PRs formal.** Ya no es rama única sin PRs (hay `main`,
-  `develop`, `feature/*` con PRs reales) pero no está escrito en ningún lado
-  cómo funciona el flujo completo (¿todo pasa por `develop`? ¿quién
-  aprueba?) — conviene hablarlo con Tomás y anotarlo en `PROJECT.md`.
+- **Punto de partida acordado para la próxima sesión: refinar el backlog de
+  Jira antes de escribir código.** Consolidar `CAM-37`/`38`/`39`/`40`/`44`
+  como subtareas de `CAM-20` (o cerrarlas si son duplicados), y escribir una
+  descripción real para `CAM-43` (Login) apoyándose en la historia de roles
+  de `CAM-23`. Recién después de eso, decidir si se ataca Login o el
+  Dashboard admin primero.
+- **Repasar la cobertura de tests del backend y completar lo que falte.**
+  Hoy solo hay 3 archivos de test (checklist, `DefectService`,
+  `InspectionValidator`), todos heredados del merge de Tomás — nada propio
+  todavía, y nada de controllers, `VehicleService`, `PhotoService`, mappers
+  ni `GlobalExceptionHandler`. Hacer una pasada dedicada la próxima sesión.
+- **Pushear y abrir PR.** Sigue sin hacerse — falta `git push` de
+  `feature/guido` y abrir el PR a `develop` en los dos repos, pendiente de
+  que Guido dé el visto bueno.
+- Consolidar `API.md` con `docs/api/openapi.yaml`.
+- Evaluar Spring Actuator como reemplazo de `GET /api/health`.
+- Flujo de ramas/PRs formal — hablarlo con Tomás y anotarlo en `PROJECT.md`.
 
 ## Decisiones abiertas
 
@@ -103,13 +85,12 @@ de gravedad.
   header temporal `X-Driver-Id` (`auth.HeaderDriverResolver`) hasta que
   exista login real. CORS ya no es `*` — está restringido por config a
   `localhost:5173`/`127.0.0.1:5173`.
-- **Router del frontend.** Sigue sin elegirse; no hizo falta para CAM-11
-  porque la navegación es un `useState` simple (`Route`) en `App.tsx`.
-- **Modelo de datos / versionado de schema.** Cambió de convención: ya no es
-  `sql/schema.sql` a mano, ahora es JPA con `ddl-auto: update`. Sin
-  Flyway/Liquibase todavía — anotado como próximo paso en el README del
-  backend.
-- **Consolidación de `API.md` y `openapi.yaml`.** Nueva, ver "Qué sigue".
+- **Router del frontend.** Sigue sin elegirse, pero ahora con un motivo
+  concreto: la vista admin (sidebar multi-sección) no entra en el `useState`
+  simple actual.
+- **Modelo de datos / versionado de schema.** Sin cambios (JPA `ddl-auto`,
+  sin Flyway).
+- **Consolidación de `API.md` y `openapi.yaml`.** Sin cambios.
 
 ## Callejones sin salida
 
@@ -155,6 +136,13 @@ Lo que se probó y no funcionó, con el motivo. Se agrega, no se reemplaza.
   sigue vivo. Hace falta matar ese PID específico
   (`netstat -ano | grep 8080` → `taskkill /PID <pid> /F`), no alcanza con
   parar la tarea que lo lanzó.
+- **2026-09-01** — Después de matar por PID el proceso de Vite en `:5173`
+  (parado explícitamente), volvió a aparecer un proceso nuevo escuchando en
+  ese puerto sin que se ejecutara ningún comando que lo iniciara. Sospecha
+  sin confirmar: la tarea de background quedó marcada "failed" tras el
+  `taskkill` anterior y algo la reintentó. Se resolvió igual que siempre
+  (`netstat -ano` → `taskkill /PID <pid> /F`). Si vuelve a pasar, vale la
+  pena investigar si hay un auto-retry de tareas fallidas.
 
 ## Historial
 
@@ -194,13 +182,17 @@ Una línea por sesión.
   ese stack como el del equipo, se mergeó `develop` → `feature/guido` en
   backend y frontend (se descartó la arquitectura vieja y el contrato de
   `/api/defectos`, se adoptó `GET /api/defects` de Tomás), y se actualizó
-  toda la documentación (`AGENTS.md`, `PROJECT.md`, `API.md`, `ROADMAP.md`,
-  `SETUP.md`, guías) para reflejar el cambio de stack. A pedido de Guido, se
-  construyó además la pantalla de listado de defectos que quedaba pendiente
-  (`DefectsList.tsx` contra `GET /api/defects`, con nav de tabs en `App.tsx`)
-  para no perder del todo el trabajo propio de CAM-13 en la integración.
-  Verificado de punta a punta con datos reales (vehículos seedeados,
-  inspección completa desde la UI, defecto resultante visible en la lista
-  nueva). Commiteado en local en los dos repos (backend `d7e9dd0`, frontend
-  `d7fa2ee` + un segundo commit con la pantalla de defectos) — **falta
-  pushear y abrir el PR a `develop`**, pendiente de revisión de Guido.
+  toda la documentación para reflejar el cambio de stack. Se construyó la
+  pantalla de listado de defectos que quedaba pendiente (`DefectsList.tsx`),
+  verificada de punta a punta con datos reales. Guido compartió un mock de
+  la vista de administrador (dashboard de escritorio, distinta del flujo
+  mobile del chofer) como norte de largo plazo — commiteado en
+  `docs/design/admin-dashboard-mock.png` y anotado en `ROADMAP.md`. Guido
+  probó el backend por su cuenta, corriendo `./gradlew bootRun` con éxito.
+  Revisado el backlog de Jira: confirmado que varias historias del
+  dashboard admin están fragmentadas y sin refinar (`CAM-37/38/39/40/44`) y
+  que Login (`CAM-43`) no tiene descripción — acordado como punto de
+  partida de la próxima sesión, junto con una revisión de cobertura de
+  tests del backend. Commits en local en los dos repos (backend
+  `d7e9dd0`/`4996fd0`/`c13f320`, frontend `d7fa2ee`/`638d31f`) — **sigue
+  faltando pushear y abrir el PR a `develop`**.
