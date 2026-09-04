@@ -41,8 +41,9 @@ Documentados en detalle en
 | `GET` | `/api/photos/{id}` | Sirve la foto subida |
 | `POST` | `/api/inspections/{vehicleId}` | Envía una inspección pre-trip o post-trip |
 | `GET` | `/api/defects` | Listado de defectos, para mantenimiento ([CAM-13](https://fleet-maintenance.atlassian.net/browse/CAM-13)) |
+| `POST` | `/api/auth/login` | Autentica usuario y contraseña, devuelve un JWT + rol ([CAM-43](https://fleet-maintenance.atlassian.net/browse/CAM-43)) |
 
-Todos (salvo `/api/defects`) requieren, además del `Authorization: Bearer
+Todos (salvo `/api/defects` y `/api/auth/login`) requieren, además del `Authorization: Bearer
 <token>` que pide el contrato (todavía no hay auth real), un header
 **temporal** `X-Driver-Id` que hace de stand-in del chofer — ver
 `auth/DriverResolver` y `docs/api/CAM-11-dvir-contract.md`.
@@ -84,6 +85,49 @@ Sin paginación ni autenticación por ahora.
 
 Implementado en `DefectController` → `DefectService` → `DefectRepository`.
 
+### `POST /api/auth/login` — forma de la petición y la respuesta
+
+Backend de [CAM-43](https://fleet-maintenance.atlassian.net/browse/CAM-43).
+Solo autentica y emite el token — no incluye invitación ni alta de usuarios
+(eso es [CAM-23](https://fleet-maintenance.atlassian.net/browse/CAM-23), a
+futuro). Los usuarios de prueba se cargan a mano con
+`docs/db/seed-users.sql`, no hay pantalla de alta todavía.
+
+**Body**
+```json
+{
+  "username": "admin",
+  "password": "admin123"
+}
+```
+
+**200 OK**
+```json
+{
+  "token": "<JWT firmado, HS256>",
+  "role": "ADMIN"
+}
+```
+
+| Campo | Tipo | Qué es |
+|---|---|---|
+| `token` | string | JWT firmado (HS512, según el largo de `fleetguard.jwt.secret`) con `fleetguard.jwt.secret`, vence a los `fleetguard.jwt.expiration-minutes` (60 min por defecto). Incluye `sub` (id de usuario), `username` y `role` como claims. |
+| `role` | string | enum: `"ADMIN"` \| `"CHOFER"` |
+
+**401 Unauthorized** — usuario inexistente, contraseña incorrecta, o
+credenciales vacías (mismo error para los tres casos, a propósito, para no
+revelar si el usuario existe):
+```json
+{ "error": "INVALID_CREDENTIALS", "message": "Usuario o contraseña incorrectos." }
+```
+
+Todavía no reemplaza al header temporal `X-Driver-Id` de CAM-11 — conviven
+hasta que el frontend (CAM-45) esté migrado.
+
+Implementado en `AuthController` → `AuthService` → `UserRepository`, con
+`JwtService` para emitir el token y `PasswordEncoder` (BCrypt) para verificar
+la contraseña.
+
 ### `GET /api/health` — sin equivalente todavía
 
 El chequeo de conexión a Postgres que existía en el backend viejo
@@ -95,7 +139,6 @@ Spring Actuator (`/actuator/health`) — anotado en `STATE.md`.
 Cada uno de estos se documenta acá **en el mismo cambio** en que se implementa,
 nunca después:
 
-- Login y sesión — `POST /api/auth/login`, forma del token, cómo viaja
 - Flota — alta, baja, edición, ficha completa (más allá del listado de CAM-11)
 - Órdenes de trabajo — abrir, asignar, cerrar
 - Mantenimiento preventivo — planes y vencimientos

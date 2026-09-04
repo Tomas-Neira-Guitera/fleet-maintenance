@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "FleetGuard — CAM-11 DVIR API",
-    "description": "Colección para probar los 3 endpoints del contrato de inspecciones (CAM-11): GET /api/vehicles, POST /api/photos, POST /api/inspections/{vehicleId}. Corresponde a docs/api/openapi.yaml del repo fleet-maintenance.\n\n## Antes de arrancar\n1. Levantá el backend: `./gradlew bootRun` (o `./gradlew run` según quede el script) — por defecto en `http://localhost:8080`.\n2. Todavía no hay endpoint para crear vehículos (fuera de alcance de CAM-11), así que necesitás al menos una fila en la tabla `vehicle` para poder probar. Ejemplo de insert directo en Postgres (ajustá según tus nombres de columna reales):\n   ```sql\n   insert into vehicle (id, plate, brand, model)\n   values (gen_random_uuid(), 'AB123CD', 'Mercedes-Benz', 'Sprinter');\n   ```\n3. Importá también el archivo de entorno `FleetGuard-Local.postman_environment.json` y seleccionalo arriba a la derecha en Postman.\n\n## Orden recomendado (carpeta \"Flujo feliz\")\n1. **Vehicles → Listar vehículos** — guarda automáticamente el primer vehículo encontrado en `vehicleId`/`vehiclePlate`.\n2. **Photos → Subir foto de defecto** — adjuntá cualquier imagen; guarda `photoUrl`/`photoId`.\n3. **Inspections → Pre-trip con defecto bloqueante** (o la de éxito sin defectos) — abre un viaje para `vehicleId`.\n4. **Inspections → Post-trip éxito** — cierra ese viaje.\n\nLas carpetas \"Casos de error\" tienen ejemplos de 409 y 422 para verificar las reglas de validación del contrato.",
+    "description": "Colección para probar los 3 endpoints del contrato de inspecciones (CAM-11): GET /api/vehicles, POST /api/photos, POST /api/inspections/{vehicleId}. Corresponde a docs/api/openapi.yaml del repo fleet-maintenance.\n\n## Antes de arrancar\n1. Levantá el backend: `./gradlew bootRun` (o `./gradlew run` según quede el script) — por defecto en `http://localhost:8080`.\n2. Todavía no hay endpoint para crear vehículos (fuera de alcance de CAM-11), así que necesitás al menos una fila en la tabla `vehicle` para poder probar. Ejemplo de insert directo en Postgres (ajustá según tus nombres de columna reales):\n   ```sql\n   insert into vehicle (id, plate, brand, model)\n   values (gen_random_uuid(), 'AB123CD', 'Mercedes-Benz', 'Sprinter');\n   ```\n3. Importá también el archivo de entorno `FleetGuard-Local.postman_environment.json` y seleccionalo arriba a la derecha en Postman.\n\n## Orden recomendado (carpeta \"Flujo feliz\")\n1. **Vehicles → Listar vehículos** — guarda automáticamente el primer vehículo encontrado en `vehicleId`/`vehiclePlate`.\n2. **Photos → Subir foto de defecto** — adjuntá cualquier imagen; guarda `photoUrl`/`photoId`.\n3. **Inspections → Pre-trip con defecto bloqueante** (o la de éxito sin defectos) — abre un viaje para `vehicleId`.\n4. **Inspections → Post-trip éxito** — cierra ese viaje.\n\nLas carpetas \"Casos de error\" tienen ejemplos de 409 y 422 para verificar las reglas de validación del contrato.\n\n## Auth (CAM-43)\nCorré antes `docs/db/seed-users.sql` contra tu Postgres local (crea `admin`/`admin123` y `chofer`/`chofer123`, ver docs/API.md). Las requests de la carpeta **Auth** guardan el token devuelto en `adminToken`/`choferToken` por si lo necesitás más adelante — hoy ningún otro endpoint lo valida todavía, conviven con `X-Driver-Id` (ver CAM-45).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -11,6 +11,179 @@
     }
   ],
   "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login — admin (200 OK)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "POST /api/auth/login (CAM-43) con el usuario admin sembrado por docs/db/seed-users.sql. Guarda el JWT en la variable de entorno adminToken."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('role = ADMIN', () => body.role === 'ADMIN');",
+                  "pm.test('devuelve un token', () => typeof body.token === 'string' && body.token.length > 0);",
+                  "if (body.token) pm.environment.set('adminToken', body.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login — chofer (200 OK)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"chofer\",\n  \"password\": \"chofer123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "POST /api/auth/login (CAM-43) con el usuario chofer sembrado por docs/db/seed-users.sql. Guarda el JWT en la variable de entorno choferToken."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('role = CHOFER', () => body.role === 'CHOFER');",
+                  "pm.test('devuelve un token', () => typeof body.token === 'string' && body.token.length > 0);",
+                  "if (body.token) pm.environment.set('choferToken', body.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401 — contraseña incorrecta",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"mal\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Usuario admin real, contraseña incorrecta. Debería dar 401 INVALID_CREDENTIALS."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));",
+                  "const body = pm.response.json();",
+                  "pm.test('error = INVALID_CREDENTIALS', () => body.error === 'INVALID_CREDENTIALS');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401 — usuario inexistente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"noexiste\",\n  \"password\": \"x\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Usuario que no existe en la base. Debería dar el mismo 401 INVALID_CREDENTIALS que una contraseña incorrecta -- a propósito, para no revelar si el usuario existe."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));",
+                  "const body = pm.response.json();",
+                  "pm.test('error = INVALID_CREDENTIALS', () => body.error === 'INVALID_CREDENTIALS');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
     {
       "name": "Vehicles",
       "item": [

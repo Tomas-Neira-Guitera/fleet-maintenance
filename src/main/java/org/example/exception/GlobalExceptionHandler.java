@@ -38,6 +38,12 @@ public class GlobalExceptionHandler {
                 .body(new ValidationError("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
     }
 
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ApiError> handleInvalidCredentials(InvalidCredentialsException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(new ApiError("INVALID_CREDENTIALS", ex.getMessage()));
+    }
+
     @ExceptionHandler(MissingDriverHeaderException.class)
     public ResponseEntity<ApiError> handleMissingDriverHeader(MissingDriverHeaderException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
