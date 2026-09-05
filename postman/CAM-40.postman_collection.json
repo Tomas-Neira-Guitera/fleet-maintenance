@@ -1,0 +1,466 @@
+{
+  "info": {
+    "name": "FleetGuard API — CAM-40 (Mantenimiento preventivo)",
+    "description": "Colección para probar los endpoints de CAM-40: catálogo de planes de mantenimiento, asignación de planes a vehículos, registro de completions, estado de flota y carga de kilometraje. Ver docs/api/CAM-40-fleet-status-contract.md y docs/api/openapi.yaml en el repo fleet-maintenance.\n\nFlujo sugerido: correr en orden dentro de cada carpeta. Las requests de creación (POST) guardan automáticamente el id devuelto en variables de colección ({{planId}}, {{assignmentId}}) para encadenar el resto de las requests sin copiar/pegar nada a mano.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "vehicleId", "value": "", "type": "string", "description": "Completar con un id real de GET /api/vehicles (carpeta Utilidades)." },
+    { "key": "planId", "value": "", "type": "string", "description": "Se completa solo al correr 'Crear plan'." },
+    { "key": "assignmentId", "value": "", "type": "string", "description": "Se completa solo al correr 'Asignar plan a vehículo'." }
+  ],
+  "item": [
+    {
+      "name": "Utilidades",
+      "item": [
+        {
+          "name": "Listar vehículos (para copiar un vehicleId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (Array.isArray(body) && body.length > 0) {",
+                  "    pm.collectionVariables.set('vehicleId', body[0].id);",
+                  "    console.log('vehicleId guardado:', body[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles"]
+            },
+            "description": "Endpoint de CAM-11, no de CAM-40 -- se usa solo para conseguir un vehicleId real con el que probar el resto de la colección."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Estado de la flota",
+      "item": [
+        {
+          "name": "GET fleet-status (paginado)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles?view=fleet-status&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles"],
+              "query": [
+                { "key": "view", "value": "fleet-status" },
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            },
+            "description": "GET /api/vehicles?view=fleet-status -- una fila por vehículo con status, healthScore y nextMaintenance ya calculados. Ver contrato sección \"GET /api/vehicles?view=fleet-status\"."
+          }
+        },
+        {
+          "name": "GET fleet-status filtrado por estado (vencido)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles?view=fleet-status&status=vencido",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles"],
+              "query": [
+                { "key": "view", "value": "fleet-status" },
+                { "key": "status", "value": "vencido" }
+              ]
+            },
+            "description": "status acepta al_dia | por_vencer | vencido."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catálogo de planes de mantenimiento",
+      "item": [
+        {
+          "name": "Listar planes activos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans?active=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "maintenance-plans"],
+              "query": [{ "key": "active", "value": "true" }]
+            }
+          }
+        },
+        {
+          "name": "Crear plan (intervalType=km)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('planId', body.id);",
+                  "    console.log('planId guardado:', body.id);",
+                  "}",
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Cambio de aceite\",\n  \"category\": \"motor\",\n  \"intervalType\": \"km\",\n  \"intervalKm\": 10000,\n  \"intervalDays\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "maintenance-plans"]
+            }
+          }
+        },
+        {
+          "name": "Crear plan (intervalType=both)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Correa de distribución\",\n  \"category\": \"motor\",\n  \"intervalType\": \"both\",\n  \"intervalKm\": 60000,\n  \"intervalDays\": 1460\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "maintenance-plans"]
+            }
+          }
+        },
+        {
+          "name": "Crear plan inválido (422 -- intervalType/intervalDays incoherentes)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Plan mal formado\",\n  \"intervalType\": \"km\",\n  \"intervalKm\": null,\n  \"intervalDays\": 30\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "maintenance-plans"]
+            },
+            "description": "intervalType=km exige intervalKm obligatorio y intervalDays en null -- acá vienen al revés. Debería devolver 422 VALIDATION_ERROR con details[] usando 'field'."
+          }
+        },
+        {
+          "name": "Editar plan (PATCH parcial)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"intervalKm\": 12000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans/{{planId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "maintenance-plans", "{{planId}}"]
+            }
+          }
+        },
+        {
+          "name": "Desactivar plan",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans/{{planId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "maintenance-plans", "{{planId}}"]
+            }
+          }
+        },
+        {
+          "name": "Reactivar plan",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans/{{planId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "maintenance-plans", "{{planId}}"]
+            }
+          }
+        },
+        {
+          "name": "Borrar plan (409 si tiene asignaciones)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans/{{planId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "maintenance-plans", "{{planId}}"]
+            },
+            "description": "204 si el plan no tiene ninguna asignación (activa ni inactiva). Si ya lo asignaste a un vehículo en la carpeta siguiente, esto debería dar 409 PLAN_IN_USE -- correlo antes de asignar, o desasigná primero."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Asignaciones vehículo↔plan",
+      "item": [
+        {
+          "name": "Listar asignaciones activas del vehículo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/maintenance-assignments?active=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "maintenance-assignments"],
+              "query": [{ "key": "active", "value": "true" }]
+            }
+          }
+        },
+        {
+          "name": "Asignar plan a vehículo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('assignmentId', body.id);",
+                  "    console.log('assignmentId guardado:', body.id);",
+                  "}",
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"maintenancePlanId\": \"{{planId}}\",\n  \"lastDoneKm\": 72000,\n  \"lastDoneDate\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/maintenance-assignments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "maintenance-assignments"]
+            }
+          }
+        },
+        {
+          "name": "Asignar plan sin lastDone (se siembra con el estado actual)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"maintenancePlanId\": \"{{planId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/maintenance-assignments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "maintenance-assignments"]
+            },
+            "description": "Solo tiene sentido correrla contra un vehículo que todavía no tenga una asignación activa de este plan (si no, 409 DUPLICATE_ACTIVE_ASSIGNMENT)."
+          }
+        },
+        {
+          "name": "Asignar el mismo plan de nuevo (409 DUPLICATE_ACTIVE_ASSIGNMENT)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"maintenancePlanId\": \"{{planId}}\",\n  \"lastDoneKm\": 50000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/maintenance-assignments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "maintenance-assignments"]
+            },
+            "description": "Correr después de 'Asignar plan a vehículo' -- debería devolver 409 porque ya hay una asignación activa de {{planId}} en {{vehicleId}}."
+          }
+        },
+        {
+          "name": "Corregir dato de una asignación (no cuenta como completion)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lastDoneKm\": 71500\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/maintenance-assignments/{{assignmentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "maintenance-assignments", "{{assignmentId}}"]
+            }
+          }
+        },
+        {
+          "name": "Desactivar asignación",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/maintenance-assignments/{{assignmentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "maintenance-assignments", "{{assignmentId}}"]
+            }
+          }
+        },
+        {
+          "name": "Desasignar plan (DELETE, soft-delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/maintenance-assignments/{{assignmentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "maintenance-assignments", "{{assignmentId}}"]
+            },
+            "description": "204. No borra la fila -- pone active=false. Los completions ya registrados quedan intactos."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Completions (historial de mantenimientos hechos)",
+      "item": [
+        {
+          "name": "Listar completions de una asignación",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/maintenance-assignments/{{assignmentId}}/completions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "maintenance-assignments", "{{assignmentId}}", "completions"]
+            }
+          }
+        },
+        {
+          "name": "Registrar completion",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completedAt\": \"2026-09-01\",\n  \"completedKm\": 84320,\n  \"workOrderId\": null,\n  \"notes\": \"Cambio de aceite programado\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/maintenance-assignments/{{assignmentId}}/completions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "maintenance-assignments", "{{assignmentId}}", "completions"]
+            },
+            "description": "201 Response incluye updatedAssignment inline con nextDueKm/nextDueDate/status ya recalculados."
+          }
+        },
+        {
+          "name": "Registrar completion con fecha futura (422 FUTURE_DATE)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completedAt\": \"2099-01-01\",\n  \"completedKm\": 90000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/maintenance-assignments/{{assignmentId}}/completions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "maintenance-assignments", "{{assignmentId}}", "completions"]
+            }
+          }
+        },
+        {
+          "name": "Registrar completion fuera de orden (422 OUT_OF_ORDER_COMPLETION)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completedAt\": \"2020-01-01\",\n  \"completedKm\": 10000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/maintenance-assignments/{{assignmentId}}/completions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "maintenance-assignments", "{{assignmentId}}", "completions"]
+            },
+            "description": "Correr después de 'Registrar completion' -- una fecha anterior al último completion registrado debería dar 422 OUT_OF_ORDER_COMPLETION."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Kilometraje del vehículo",
+      "item": [
+        {
+          "name": "Cargar kilometraje",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"odometerKm\": 84950\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/odometer",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "odometer"]
+            }
+          }
+        },
+        {
+          "name": "Cargar kilometraje menor al actual (422 ODOMETER_REGRESSION)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"odometerKm\": 0\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/odometer",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "vehicles", "{{vehicleId}}", "odometer"]
+            },
+            "description": "Correr después de 'Cargar kilometraje' -- un valor menor al ya guardado debería dar 422 ODOMETER_REGRESSION."
+          }
+        }
+      ]
+    }
+  ]
+}
