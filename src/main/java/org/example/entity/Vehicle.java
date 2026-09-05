@@ -25,6 +25,21 @@ public class Vehicle {
     @Column(nullable = false)
     private String model;
 
+    /**
+     * Tipo de vehículo (camion/furgon/pickup, texto libre por ahora) -- todavía no existe
+     * la ficha completa de gestión de flota (feature 5.7), así que queda nullable hasta
+     * que esa historia defina un catálogo real.
+     */
+    @Column(name = "vehicle_type")
+    private String vehicleType;
+
+    /**
+     * Kilometraje actual del vehículo (feature 5.5, carga semanal manual). No lo toca
+     * ninguna inspección DVIR (CAM-11) -- ver CAM-40-modelo-mantenimiento-preventivo.md.
+     */
+    @Column(name = "odometer_km", columnDefinition = "bigint not null default 0")
+    private long odometerKm = 0;
+
     protected Vehicle() {
         // JPA
     }
@@ -61,5 +76,21 @@ public class Vehicle {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public String getVehicleType() {
+        return vehicleType;
+    }
+
+    public void setVehicleType(String vehicleType) {
+        this.vehicleType = vehicleType;
+    }
+
+    public long getOdometerKm() {
+        return odometerKm;
+    }
+
+    public void setOdometerKm(long odometerKm) {
+        this.odometerKm = odometerKm;
     }
 }

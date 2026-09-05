@@ -1,7 +1,9 @@
 package org.example.exception;
 
 import org.example.dto.ApiError;
+import org.example.dto.FieldValidationErrorDetail;
 import org.example.dto.ValidationError;
+import org.example.dto.ValidationErrorDetail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -33,9 +35,9 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(InspectionValidationException.class)
-    public ResponseEntity<ValidationError> handleInspectionValidation(InspectionValidationException ex) {
+    public ResponseEntity<ValidationError<ValidationErrorDetail>> handleInspectionValidation(InspectionValidationException ex) {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                .body(new ValidationError("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
+                .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
     }
 
     @ExceptionHandler(MissingDriverHeaderException.class)
@@ -60,6 +62,30 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(new ApiError("PAYLOAD_TOO_LARGE", "La foto supera el tamaño máximo permitido (8MB)."));
+    }
+
+    @ExceptionHandler(MaintenancePlanNotFoundException.class)
+    public ResponseEntity<ApiError> handleMaintenancePlanNotFound(MaintenancePlanNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("MAINTENANCE_PLAN_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(AssignmentNotFoundException.class)
+    public ResponseEntity<ApiError> handleAssignmentNotFound(AssignmentNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("ASSIGNMENT_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(MaintenanceConflictException.class)
+    public ResponseEntity<ApiError> handleMaintenanceConflict(MaintenanceConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError(ex.getErrorCode(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(MaintenanceValidationException.class)
+    public ResponseEntity<ValidationError<FieldValidationErrorDetail>> handleMaintenanceValidation(MaintenanceValidationException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
     }
 
     @ExceptionHandler(Exception.class)
