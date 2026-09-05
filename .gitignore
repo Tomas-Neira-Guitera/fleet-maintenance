@@ -50,6 +50,12 @@ src/main/resources/application-local.yml
 /uploads/
 
 ### Asistentes de IA (config/estado personal, no es parte del producto) ###
+### Todo esto vive ahora en el repo fleet-maintenance-ia ###
 .claude/
+AGENTS.md
+CLAUDE.md
+docs/PROJECT.md
+docs/ROADMAP.md
+docs/SETUP.md
 docs/STATE.md
-docs/guias/sesiones.md
+docs/guias/
