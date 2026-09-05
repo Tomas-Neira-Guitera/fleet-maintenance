@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: FleetGuard API — Inspecciones DVIR (CAM-11) y login (CAM-43)
+  title: FleetGuard API — Inspecciones DVIR (CAM-11), login (CAM-43) y mantenimiento preventivo (CAM-40)
   description: >
     Contrato para la carga de inspecciones pre-trip / post-trip del chofer y
     para la consulta de los defectos que generan (CAM-13). Cubre el listado
@@ -8,6 +8,14 @@ info:
     y el listado de defectos, además del login (CAM-43). No cubre roles /
     autorización por rol todavía, ni las órdenes de trabajo de mantenimiento
     (son consumidoras de este listado, no parte de él).
+
+
+    También cubre el mantenimiento preventivo y el componente "Estado de la
+    flota" del dashboard de admin (CAM-40): catálogo de planes de
+    mantenimiento, asignación de planes a vehículos, registro de
+    completions, y la vista agregada de GET /api/vehicles?view=fleet-status.
+    Ver docs/api/CAM-40-fleet-status-contract.md para el detalle de
+    decisiones de diseño.
   version: "1.2"
 
 servers:
@@ -19,20 +27,54 @@ security:
 paths:
   /api/vehicles:
     get:
-      summary: Listar vehículos de la flota con su estado
+      summary: Listar vehículos de la flota, o su estado de mantenimiento (CAM-40)
       description: >
-        Devuelve todos los vehículos con su estado actual (disponible / en viaje),
-        para que el chofer elija uno. El estado se calcula server-side a partir
-        de si el vehículo tiene un viaje abierto.
+        Sin `view` (o `view` ausente): devuelve todos los vehículos con su
+        estado de viaje actual (disponible / en viaje), para que el chofer
+        elija uno -- CAM-11.
+
+
+        Con `view=fleet-status`: vista agregada para el dashboard de admin
+        (CAM-40) -- una fila por vehículo con su estado de mantenimiento,
+        health score y próximo mantenimiento más urgente ya calculados
+        server-side, paginada. No es un recurso nuevo, es la misma entidad
+        vehículo con otra proyección -- ver CAM-40-maintenance-api-contract.md,
+        sección "División de recursos".
+      parameters:
+        - name: view
+          in: query
+          description: Si es "fleet-status", cambia la forma de la respuesta (ver arriba).
+          schema:
+            type: string
+            enum: [fleet-status]
+        - name: page
+          in: query
+          description: Solo aplica con view=fleet-status. Default 1.
+          schema:
+            type: integer
+        - name: pageSize
+          in: query
+          description: Solo aplica con view=fleet-status. Default 20.
+          schema:
+            type: integer
+        - name: status
+          in: query
+          description: Solo aplica con view=fleet-status. Filtra por estado del vehículo.
+          schema:
+            $ref: "#/components/schemas/MaintenanceStatus"
       responses:
         "200":
-          description: OK
+          description: >
+            Array de VehicleSummary sin `view`, o FleetStatusPage con
+            `view=fleet-status` (ver el parámetro `view`).
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/VehicleSummary"
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: "#/components/schemas/VehicleSummary"
+                  - $ref: "#/components/schemas/FleetStatusPage"
 
   /api/photos:
     post:
@@ -206,6 +248,331 @@ paths:
                 items:
                   $ref: "#/components/schemas/DefectSummary"
 
+  /api/maintenance-plans:
+    get:
+      summary: Listar el catálogo de planes de mantenimiento
+      parameters:
+        - name: active
+          in: query
+          schema:
+            type: boolean
+            default: true
+        - name: category
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MaintenancePlan"
+    post:
+      summary: Crear un plan nuevo en el catálogo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMaintenancePlanRequest"
+      responses:
+        "201":
+          description: Plan creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenancePlan"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/maintenance-plans/{id}:
+    patch:
+      summary: Editar nombre/categoría/intervalo de un plan (campos parciales)
+      description: >
+        Cambiar el intervalo de un plan no recalcula nextDue* de las
+        asignaciones existentes -- aplica desde el próximo completion (fuera
+        de alcance el recálculo masivo, ver el contrato).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMaintenancePlanRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenancePlan"
+        "404":
+          description: No existe un plan con ese id
+        "409":
+          description: "PLAN_INACTIVE -- hay que reactivarlo primero con { \"active\": true }"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Borrar un plan del catálogo
+      description: >
+        Solo si no tiene ninguna asignación (activa ni inactiva) en ningún
+        vehículo -- si tiene, 409 PLAN_IN_USE y hay que desactivarlo.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Borrado
+        "404":
+          description: No existe un plan con ese id
+        "409":
+          description: PLAN_IN_USE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/vehicles/{vehicleId}/maintenance-assignments:
+    get:
+      summary: Planes asignados a un vehículo, con estado calculado
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: active
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MaintenanceAssignment"
+    post:
+      summary: Asignar un plan del catálogo a este vehículo
+      description: >
+        Ver CAM-40-maintenance-api-contract.md decisión 4 (no se puede
+        asignar el mismo plan activo dos veces al mismo vehículo).
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAssignmentRequest"
+      responses:
+        "201":
+          description: Asignación creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceAssignment"
+        "404":
+          description: VEHICLE_NOT_FOUND o MAINTENANCE_PLAN_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: DUPLICATE_ACTIVE_ASSIGNMENT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{vehicleId}/maintenance-assignments/{assignmentId}:
+    patch:
+      summary: Activar/desactivar o corregir una asignación (no cuenta como completion)
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAssignmentRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceAssignment"
+        "404":
+          description: "ASSIGNMENT_NOT_FOUND (incluye si pertenece a otro vehicleId)"
+    delete:
+      summary: Desasignar un plan de este vehículo (soft-delete, active=false)
+      description: Los completions ya registrados no se tocan.
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Desasignado
+        "404":
+          description: ASSIGNMENT_NOT_FOUND
+
+  /api/vehicles/{vehicleId}/maintenance-assignments/{assignmentId}/completions:
+    get:
+      summary: Historial de veces que se hizo ese mantenimiento
+      description: Más reciente primero. Sin paginar en esta primera versión.
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MaintenanceCompletion"
+    post:
+      summary: Registrar que el mantenimiento se hizo (dispara recálculo)
+      description: >
+        A diferencia de las inspecciones DVIR, completedAt lo manda el
+        cliente (puede estar cargando algo que ya pasó) -- ver
+        CAM-40-maintenance-api-contract.md decisión 2.
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCompletionRequest"
+      responses:
+        "201":
+          description: Completion registrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompletionResult"
+        "404":
+          description: ASSIGNMENT_NOT_FOUND
+        "409":
+          description: "ASSIGNMENT_INACTIVE -- hay que reactivar la asignación primero"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          description: FUTURE_DATE, OUT_OF_ORDER_COMPLETION, o falta completedKm
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldValidationError"
+
+  /api/vehicles/{id}/odometer:
+    patch:
+      summary: Cargar el kilometraje actual del vehículo (feature 5.5)
+      description: >
+        No toca nextDueKm de ningún plan (eso solo cambia con un completion) --
+        solo actualiza la referencia contra la que se compara al calcular status.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOdometerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OdometerResult"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "422":
+          description: ODOMETER_REGRESSION (el kilometraje no puede bajar)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldValidationError"
+
 
 components:
   securitySchemes:
@@ -227,6 +594,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiError"
+    FieldValidationErrorResponse:
+      description: Datos inválidos (CAM-40) -- details[] usa "field", no "itemId".
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FieldValidationError"
 
   schemas:
     VehicleStatus:
@@ -397,3 +770,207 @@ components:
                 properties:
                   itemId: { type: string }
                   message: { type: string }
+
+    FieldValidationError:
+      allOf:
+        - $ref: "#/components/schemas/ApiError"
+        - type: object
+          properties:
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+
+    # --- Mantenimiento preventivo y estado de flota (CAM-40) ---
+
+    MaintenanceStatus:
+      type: string
+      enum: [al_dia, por_vencer, vencido]
+
+    IntervalType:
+      type: string
+      enum: [km, time, both]
+
+    NextMaintenanceSummary:
+      type: object
+      nullable: true
+      description: Null si el vehículo no tiene ningún plan activo asignado.
+      required: [assignmentId, name, status]
+      properties:
+        assignmentId: { type: string }
+        name: { type: string, example: "VTV" }
+        status:
+          $ref: "#/components/schemas/MaintenanceStatus"
+        dueDate: { type: string, format: date, nullable: true }
+        dueKm: { type: integer, nullable: true }
+        remainingDays: { type: integer, nullable: true, description: Negativo si está vencido. }
+        remainingKm: { type: integer, nullable: true, description: Negativo si está vencido. }
+
+    FleetStatusRow:
+      type: object
+      required: [vehicleId, plate, brand, model, odometerKm, healthScore, status]
+      properties:
+        vehicleId: { type: string }
+        plate: { type: string }
+        brand: { type: string }
+        model: { type: string }
+        vehicleType: { type: string, nullable: true }
+        odometerKm: { type: integer }
+        healthScore: { type: integer, minimum: 0, maximum: 100 }
+        status:
+          $ref: "#/components/schemas/MaintenanceStatus"
+        nextMaintenance:
+          $ref: "#/components/schemas/NextMaintenanceSummary"
+
+    FleetStatusPage:
+      type: object
+      required: [page, pageSize, total, items]
+      properties:
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FleetStatusRow"
+
+    MaintenancePlan:
+      type: object
+      required: [id, name, intervalType, active]
+      properties:
+        id: { type: string }
+        name: { type: string, example: "Cambio de aceite" }
+        category: { type: string, nullable: true, example: "motor" }
+        intervalType:
+          $ref: "#/components/schemas/IntervalType"
+        intervalKm: { type: integer, nullable: true }
+        intervalDays: { type: integer, nullable: true }
+        active: { type: boolean }
+
+    CreateMaintenancePlanRequest:
+      type: object
+      required: [name, intervalType]
+      description: >
+        intervalKm/intervalDays son obligatorios o deben venir null según
+        intervalType -- ver CAM-40-maintenance-api-contract.md decisión 5.
+      properties:
+        name: { type: string, minLength: 1 }
+        category: { type: string }
+        intervalType:
+          $ref: "#/components/schemas/IntervalType"
+        intervalKm: { type: integer }
+        intervalDays: { type: integer }
+
+    UpdateMaintenancePlanRequest:
+      type: object
+      description: Campos ausentes (null) no se modifican.
+      properties:
+        name: { type: string }
+        category: { type: string }
+        intervalType:
+          $ref: "#/components/schemas/IntervalType"
+        intervalKm: { type: integer }
+        intervalDays: { type: integer }
+        active: { type: boolean }
+
+    MaintenanceAssignment:
+      type: object
+      required: [id, vehicleId, maintenancePlanId, status, active]
+      properties:
+        id: { type: string }
+        vehicleId: { type: string }
+        maintenancePlanId: { type: string }
+        planName: { type: string }
+        intervalType:
+          $ref: "#/components/schemas/IntervalType"
+        lastDoneKm: { type: integer, nullable: true }
+        lastDoneDate: { type: string, format: date, nullable: true }
+        nextDueKm: { type: integer, nullable: true }
+        nextDueDate: { type: string, format: date, nullable: true }
+        status:
+          $ref: "#/components/schemas/MaintenanceStatus"
+        active: { type: boolean }
+
+    CreateAssignmentRequest:
+      type: object
+      required: [maintenancePlanId]
+      description: >
+        Si se omiten lastDoneKm/lastDoneDate, el servidor los siembra con el
+        kilometraje/fecha actual del vehículo (ver contrato).
+      properties:
+        maintenancePlanId: { type: string }
+        lastDoneKm: { type: integer }
+        lastDoneDate: { type: string, format: date }
+
+    UpdateAssignmentRequest:
+      type: object
+      description: >
+        Corrección administrativa -- no cuenta como completion. Campos
+        ausentes (null) no se modifican.
+      properties:
+        active: { type: boolean }
+        lastDoneKm: { type: integer }
+        lastDoneDate: { type: string, format: date }
+
+    MaintenanceCompletion:
+      type: object
+      required: [id, completedAt]
+      properties:
+        id: { type: string }
+        completedAt: { type: string, format: date }
+        completedKm: { type: integer, nullable: true }
+        workOrderId: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+
+    CreateCompletionRequest:
+      type: object
+      required: [completedAt]
+      description: >
+        completedAt siempre viaja; completedKm es condicional al
+        intervalType del plan (ver contrato decisión 5).
+      properties:
+        completedAt: { type: string, format: date }
+        completedKm: { type: integer }
+        workOrderId: { type: string }
+        notes: { type: string }
+
+    AssignmentSummary:
+      type: object
+      required: [id, status]
+      description: Subconjunto de MaintenanceAssignment devuelto inline para refrescar el chip de estado.
+      properties:
+        id: { type: string }
+        nextDueKm: { type: integer, nullable: true }
+        nextDueDate: { type: string, format: date, nullable: true }
+        status:
+          $ref: "#/components/schemas/MaintenanceStatus"
+
+    CompletionResult:
+      type: object
+      required: [id, assignmentId, completedAt, updatedAssignment]
+      properties:
+        id: { type: string }
+        assignmentId: { type: string }
+        completedAt: { type: string, format: date }
+        completedKm: { type: integer, nullable: true }
+        workOrderId: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+        updatedAssignment:
+          $ref: "#/components/schemas/AssignmentSummary"
+
+    UpdateOdometerRequest:
+      type: object
+      required: [odometerKm]
+      properties:
+        odometerKm: { type: integer }
+
+    OdometerResult:
+      type: object
+      required: [vehicleId, odometerKm, updatedAt]
+      properties:
+        vehicleId: { type: string }
+        odometerKm: { type: integer }
+        updatedAt: { type: string, format: date-time }

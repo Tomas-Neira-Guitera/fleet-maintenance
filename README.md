@@ -70,6 +70,19 @@ Implementados para CAM-11 (inspecciones DVIR del chofer) — contrato completo e
 - `POST /api/inspections/{vehicleId}` — envía una inspección pre-trip o post-trip.
 - `GET /api/defects` — lista de defectos reportados, para mantenimiento (CAM-13).
 
+Implementados para CAM-40 (mantenimiento preventivo y estado de flota del dashboard de
+admin) — contrato completo en `docs/api/CAM-40-fleet-status-contract.md`:
+
+- `GET /api/vehicles?view=fleet-status` — fila por vehículo (estado, health score,
+  próximo mantenimiento) para el componente de flota.
+- `GET/POST /api/maintenance-plans`, `PATCH/DELETE /api/maintenance-plans/{id}` —
+  catálogo de planes de mantenimiento.
+- `GET/POST /api/vehicles/{vehicleId}/maintenance-assignments`,
+  `PATCH/DELETE .../{assignmentId}` — asignación de un plan a un vehículo puntual.
+- `GET/POST .../maintenance-assignments/{assignmentId}/completions` — historial de
+  veces que se hizo un mantenimiento.
+- `PATCH /api/vehicles/{id}/odometer` — carga de kilometraje (feature 5.5).
+
 Requieren, además del `Authorization: Bearer <token>` que pide el contrato (todavía no
 hay auth real), un header **temporal** `X-Driver-Id` (y opcionalmente `X-Driver-Name`)
 que hace de stand-in del chofer resuelto por token — ver `auth/DriverResolver`.
