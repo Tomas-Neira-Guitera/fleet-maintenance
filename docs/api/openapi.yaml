@@ -1,15 +1,14 @@
 openapi: 3.0.3
 info:
-  title: FleetGuard API — Inspecciones DVIR (CAM-11)
+  title: FleetGuard API — Inspecciones DVIR (CAM-11) y login (CAM-43)
   description: >
     Contrato para la carga de inspecciones pre-trip / post-trip del chofer y
     para la consulta de los defectos que generan (CAM-13). Cubre el listado
     de vehículos, la subida de fotos de defectos, el envío de la inspección
-    y el listado de defectos. No cubre login/roles (se asume Authorization:
-    Bearer <token> resuelto por un mecanismo de auth a definir aparte) ni las
-    órdenes de trabajo de mantenimiento (son consumidoras de este listado,
-    no parte de él).
-  version: "1.1"
+    y el listado de defectos, además del login (CAM-43). No cubre roles /
+    autorización por rol todavía, ni las órdenes de trabajo de mantenimiento
+    (son consumidoras de este listado, no parte de él).
+  version: "1.2"
 
 servers:
   - url: http://localhost:8080
@@ -95,6 +94,44 @@ paths:
                 format: binary
         "404":
           description: No existe una foto con ese id
+
+  /api/auth/login:
+    post:
+      summary: Autenticar usuario y contraseña, devolver un JWT + rol (CAM-43)
+      description: >
+        Solo autentica y emite el token -- no incluye alta ni invitación de
+        usuarios (CAM-23, a futuro). Los usuarios de prueba se cargan a mano
+        con docs/db/seed-users.sql. Todavía no reemplaza al header temporal
+        X-Driver-Id de CAM-11 -- conviven hasta que el frontend (CAM-45) esté
+        migrado. Ver docs/api/CAM-43-login-contract.md para el detalle de
+        decisiones (comparación contra hash dummy para evitar timing attacks,
+        motivo de emitir HS512, etc).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: >
+            Usuario inexistente, contraseña incorrecta, o credenciales vacías
+            -- mismo error para los tres casos a propósito, para no revelar
+            si el usuario existe.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              example:
+                error: INVALID_CREDENTIALS
+                message: Usuario o contraseña incorrectos.
 
   /api/inspections/{vehicleId}:
     post:
@@ -316,6 +353,30 @@ components:
         createdAt: { type: string, format: date-time }
         vehiclePlate: { type: string, nullable: true, description: Puede faltar si el vehículo fue eliminado. }
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
+
+    Role:
+      type: string
+      enum: [ADMIN, CHOFER]
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, example: admin }
+        password: { type: string, format: password, example: admin123 }
+
+    LoginResponse:
+      type: object
+      required: [token, role]
+      properties:
+        token:
+          type: string
+          description: >
+            JWT firmado (HS512, según el largo de fleetguard.jwt.secret),
+            vence a los fleetguard.jwt.expiration-minutes (60 min por
+            defecto). Incluye sub (id de usuario), username y role como claims.
+        role:
+          $ref: "#/components/schemas/Role"
 
     ApiError:
       type: object

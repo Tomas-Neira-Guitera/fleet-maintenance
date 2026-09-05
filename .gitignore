@@ -9,6 +9,7 @@ build/
 .idea/jarRepositories.xml
 .idea/compiler.xml
 .idea/libraries/
+.idea/.name
 *.iws
 *.iml
 *.ipr
@@ -47,3 +48,8 @@ src/main/resources/db.properties
 ### FleetGuard local config / data (no subir al repo) ###
 src/main/resources/application-local.yml
 /uploads/
+
+### Asistentes de IA (config/estado personal, no es parte del producto) ###
+.claude/
+docs/STATE.md
+docs/guias/sesiones.md

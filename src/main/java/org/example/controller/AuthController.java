@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** POST /api/auth/login -- ver CAM-43 y docs/API.md. */
+/** POST /api/auth/login -- ver openapi.yaml y docs/api/CAM-43-login-contract.md. */
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
