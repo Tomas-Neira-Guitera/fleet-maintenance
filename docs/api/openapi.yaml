@@ -16,7 +16,7 @@ info:
     completions, y la vista agregada de GET /api/vehicles?view=fleet-status.
     Ver docs/api/CAM-40-fleet-status-contract.md para el detalle de
     decisiones de diseño.
-  version: "1.2"
+  version: "1.3"
 
 servers:
   - url: http://localhost:8080
@@ -726,6 +726,7 @@ components:
         createdAt: { type: string, format: date-time }
         vehiclePlate: { type: string, nullable: true, description: Puede faltar si el vehículo fue eliminado. }
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
+        reportedBy: { type: string, nullable: true, description: "Nombre del chofer que reportó el defecto (Inspection.driverName); puede faltar en datos antiguos." }
 
     Role:
       type: string
