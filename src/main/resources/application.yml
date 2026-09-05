@@ -36,6 +36,15 @@ fleetguard:
   cors:
     # Origenes permitidos para que el frontend (Vite) consuma la API en dev.
     allowed-origins: http://localhost:5173,http://127.0.0.1:5173
+  jwt:
+    # Secreto de firma -- Keys.hmacShaKeyFor (JwtService) elige el algoritmo
+    # HMAC según el largo de esta clave; con 64 caracteres (512 bits) firma en
+    # HS512, no HS256. Este valor es SOLO para desarrollo local, se commitea a
+    # propósito para que el proyecto funcione out-of-the-box (igual que el
+    # password vacío de Postgres arriba). Sobreescribilo en
+    # application-local.yml antes de exponer esto fuera de tu máquina.
+    secret: HUKfjtGyMHxMPOgQMtZsS5XQD8pMYMAxNTa2ss1fa68R8B29qcfAnxSB7SYQr2JG
+    expiration-minutes: 60
   photos:
     # Local-filesystem photo storage (see storage/LocalFilesystemPhotoStorage).
     # Swap PhotoStorage's implementation for a cloud-backed one later; nothing

@@ -5,3 +5,9 @@ spring:
     username: postgres
     password: tu_password
     # url: jdbc:postgresql://localhost:5432/TIP
+
+# Opcional: pisar el secreto de JWT de application.yml (que es un valor de
+# desarrollo commiteado a propósito, ver el comentario ahí) con uno propio.
+# fleetguard:
+#   jwt:
+#     secret: tu_secreto_propio_de_al_menos_32_bytes

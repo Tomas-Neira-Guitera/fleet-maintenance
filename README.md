@@ -43,6 +43,15 @@ spring:
 
 > `application-local.yml` está en `.gitignore` — nunca se sube al repo.
 
+## Base de datos
+
+Todavía no hay herramienta de migraciones (ver `docs/STATE.md`). El schema se
+aplica a mano con `psql`:
+
+```bash
+psql -U postgres -d TIP -f sql/schema.sql
+```
+
 ## Scripts
 
 - `./gradlew bootRun` — levanta el servidor
@@ -77,6 +86,10 @@ admin) — contrato completo en `docs/api/CAM-40-fleet-status-contract.md`:
 Requieren, además del `Authorization: Bearer <token>` que pide el contrato (todavía no
 hay auth real), un header **temporal** `X-Driver-Id` (y opcionalmente `X-Driver-Name`)
 que hace de stand-in del chofer resuelto por token — ver `auth/DriverResolver`.
+
+> `GET /api/health` de la implementación anterior (HttpServer plano) no tiene todavía
+> un equivalente en Spring Boot. Ver `docs/STATE.md` — queda pendiente evaluar Spring
+> Actuator (`/actuator/health`) como reemplazo.
 
 ## Estructura
 

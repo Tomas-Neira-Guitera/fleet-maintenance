@@ -23,6 +23,13 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     runtimeOnly("org.postgresql:postgresql:42.7.4")
 
+    // Login (CAM-43): solo el módulo de criptografía de Spring Security (BCrypt),
+    // sin la cadena de filtros ni el resto del framework de autenticación.
+    implementation("org.springframework.security:spring-security-crypto")
+    implementation("io.jsonwebtoken:jjwt-api:0.12.6")
+    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
+    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
