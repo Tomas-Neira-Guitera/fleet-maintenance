@@ -8,6 +8,7 @@ public record DefectDto(
         String photoUrl,
         String createdAt,
         String vehiclePlate,
-        String status
+        String status,
+        String reportedBy
 ) {
 }
