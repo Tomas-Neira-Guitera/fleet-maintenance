@@ -63,10 +63,11 @@ class DefectServiceTest {
         when(defectRepository.findAllWithInspection())
                 .thenReturn(List.of(nonBlockingReciente, blockingViejo, blockingReciente));
         when(vehicleRepository.findAllById(any())).thenReturn(List.of());
-        when(defectMapper.toDto(any(), any())).thenAnswer(invocation -> {
+        when(defectMapper.toDto(any(), any(), any())).thenAnswer(invocation -> {
             Defect d = invocation.getArgument(0);
             return new DefectDto(d.getId() == null ? d.getDescription() : d.getId().toString(),
-                    d.getSeverity().toJson(), d.getDescription(), null, d.getCreatedAt().toString(), null, d.getStatus(),
+                    d.getSeverity().toJson(), d.getDescription(), null, d.getCreatedAt().toString(),
+                    d.getInspectionAnswer().getInspection().getVehicleId().toString(), null, d.getStatus(),
                     d.getInspectionAnswer().getInspection().getDriverName());
         });
 

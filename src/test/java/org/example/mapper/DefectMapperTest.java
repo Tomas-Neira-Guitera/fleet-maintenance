@@ -42,7 +42,7 @@ class DefectMapperTest {
         setId(defect, UUID.randomUUID());
         answer.attachDefect(defect);
 
-        var dto = mapper.toDto(defect, "AB123CD");
+        var dto = mapper.toDto(defect, vehicleId.toString(), "AB123CD");
 
         assertEquals("Marcos", dto.reportedBy());
     }
