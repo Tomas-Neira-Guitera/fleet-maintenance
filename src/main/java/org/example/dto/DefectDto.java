@@ -7,6 +7,7 @@ public record DefectDto(
         String description,
         String photoUrl,
         String createdAt,
+        String vehicleId,
         String vehiclePlate,
         String status,
         String reportedBy

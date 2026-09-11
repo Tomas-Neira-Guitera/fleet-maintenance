@@ -30,13 +30,16 @@ public class MaintenanceCompletionService {
     private final MaintenanceCompletionRepository completionRepository;
     private final VehicleMaintenanceAssignmentService assignmentService;
     private final MaintenanceCompletionMapper mapper;
+    private final ScheduledMaintenanceService scheduledMaintenanceService;
 
     public MaintenanceCompletionService(MaintenanceCompletionRepository completionRepository,
                                          VehicleMaintenanceAssignmentService assignmentService,
-                                         MaintenanceCompletionMapper mapper) {
+                                         MaintenanceCompletionMapper mapper,
+                                         ScheduledMaintenanceService scheduledMaintenanceService) {
         this.completionRepository = completionRepository;
         this.assignmentService = assignmentService;
         this.mapper = mapper;
+        this.scheduledMaintenanceService = scheduledMaintenanceService;
     }
 
     public List<CompletionDto> list(String vehicleId, String assignmentId) {
@@ -97,6 +100,10 @@ public class MaintenanceCompletionService {
         }
         assignment.setLastDoneDate(completedAt);
         assignment.recalculateNextDue();
+
+        // Si había una programación activa (CAM-42) sobre esta asignación, se cierra sola --
+        // el cliente no llama un segundo endpoint. Ver CAM-42-programacion-mantenimientos.md.
+        scheduledMaintenanceService.closeActiveScheduleForAssignment(assignment.getId());
 
         MaintenanceStatus status = MaintenanceStatusCalculator.computeStatus(
                 assignment.getNextDueKm(), assignment.getNextDueDate(), vehicle.getOdometerKm(), LocalDate.now());
