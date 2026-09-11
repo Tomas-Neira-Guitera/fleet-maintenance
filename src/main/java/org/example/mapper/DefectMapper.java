@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class DefectMapper {
 
-    public DefectDto toDto(Defect defect, String vehiclePlate) {
+    public DefectDto toDto(Defect defect, String vehicleId, String vehiclePlate) {
         String reportedBy = defect.getInspectionAnswer().getInspection().getDriverName();
         return new DefectDto(
                 defect.getId().toString(),
@@ -15,6 +15,7 @@ public class DefectMapper {
                 defect.getDescription(),
                 defect.getPhotoUrl(),
                 defect.getCreatedAt().toString(),
+                vehicleId,
                 vehiclePlate,
                 defect.getStatus(),
                 reportedBy

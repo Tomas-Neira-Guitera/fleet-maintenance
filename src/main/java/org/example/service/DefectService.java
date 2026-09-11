@@ -40,7 +40,7 @@ public class DefectService {
         return defects.stream()
                 .sorted(Comparator.comparing(Defect::getSeverity).reversed()
                         .thenComparing(Defect::getCreatedAt, Comparator.reverseOrder()))
-                .map(defect -> defectMapper.toDto(defect, plateByVehicleId.get(vehicleId(defect))))
+                .map(defect -> defectMapper.toDto(defect, vehicleId(defect).toString(), plateByVehicleId.get(vehicleId(defect))))
                 .toList();
     }
 

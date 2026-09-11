@@ -94,6 +94,18 @@ public class GlobalExceptionHandler {
                 .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
     }
 
+    @ExceptionHandler(DefectNotFoundException.class)
+    public ResponseEntity<ApiError> handleDefectNotFound(DefectNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("DEFECT_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(ScheduleNotFoundException.class)
+    public ResponseEntity<ApiError> handleScheduleNotFound(ScheduleNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("SCHEDULE_NOT_FOUND", ex.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnexpected(Exception ex) {
         log.error("Unexpected error", ex);

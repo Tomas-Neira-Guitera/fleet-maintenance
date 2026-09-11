@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: FleetGuard API — Inspecciones DVIR (CAM-11), login (CAM-43) y mantenimiento preventivo (CAM-40)
+  title: FleetGuard API — Inspecciones DVIR (CAM-11), login (CAM-43), mantenimiento preventivo (CAM-40) y programación (CAM-42)
   description: >
     Contrato para la carga de inspecciones pre-trip / post-trip del chofer y
     para la consulta de los defectos que generan (CAM-13). Cubre el listado
@@ -16,7 +16,13 @@ info:
     completions, y la vista agregada de GET /api/vehicles?view=fleet-status.
     Ver docs/api/CAM-40-fleet-status-contract.md para el detalle de
     decisiones de diseño.
-  version: "1.3"
+
+
+    Y la programación de mantenimientos y arreglos de defectos (CAM-42,
+    CAM-50, CAM-51): cuándo se planea hacer un mantenimiento o resolver un
+    defecto, distinto de cuándo corresponde (calculado) y de cuándo ya se
+    hizo (historial). Ver docs/api/CAM-42-schedule-contract.md.
+  version: "1.5"
 
 servers:
   - url: http://localhost:8080
@@ -573,6 +579,137 @@ paths:
               schema:
                 $ref: "#/components/schemas/FieldValidationError"
 
+  /api/maintenance-schedule:
+    get:
+      summary: Mantenimientos programados en un rango de fechas (calendario semanal del Resumen, CAM-42)
+      description: >
+        Por defecto solo trae status=scheduled (lo que interesa ver "por
+        venir"); el query param status permite pedir también done/cancelled
+        para vistas de historial futuras.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Inicio del rango. Acepta fecha (YYYY-MM-DD, se toma como inicio del día UTC) o timestamp ISO-8601 completo.
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: true
+          description: Fin del rango, mismo formato que `from`.
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/ScheduleStatus"
+            default: scheduled
+        - name: vehicleId
+          in: query
+          description: Filtro opcional por vehículo, de uso general (no lo usa el preview de "ya programado", que mira todos los vehículos ese día).
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Schedule"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    post:
+      summary: Programar un mantenimiento (origen assignment CAM-50, defect CAM-51, o manual desde el calendario)
+      description: >
+        Endpoint único genérico: para sourceType assignment/defect el
+        servidor resuelve vehicleId y title a partir de sourceId, nunca se
+        confían del cliente; para sourceType=manual el cliente manda
+        vehicleId y title directo, ya que no hay plan ni defecto de origen.
+        Si ya existe una programación activa (status=scheduled) para ese
+        sourceId, actualiza esa fila (upsert, devuelve 200) en vez de crear
+        una nueva -- evita duplicados en el calendario (manual siempre crea
+        una fila nueva, no dedupea). Ver docs/api/CAM-42-schedule-contract.md.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScheduleRequest"
+      responses:
+        "201":
+          description: Programación creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "200":
+          description: Ya existía una programación activa para ese origen -- se actualizó la fecha
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "404":
+          description: ASSIGNMENT_NOT_FOUND o DEFECT_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: "ASSIGNMENT_INACTIVE / DEFECT_RESOLVED -- no tiene sentido programar algo cerrado"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          description: "sourceType/sourceId inválidos, vehicleId/title faltantes en manual, o scheduledAt ausente/pasado (PAST_DATE)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldValidationError"
+
+  /api/maintenance-schedule/{id}:
+    patch:
+      summary: Reprogramar, cancelar, o marcar como realizado un mantenimiento programado
+      description: >
+        status=done solo es válido para sourceType=defect -- una programación
+        de origen assignment se cierra sola al registrar el completion de esa
+        asignación (409 USE_COMPLETION_ENDPOINT si se intenta acá).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateScheduleRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "404":
+          description: SCHEDULE_NOT_FOUND
+        "409":
+          description: USE_COMPLETION_ENDPOINT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
 
 components:
   securitySchemes:
@@ -724,6 +861,7 @@ components:
         description: { type: string }
         photoUrl: { type: string, format: uri, nullable: true }
         createdAt: { type: string, format: date-time }
+        vehicleId: { type: string }
         vehiclePlate: { type: string, nullable: true, description: Puede faltar si el vehículo fue eliminado. }
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
         reportedBy: { type: string, nullable: true, description: "Nombre del chofer que reportó el defecto (Inspection.driverName); puede faltar en datos antiguos." }
@@ -975,3 +1113,55 @@ components:
         vehicleId: { type: string }
         odometerKm: { type: integer }
         updatedAt: { type: string, format: date-time }
+
+    # --- Programación de mantenimientos y arreglos (CAM-42, CAM-50, CAM-51) ---
+
+    ScheduleSourceType:
+      type: string
+      enum: [assignment, defect, manual]
+
+    ScheduleStatus:
+      type: string
+      enum: [scheduled, done, cancelled]
+
+    Schedule:
+      type: object
+      required: [id, vehicleId, sourceType, title, scheduledAt, status]
+      properties:
+        id: { type: string }
+        vehicleId: { type: string }
+        plate: { type: string, nullable: true }
+        sourceType:
+          $ref: "#/components/schemas/ScheduleSourceType"
+        assignmentId: { type: string, nullable: true, description: Presente si sourceType=assignment. }
+        defectId: { type: string, nullable: true, description: Presente si sourceType=defect. }
+        title: { type: string, example: "Cambio de aceite" }
+        scheduledAt: { type: string, format: date-time }
+        status:
+          $ref: "#/components/schemas/ScheduleStatus"
+        notes: { type: string, nullable: true }
+
+    CreateScheduleRequest:
+      type: object
+      required: [sourceType, scheduledAt]
+      description: >
+        sourceId es obligatorio si sourceType es assignment/defect;
+        vehicleId+title son obligatorios si sourceType es manual (no hay
+        plan ni defecto del que resolverlos).
+      properties:
+        sourceType:
+          $ref: "#/components/schemas/ScheduleSourceType"
+        sourceId: { type: string, description: assignmentId si sourceType=assignment, defectId si sourceType=defect. Ignorado si sourceType=manual. }
+        vehicleId: { type: string, description: Obligatorio si sourceType=manual. }
+        title: { type: string, description: Obligatorio si sourceType=manual. }
+        scheduledAt: { type: string, format: date-time }
+        notes: { type: string, nullable: true }
+
+    UpdateScheduleRequest:
+      type: object
+      description: Campos parciales -- reprogramar (scheduledAt) y cambiar status pueden venir juntos o por separado.
+      properties:
+        scheduledAt: { type: string, format: date-time }
+        status:
+          type: string
+          enum: [done, cancelled]
