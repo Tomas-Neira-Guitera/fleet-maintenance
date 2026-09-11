@@ -68,6 +68,16 @@ paths:
           description: Solo aplica con view=fleet-status. Filtra por estado del vehículo.
           schema:
             $ref: "#/components/schemas/MaintenanceStatus"
+        - name: active
+          in: query
+          description: >
+            CAM-25. Filtra por vehículos activos o dados de baja, en las dos
+            formas de la respuesta (con y sin `view`). Default true -- un
+            vehículo dado de baja no aparece ni para el chofer ni en "Estado
+            de la flota" salvo que se pida `active=false` explícito.
+          schema:
+            type: boolean
+            default: true
       responses:
         "200":
           description: >
@@ -81,6 +91,88 @@ paths:
                     items:
                       $ref: "#/components/schemas/VehicleSummary"
                   - $ref: "#/components/schemas/FleetStatusPage"
+    post:
+      summary: Alta de un vehículo (CAM-25)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVehicleRequest"
+      responses:
+        "201":
+          description: Vehículo creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleSummary"
+        "409":
+          description: DUPLICATE_PLATE -- ya existe un vehículo con esa patente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{id}:
+    patch:
+      summary: Editar un vehículo, o reactivarlo (CAM-25)
+      description: >
+        Campos ausentes no se modifican. `active: true` reactiva un vehículo
+        dado de baja -- ver CAM-25-vehicle-abm-contract.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVehicleRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleSummary"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "409":
+          description: DUPLICATE_PLATE -- si se cambia la patente a una que ya existe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Dar de baja un vehículo (CAM-25)
+      description: >
+        Baja lógica: pone `active=false`, no borra la fila ni su historial
+        (inspecciones, defectos, asignaciones de mantenimiento). Ver
+        CAM-25-vehicle-abm-contract.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Dado de baja
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "409":
+          description: VEHICLE_ON_TRIP -- el vehículo tiene un viaje abierto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /api/photos:
     post:
@@ -745,7 +837,7 @@ components:
 
     VehicleSummary:
       type: object
-      required: [id, plate, brand, model, status]
+      required: [id, plate, brand, model, status, odometerKm, active]
       properties:
         id: { type: string }
         plate: { type: string, example: "AB123CD" }
@@ -753,6 +845,41 @@ components:
         model: { type: string, example: "Sprinter" }
         status:
           $ref: "#/components/schemas/VehicleStatus"
+        vehicleType: { type: string, nullable: true, example: "furgon" }
+        year: { type: integer, nullable: true, example: 2022 }
+        chassisNumber: { type: string, nullable: true }
+        odometerKm: { type: integer }
+        active:
+          type: boolean
+          description: >
+            false si el vehículo está dado de baja (CAM-25) -- ver el
+            parámetro `active` de GET /api/vehicles.
+
+    CreateVehicleRequest:
+      type: object
+      required: [plate, brand, model]
+      properties:
+        plate: { type: string }
+        brand: { type: string }
+        model: { type: string }
+        vehicleType: { type: string }
+        year: { type: integer }
+        chassisNumber: { type: string }
+        odometerKm: { type: integer, description: Kilometraje inicial, default 0. }
+
+    UpdateVehicleRequest:
+      type: object
+      description: Campos ausentes (null) no se modifican.
+      properties:
+        plate: { type: string }
+        brand: { type: string }
+        model: { type: string }
+        vehicleType: { type: string }
+        year: { type: integer }
+        chassisNumber: { type: string }
+        active:
+          type: boolean
+          description: En false da de baja; en true reactiva (ver CAM-25-vehicle-abm-contract.md).
 
     PhotoUploadResult:
       type: object

@@ -13,7 +13,12 @@ public class VehicleMapper {
                 vehicle.getPlate(),
                 vehicle.getBrand(),
                 vehicle.getModel(),
-                onTrip ? "on-trip" : "available"
+                onTrip ? "on-trip" : "available",
+                vehicle.getVehicleType(),
+                vehicle.getYear(),
+                vehicle.getChassisNumber(),
+                vehicle.getOdometerKm(),
+                vehicle.isActive()
         );
     }
 }
