@@ -68,6 +68,19 @@ kilometraje después de creado sigue siendo exclusiva de
 anti-regresión) — `UpdateVehicleRequest` no tiene campo `odometerKm` a
 propósito, para no abrir un segundo camino que la sortee.
 
+## 8. Edición y kilometraje bloqueados si el vehículo está dado de baja
+
+Mismo criterio que ya usa `MaintenancePlanService` para `PLAN_INACTIVE`: si el
+vehículo está dado de baja (`active=false`), el único `PATCH
+/api/vehicles/{id}` permitido es `{ "active": true }` **solo** -- cualquier
+otro campo (venga solo o junto con la reactivación) devuelve `409
+VEHICLE_INACTIVE`. `PATCH /api/vehicles/{id}/odometer` ("Cargar km") queda
+bloqueado de la misma forma mientras el vehículo esté de baja, sin excepción
+(no hay reactivación posible desde ese endpoint). Se agregó porque el admin
+podía editar o cargar kilometraje de un vehículo retirado de la flota sin
+ningún aviso -- un vehículo de baja no debería seguir mutando hasta que
+alguien decida conscientemente reactivarlo.
+
 ## Fuera de alcance
 
 - La baja **no cascada** a las asignaciones de mantenimiento ni a la

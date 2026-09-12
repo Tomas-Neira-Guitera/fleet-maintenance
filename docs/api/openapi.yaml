@@ -120,7 +120,10 @@ paths:
       summary: Editar un vehículo, o reactivarlo (CAM-25)
       description: >
         Campos ausentes no se modifican. `active: true` reactiva un vehículo
-        dado de baja -- ver CAM-25-vehicle-abm-contract.md.
+        dado de baja. Si el vehículo está dado de baja, el único PATCH
+        permitido es `{ "active": true }` solo -- cualquier otro campo
+        (junto con la reactivación o sin ella) devuelve `409 VEHICLE_INACTIVE`.
+        Ver CAM-25-vehicle-abm-contract.md.
       parameters:
         - name: id
           in: path
@@ -143,11 +146,19 @@ paths:
         "404":
           description: VEHICLE_NOT_FOUND
         "409":
-          description: DUPLICATE_PLATE -- si se cambia la patente a una que ya existe
+          description: >
+            DUPLICATE_PLATE -- si se cambia la patente a una que ya existe.
+            VEHICLE_INACTIVE -- si se edita cualquier campo de un vehículo
+            dado de baja sin reactivarlo primero.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+              examples:
+                duplicatePlate:
+                  value: { error: "DUPLICATE_PLATE", message: "Ya existe un vehículo con la patente AB123CD" }
+                vehicleInactive:
+                  value: { error: "VEHICLE_INACTIVE", message: "El vehículo está dado de baja -- reactivalo primero con PATCH { \"active\": true }" }
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
     delete:
@@ -643,6 +654,8 @@ paths:
       description: >
         No toca nextDueKm de ningún plan (eso solo cambia con un completion) --
         solo actualiza la referencia contra la que se compara al calcular status.
+        Bloqueado con `409 VEHICLE_INACTIVE` si el vehículo está dado de baja
+        (ver CAM-25-vehicle-abm-contract.md) -- reactivalo primero.
       parameters:
         - name: id
           in: path
@@ -664,6 +677,12 @@ paths:
                 $ref: "#/components/schemas/OdometerResult"
         "404":
           description: VEHICLE_NOT_FOUND
+        "409":
+          description: VEHICLE_INACTIVE -- el vehículo está dado de baja
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "422":
           description: ODOMETER_REGRESSION (el kilometraje no puede bajar)
           content:

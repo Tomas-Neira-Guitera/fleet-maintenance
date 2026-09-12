@@ -168,6 +168,10 @@ public class VehicleService {
     @Transactional
     public OdometerResultDto updateOdometer(String vehicleId, long odometerKm) {
         Vehicle vehicle = find(vehicleId);
+        if (!vehicle.isActive()) {
+            throw new VehicleStateConflictException("VEHICLE_INACTIVE",
+                    "El vehículo está dado de baja -- reactivalo primero con PATCH { \"active\": true }");
+        }
         if (odometerKm < vehicle.getOdometerKm()) {
             throw new MaintenanceConflictException("ODOMETER_REGRESSION",
                     "El kilometraje no puede ser menor al ya cargado (" + vehicle.getOdometerKm() + " km)");
@@ -215,6 +219,14 @@ public class VehicleService {
     @Transactional
     public VehicleSummaryDto update(String id, UpdateVehicleRequest request) {
         Vehicle vehicle = find(id);
+
+        boolean onlyReactivating = Boolean.TRUE.equals(request.active())
+                && request.plate() == null && request.brand() == null && request.model() == null
+                && request.vehicleType() == null && request.year() == null && request.chassisNumber() == null;
+        if (!vehicle.isActive() && !onlyReactivating) {
+            throw new VehicleStateConflictException("VEHICLE_INACTIVE",
+                    "El vehículo está dado de baja -- reactivalo primero con PATCH { \"active\": true }");
+        }
 
         if (request.plate() != null) {
             if (vehicleRepository.existsByPlateIgnoreCaseAndIdNot(request.plate(), vehicle.getId())) {
