@@ -27,7 +27,7 @@ public class MaintenancePlan {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false)
+    /** Opcional -- ver CreateMaintenancePlanRequest en openapi.yaml, category no está en `required`. */
     private String category;
 
     @Enumerated(EnumType.STRING)

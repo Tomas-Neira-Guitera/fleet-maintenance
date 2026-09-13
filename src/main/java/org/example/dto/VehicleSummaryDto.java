@@ -6,6 +6,11 @@ public record VehicleSummaryDto(
         String plate,
         String brand,
         String model,
-        String status
+        String status,
+        String vehicleType,
+        Integer year,
+        String chassisNumber,
+        long odometerKm,
+        boolean active
 ) {
 }

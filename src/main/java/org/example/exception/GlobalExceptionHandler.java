@@ -106,6 +106,12 @@ public class GlobalExceptionHandler {
                 .body(new ApiError("SCHEDULE_NOT_FOUND", ex.getMessage()));
     }
 
+    @ExceptionHandler(VehicleValidationException.class)
+    public ResponseEntity<ValidationError<FieldValidationErrorDetail>> handleVehicleValidation(VehicleValidationException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnexpected(Exception ex) {
         log.error("Unexpected error", ex);

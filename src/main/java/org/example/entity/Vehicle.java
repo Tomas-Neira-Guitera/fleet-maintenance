@@ -16,7 +16,7 @@ public class Vehicle {
     @GeneratedValue
     private UUID id;
 
-    @Column(nullable = false)
+    @Column(nullable = false, unique = true)
     private String plate;
 
     @Column(nullable = false)
@@ -39,6 +39,21 @@ public class Vehicle {
      */
     @Column(name = "odometer_km", columnDefinition = "bigint not null default 0")
     private long odometerKm = 0;
+
+    /** Año de fabricación, opcional -- CAM-25. */
+    private Integer year;
+
+    /** Número de chasis, opcional -- CAM-25. */
+    @Column(name = "chassis_number")
+    private String chassisNumber;
+
+    /**
+     * Baja lógica (CAM-25): un vehículo dado de baja deja de aparecer en los listados
+     * por defecto (chofer y "Estado de la flota"), pero conserva su historial real
+     * (inspecciones, defectos, asignaciones) -- mismo patrón que MaintenancePlan.active.
+     */
+    @Column(columnDefinition = "boolean not null default true")
+    private boolean active = true;
 
     protected Vehicle() {
         // JPA
@@ -92,5 +107,29 @@ public class Vehicle {
 
     public void setOdometerKm(long odometerKm) {
         this.odometerKm = odometerKm;
+    }
+
+    public Integer getYear() {
+        return year;
+    }
+
+    public void setYear(Integer year) {
+        this.year = year;
+    }
+
+    public String getChassisNumber() {
+        return chassisNumber;
+    }
+
+    public void setChassisNumber(String chassisNumber) {
+        this.chassisNumber = chassisNumber;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
     }
 }
