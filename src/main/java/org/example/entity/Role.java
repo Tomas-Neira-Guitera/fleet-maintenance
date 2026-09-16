@@ -2,5 +2,6 @@ package org.example.entity;
 
 public enum Role {
     ADMIN,
-    CHOFER
+    CHOFER,
+    TECNICO
 }
