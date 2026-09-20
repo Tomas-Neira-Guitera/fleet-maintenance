@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -43,7 +42,6 @@ class VehicleHistoryServiceTest {
         assertTrue(result.inspections().isEmpty());
         assertTrue(result.defects().isEmpty());
         assertTrue(result.maintenance().isEmpty());
-        assertEquals(0, result.defects().size());
     }
 
     @Test
