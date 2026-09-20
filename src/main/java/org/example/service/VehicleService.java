@@ -52,8 +52,10 @@ public class VehicleService {
         this.vehicleMapper = vehicleMapper;
     }
 
+    /** CAM-15: orden alfabético por patente, no el orden de inserción en la base. */
     public List<VehicleSummaryDto> listVehicles(boolean active) {
         return vehicleRepository.findByActive(active).stream()
+                .sorted(Comparator.comparing(Vehicle::getPlate, String.CASE_INSENSITIVE_ORDER))
                 .map(vehicle -> vehicleMapper.toSummary(vehicle, hasOpenTrip(vehicle.getId())))
                 .toList();
     }
