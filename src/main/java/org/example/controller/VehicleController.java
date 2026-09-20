@@ -6,7 +6,9 @@ import org.example.dto.OdometerResultDto;
 import org.example.dto.PagedResponse;
 import org.example.dto.UpdateOdometerRequest;
 import org.example.dto.UpdateVehicleRequest;
+import org.example.dto.VehicleHistoryDto;
 import org.example.dto.VehicleSummaryDto;
+import org.example.service.VehicleHistoryService;
 import org.example.service.VehicleService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,9 +34,23 @@ import java.util.List;
 public class VehicleController {
 
     private final VehicleService vehicleService;
+    private final VehicleHistoryService vehicleHistoryService;
 
-    public VehicleController(VehicleService vehicleService) {
+    public VehicleController(VehicleService vehicleService, VehicleHistoryService vehicleHistoryService) {
         this.vehicleService = vehicleService;
+        this.vehicleHistoryService = vehicleHistoryService;
+    }
+
+    /** GET /api/vehicles/{id} -- CAM-22. */
+    @GetMapping("/{id}")
+    public VehicleSummaryDto getVehicle(@PathVariable String id) {
+        return vehicleService.getById(id);
+    }
+
+    /** GET /api/vehicles/{id}/history -- CAM-22, ver CAM-22-vehicle-history-contract.md. */
+    @GetMapping("/{id}/history")
+    public VehicleHistoryDto getVehicleHistory(@PathVariable String id) {
+        return vehicleHistoryService.getHistory(id);
     }
 
     @GetMapping

@@ -6,6 +6,7 @@ import org.example.dto.VehicleSummaryDto;
 import org.example.entity.Trip;
 import org.example.entity.TripStatus;
 import org.example.entity.Vehicle;
+import org.example.exception.VehicleNotFoundException;
 import org.example.exception.VehicleStateConflictException;
 import org.example.exception.VehicleValidationException;
 import org.example.mapper.VehicleMapper;
@@ -48,6 +49,30 @@ class VehicleServiceTest {
             }
             return v;
         });
+    }
+
+    @Test
+    void getByIdDevuelveElVehiculoIncluidoUnoDadoDeBaja() throws Exception {
+        UUID id = UUID.randomUUID();
+        Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
+        setId(vehicle, id);
+        vehicle.setActive(false);
+        when(vehicleRepository.findById(id)).thenReturn(Optional.of(vehicle));
+        when(tripRepository.findFirstByVehicle_IdAndStatus(id, TripStatus.OPEN)).thenReturn(Optional.empty());
+
+        VehicleSummaryDto result = service.getById(id.toString());
+
+        assertEquals("AB123CD", result.plate());
+        assertFalse(result.active());
+    }
+
+    @Test
+    void getByIdConIdInexistenteOMalformadoLanzaNotFound() {
+        UUID id = UUID.randomUUID();
+        when(vehicleRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThrows(VehicleNotFoundException.class, () -> service.getById(id.toString()));
+        assertThrows(VehicleNotFoundException.class, () -> service.getById("no-es-un-uuid"));
     }
 
     @Test
