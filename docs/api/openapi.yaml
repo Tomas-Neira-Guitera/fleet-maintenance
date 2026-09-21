@@ -115,7 +115,50 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
+  /api/vehicles/{id}/history:
+    get:
+      summary: Historial de un vehículo (CAM-22)
+      description: >
+        Inspecciones, defectos y mantenimientos realizados del vehículo, cada
+        lista ordenada de más reciente a más antigua. Funciona también para un
+        vehículo dado de baja. No hay órdenes de trabajo todavía: `maintenance`
+        son los registros de "marcar como hecho" (`workOrderId` es texto libre).
+        Ver CAM-22-vehicle-history-contract.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleHistory"
+        "404":
+          description: VEHICLE_NOT_FOUND
+
   /api/vehicles/{id}:
+    get:
+      summary: Detalle de un vehículo (CAM-22)
+      description: Mismo shape que un item de `GET /api/vehicles`. Devuelve también vehículos dados de baja.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleSummary"
+        "404":
+          description: VEHICLE_NOT_FOUND
     patch:
       summary: Editar un vehículo, o reactivarlo (CAM-25)
       description: >
@@ -1011,6 +1054,46 @@ components:
         vehiclePlate: { type: string, nullable: true, description: Puede faltar si el vehículo fue eliminado. }
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
         reportedBy: { type: string, nullable: true, description: "Nombre del chofer que reportó el defecto (Inspection.driverName); puede faltar en datos antiguos." }
+
+    VehicleHistory:
+      type: object
+      required: [inspections, defects, maintenance]
+      properties:
+        inspections:
+          type: array
+          items:
+            $ref: "#/components/schemas/InspectionHistoryItem"
+        defects:
+          type: array
+          items:
+            $ref: "#/components/schemas/DefectSummary"
+        maintenance:
+          type: array
+          items:
+            $ref: "#/components/schemas/MaintenanceHistoryItem"
+
+    InspectionHistoryItem:
+      type: object
+      required: [id, type, timestamp, hasBlockingDefect]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [pre-trip, post-trip] }
+        timestamp: { type: string, format: date-time }
+        driverName: { type: string, nullable: true }
+        odometerKm: { type: number, nullable: true }
+        notes: { type: string, nullable: true }
+        hasBlockingDefect: { type: boolean }
+
+    MaintenanceHistoryItem:
+      type: object
+      required: [id, planName, completedAt]
+      properties:
+        id: { type: string }
+        planName: { type: string }
+        completedAt: { type: string, format: date, example: "2026-09-10" }
+        completedKm: { type: integer, format: int64, nullable: true }
+        workOrderId: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
 
     Role:
       type: string

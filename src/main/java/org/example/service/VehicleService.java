@@ -58,6 +58,19 @@ public class VehicleService {
                 .toList();
     }
 
+    /** GET /api/vehicles/{id} -- CAM-22. Incluye vehículos dados de baja. */
+    public VehicleSummaryDto getById(String id) {
+        UUID vehicleId;
+        try {
+            vehicleId = UUID.fromString(id);
+        } catch (IllegalArgumentException e) {
+            throw new VehicleNotFoundException(id);
+        }
+        Vehicle vehicle = vehicleRepository.findById(vehicleId)
+                .orElseThrow(() -> new VehicleNotFoundException(id));
+        return vehicleMapper.toSummary(vehicle, hasOpenTrip(vehicle.getId()));
+    }
+
     private boolean hasOpenTrip(UUID vehicleId) {
         return tripRepository.findFirstByVehicle_IdAndStatus(vehicleId, TripStatus.OPEN).isPresent();
     }
