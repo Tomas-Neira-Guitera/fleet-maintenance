@@ -84,4 +84,9 @@ public class Defect {
     public String getStatus() {
         return status;
     }
+
+    /** Lo llama WorkOrderService al finalizar la orden de trabajo que lo origino -- CAM-14. */
+    public void resolve() {
+        this.status = "resuelto";
+    }
 }

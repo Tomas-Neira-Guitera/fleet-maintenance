@@ -14,7 +14,11 @@ public interface DefectRepository extends JpaRepository<Defect, UUID> {
     @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i")
     List<Defect> findAllWithInspection();
 
-    /** Igual que {@link #findAllWithInspection()}, filtrado por vehículo (CAM-22), más reciente primero. */
+    /**
+     * Igual que {@link #findAllWithInspection()}, filtrado por vehículo, más reciente primero --
+     * alimenta el historial de vehículo (CAM-22), el historial combinado de CAM-15 y el selector
+     * de CAM-14.
+     */
     @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i "
             + "where i.vehicleId = :vehicleId order by d.createdAt desc")
     List<Defect> findByVehicleIdWithInspection(@Param("vehicleId") UUID vehicleId);

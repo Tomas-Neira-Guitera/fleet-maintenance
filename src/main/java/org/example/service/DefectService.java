@@ -30,7 +30,21 @@ public class DefectService {
 
     /** Ordena por severidad (blocking primero) y luego por fecha, más reciente primero. */
     public List<DefectDto> listDefects() {
-        List<Defect> defects = defectRepository.findAllWithInspection();
+        return listDefects(null, null);
+    }
+
+    /**
+     * vehicleId filtra por vehículo (historial de CAM-15, selector de CAM-14); status filtra
+     * por estado ("open"/"resuelto"). Ambos opcionales, sin filtro por default.
+     */
+    public List<DefectDto> listDefects(String vehicleIdParam, String statusParam) {
+        List<Defect> defects = vehicleIdParam != null && !vehicleIdParam.isBlank()
+                ? defectRepository.findByVehicleIdWithInspection(UUID.fromString(vehicleIdParam))
+                : defectRepository.findAllWithInspection();
+
+        if (statusParam != null) {
+            defects = defects.stream().filter(d -> statusParam.equals(d.getStatus())).toList();
+        }
 
         Map<UUID, String> plateByVehicleId = vehicleRepository
                 .findAllById(defects.stream().map(this::vehicleId).distinct().toList())
