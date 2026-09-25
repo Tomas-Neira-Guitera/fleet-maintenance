@@ -11,6 +11,8 @@ public record WorkOrderDto(
         String sourceType,
         String scheduledMaintenanceId,
         String defectId,
+        /** CAM-60: el defecto de origen (misma forma que GET /api/defects), si la OT viene de uno. */
+        DefectDto defect,
         String assignmentId,
         String title,
         String description,

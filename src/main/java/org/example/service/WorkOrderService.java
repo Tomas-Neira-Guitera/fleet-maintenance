@@ -4,6 +4,7 @@ import org.example.dto.CreateCompletionRequest;
 import org.example.dto.CreateWorkOrderExpenseRequest;
 import org.example.dto.CreateWorkOrderPhotoRequest;
 import org.example.dto.CreateWorkOrderRequest;
+import org.example.dto.DefectDto;
 import org.example.dto.FieldValidationErrorDetail;
 import org.example.dto.UpdateScheduleRequest;
 import org.example.dto.UpdateWorkOrderRequest;
@@ -29,6 +30,7 @@ import org.example.exception.VehicleNotFoundException;
 import org.example.exception.WorkOrderConflictException;
 import org.example.exception.WorkOrderNotFoundException;
 import org.example.exception.WorkOrderValidationException;
+import org.example.mapper.DefectMapper;
 import org.example.mapper.WorkOrderMapper;
 import org.example.repository.DefectRepository;
 import org.example.repository.ScheduledMaintenanceRepository;
@@ -69,13 +71,14 @@ public class WorkOrderService {
     private final MaintenanceCompletionService completionService;
     private final UserRepository userRepository;
     private final WorkOrderMapper mapper;
+    private final DefectMapper defectMapper;
 
     public WorkOrderService(WorkOrderRepository workOrderRepository, WorkOrderExpenseRepository expenseRepository,
                              WorkOrderPhotoRepository photoRepository, VehicleRepository vehicleRepository,
                              DefectRepository defectRepository, ScheduledMaintenanceRepository scheduleRepository,
                              ScheduledMaintenanceService scheduledMaintenanceService,
                              MaintenanceCompletionService completionService, UserRepository userRepository,
-                             WorkOrderMapper mapper) {
+                             WorkOrderMapper mapper, DefectMapper defectMapper) {
         this.workOrderRepository = workOrderRepository;
         this.expenseRepository = expenseRepository;
         this.photoRepository = photoRepository;
@@ -86,6 +89,7 @@ public class WorkOrderService {
         this.completionService = completionService;
         this.userRepository = userRepository;
         this.mapper = mapper;
+        this.defectMapper = defectMapper;
     }
 
     @Transactional
@@ -415,6 +419,10 @@ public class WorkOrderService {
         List<WorkOrderPhoto> photos = photoRepository.findByWorkOrder_IdOrderByCreatedAtAsc(workOrder.getId());
         String technicianUsername = workOrder.getTechnicianId() == null ? null
                 : userRepository.findById(workOrder.getTechnicianId()).map(User::getUsername).orElse(null);
-        return mapper.toDto(workOrder, plate, technicianUsername, expenses, photos);
+        DefectDto defect = workOrder.getDefectId() == null ? null
+                : defectRepository.findByIdWithInspection(workOrder.getDefectId())
+                        .map(d -> defectMapper.toDto(d, workOrder.getVehicleId().toString(), plate))
+                        .orElse(null);
+        return mapper.toDto(workOrder, plate, technicianUsername, defect, expenses, photos);
     }
 }

@@ -10,6 +10,7 @@ import org.example.entity.WorkOrder;
 import org.example.entity.WorkOrderExecutionType;
 import org.example.entity.WorkOrderSourceType;
 import org.example.exception.WorkOrderValidationException;
+import org.example.mapper.DefectMapper;
 import org.example.mapper.WorkOrderMapper;
 import org.example.repository.DefectRepository;
 import org.example.repository.ScheduledMaintenanceRepository;
@@ -45,7 +46,7 @@ class WorkOrderServiceTest {
     private final UserRepository userRepository = mock(UserRepository.class);
     private final WorkOrderService service = new WorkOrderService(workOrderRepository, expenseRepository, photoRepository,
             vehicleRepository, defectRepository, scheduleRepository, mock(ScheduledMaintenanceService.class),
-            mock(MaintenanceCompletionService.class), userRepository, new WorkOrderMapper());
+            mock(MaintenanceCompletionService.class), userRepository, new WorkOrderMapper(), new DefectMapper());
 
     private final UUID vehicleId = UUID.randomUUID();
     private final UUID technicianId = UUID.randomUUID();

@@ -1680,6 +1680,12 @@ components:
           $ref: "#/components/schemas/WorkOrderSourceType"
         scheduledMaintenanceId: { type: string, nullable: true }
         defectId: { type: string, nullable: true }
+        defect:
+          type: object
+          allOf:
+            - $ref: "#/components/schemas/DefectSummary"
+          nullable: true
+          description: "El defecto de origen (CAM-60), con la misma forma que GET /api/defects: gravedad, foto y quién lo reportó, para el técnico. Null si la OT no viene de un defecto; puede ser null aunque defectId no lo sea (defectId no tiene FK), así que no hay que asumirlo a partir de defectId."
         assignmentId: { type: string, nullable: true }
         title: { type: string }
         description: { type: string, nullable: true }

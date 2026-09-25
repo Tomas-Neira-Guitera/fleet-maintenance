@@ -1,5 +1,6 @@
 package org.example.mapper;
 
+import org.example.dto.DefectDto;
 import org.example.dto.WorkOrderDto;
 import org.example.dto.WorkOrderExpenseDto;
 import org.example.dto.WorkOrderPhotoDto;
@@ -14,7 +15,7 @@ import java.util.List;
 @Component
 public class WorkOrderMapper {
 
-    public WorkOrderDto toDto(WorkOrder workOrder, String plate, String technicianUsername,
+    public WorkOrderDto toDto(WorkOrder workOrder, String plate, String technicianUsername, DefectDto defect,
                               List<WorkOrderExpense> expenses, List<WorkOrderPhoto> photos) {
         List<WorkOrderExpenseDto> expenseDtos = expenses.stream().map(this::toExpenseDto).toList();
         List<WorkOrderPhotoDto> photoDtos = photos.stream().map(this::toPhotoDto).toList();
@@ -27,6 +28,7 @@ public class WorkOrderMapper {
                 workOrder.getSourceType().toJson(),
                 workOrder.getScheduledMaintenanceId() == null ? null : workOrder.getScheduledMaintenanceId().toString(),
                 workOrder.getDefectId() == null ? null : workOrder.getDefectId().toString(),
+                defect,
                 workOrder.getAssignmentId() == null ? null : workOrder.getAssignmentId().toString(),
                 workOrder.getTitle(),
                 workOrder.getDescription(),

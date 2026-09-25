@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface DefectRepository extends JpaRepository<Defect, UUID> {
@@ -22,4 +23,8 @@ public interface DefectRepository extends JpaRepository<Defect, UUID> {
     @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i "
             + "where i.vehicleId = :vehicleId order by d.createdAt desc")
     List<Defect> findByVehicleIdWithInspection(@Param("vehicleId") UUID vehicleId);
+
+    /** Un defecto con su inspección ya cargada (hace falta para reportedBy) -- lo usa el detalle de OT (CAM-60). */
+    @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i where d.id = :id")
+    Optional<Defect> findByIdWithInspection(@Param("id") UUID id);
 }

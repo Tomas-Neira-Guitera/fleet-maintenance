@@ -45,6 +45,17 @@ no se toca. Además:
 `WorkOrder` devuelve `technicianId` + `technicianUsername`, resuelto por el servidor,
 para que el frontend lo muestre sin una segunda llamada. Mismo criterio que `plate`.
 
+### 4b. `defect` en la respuesta
+Si la OT viene de un defecto (`defectId` no nulo, directo o vía una programación de
+origen defecto), `WorkOrder.defect` trae el defecto con la misma forma que
+`GET /api/defects` (`DefectSummary`): gravedad, descripción, foto, quién lo reportó y
+cuándo. Así el técnico ve el contexto (y la lista se ordena por gravedad) sin una
+segunda llamada por OT.
+
+`defect` puede venir `null` aunque `defectId` no lo sea: `defectId` es un UUID suelto,
+sin FK, y si el defecto no se encuentra el servidor no falla. El cliente pregunta por
+`defect`, no deduce su presencia de `defectId`.
+
 ### 5. Filtro `GET /api/work-orders?technicianId=`
 Es el vínculo técnico → vehículos: cada OT trae `vehicleId`/`plate`. Un id que no
 matchea ninguna OT, incluido uno malformado, devuelve `items: []`, no un error. Un
