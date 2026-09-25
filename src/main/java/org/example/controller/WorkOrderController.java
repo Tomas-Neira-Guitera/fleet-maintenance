@@ -38,7 +38,8 @@ public class WorkOrderController {
 
     @PostMapping
     public ResponseEntity<WorkOrderDto> create(@RequestBody CreateWorkOrderRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.create(request));
+        WorkOrderService.CreateResult result = service.create(request);
+        return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK).body(result.dto());
     }
 
     @GetMapping

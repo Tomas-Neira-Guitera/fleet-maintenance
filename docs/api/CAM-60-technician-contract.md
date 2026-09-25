@@ -61,6 +61,34 @@ Es el vínculo técnico → vehículos: cada OT trae `vehicleId`/`plate`. Un id 
 matchea ninguna OT, incluido uno malformado, devuelve `items: []`, no un error. Un
 `technicianId` vacío se ignora, como los otros filtros.
 
+### 5b. Una sola OT abierta por origen
+Replanificar desde el calendario actualiza la programación existente (upsert de CAM-42)
+y antes creaba una OT nueva cada vez: el técnico veía el mismo trabajo repetido. Ahora
+`POST /api/work-orders` no crea otra si ya hay una OT **abierta** (asignada o en proceso)
+para el mismo origen de fondo, y devuelve la existente con `200` en vez de `201` (mismo
+criterio que el upsert del calendario):
+
+- el mismo **defecto**, directo o vía una programación de origen defecto;
+- la misma **asignación de plan**: cancelar una programación en el calendario y volver a
+  planificar crea otra programación, pero sigue siendo el mismo trabajo;
+- la misma **programación**, si es manual (sin defecto ni plan detrás).
+
+Si hay más de una abierta (duplicados de antes de este cambio), se reusa la más antigua.
+
+Los datos de la OT reusada (técnico, tipo de ejecución, descripción) **no** se pisan con
+lo que venga en el body: el formulario de planificar arranca siempre vacío, y pisarlos
+cambiaría sin querer una OT que el admin ya había configurado. El frontend distingue el
+`200` y le avisa al admin que se mantuvo la OT existente. Lo único que se actualiza es
+`scheduledMaintenanceId`, para que apunte a la programación vigente (la que se cierra al
+finalizar).
+
+Una vez finalizada o cancelada, sí se puede abrir otra. Las OTs manuales no tienen
+origen y siempre crean una nueva.
+
+Limitación conocida: es un chequeo en la aplicación, sin constraint único en la base
+(`ddl-auto` no genera índices parciales). Dos pedidos exactamente simultáneos podrían
+crear dos OTs; en la UI el botón se deshabilita mientras envía.
+
 ### 6. `GET /api/users?role=` es de solo lectura
 Existe únicamente para poblar el selector de técnico. Devuelve `id`, `username`, `role`
 (nunca el hash). `role` es obligatorio (422 si falta): como ningún endpoint valida el

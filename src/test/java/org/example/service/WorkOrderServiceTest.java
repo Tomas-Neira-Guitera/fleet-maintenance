@@ -3,7 +3,9 @@ package org.example.service;
 import org.example.dto.CreateWorkOrderRequest;
 import org.example.dto.UpdateWorkOrderRequest;
 import org.example.dto.WorkOrderDto;
+import org.example.entity.Defect;
 import org.example.entity.Role;
+import org.example.entity.ScheduledMaintenance;
 import org.example.entity.User;
 import org.example.entity.Vehicle;
 import org.example.entity.WorkOrder;
@@ -28,10 +30,16 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** CAM-60 -- vínculo técnico ↔ orden de trabajo. */
@@ -101,7 +109,7 @@ class WorkOrderServiceTest {
 
     @Test
     void crearOtInternaConTecnicoDevuelveIdYNombreDelTecnico() {
-        WorkOrderDto result = service.create(manualRequest("interno", null, technicianId.toString()));
+        WorkOrderDto result = service.create(manualRequest("interno", null, technicianId.toString())).dto();
 
         assertEquals(technicianId.toString(), result.technicianId());
         assertEquals("tecnico", result.technicianUsername());
@@ -109,7 +117,7 @@ class WorkOrderServiceTest {
 
     @Test
     void crearOtSinTecnicoLoDejaVacio() {
-        WorkOrderDto result = service.create(manualRequest("interno", null, null));
+        WorkOrderDto result = service.create(manualRequest("interno", null, null)).dto();
 
         assertNull(result.technicianId());
         assertNull(result.technicianUsername());
@@ -220,5 +228,111 @@ class WorkOrderServiceTest {
         assertNull(result.assignee());
         assertNull(result.externalProvider());
         assertEquals("tecnico", result.technicianUsername());
+    }
+
+    // --- Una sola OT abierta por origen (CAM-60) ---
+
+    private ScheduledMaintenance scheduleFor(UUID defectId) {
+        ScheduledMaintenance schedule = mock(ScheduledMaintenance.class);
+        UUID scheduleId = UUID.randomUUID();
+        when(schedule.getId()).thenReturn(scheduleId);
+        when(schedule.getVehicleId()).thenReturn(vehicleId);
+        when(schedule.getDefectId()).thenReturn(defectId);
+        when(schedule.getTitle()).thenReturn("Cambio de aceite");
+        when(scheduleRepository.findById(scheduleId)).thenReturn(Optional.of(schedule));
+        return schedule;
+    }
+
+    private CreateWorkOrderRequest fromSchedule(ScheduledMaintenance schedule) {
+        return new CreateWorkOrderRequest("scheduled_maintenance", schedule.getId().toString(), null, null, null,
+                "interno", null, null, null);
+    }
+
+    @Test
+    void replanificarConUnaOtAbiertaDevuelveLaExistenteSinCrearOtra() throws Exception {
+        ScheduledMaintenance schedule = scheduleFor(null);
+        WorkOrder existing = new WorkOrder(vehicleId, WorkOrderSourceType.SCHEDULED_MAINTENANCE, schedule.getId(), null,
+                null, "Cambio de aceite", null, WorkOrderExecutionType.INTERNO, null, null, technicianId);
+        setId(existing, UUID.randomUUID());
+        when(workOrderRepository.findFirstByScheduledMaintenanceIdAndStatusInOrderByCreatedAtAsc(eq(schedule.getId()), any()))
+                .thenReturn(Optional.of(existing));
+
+        WorkOrderService.CreateResult result = service.create(fromSchedule(schedule));
+
+        assertFalse(result.created());
+        assertEquals(existing.getId().toString(), result.dto().id());
+        verify(workOrderRepository, never()).save(any());
+    }
+
+    @Test
+    void sinOtAbiertaParaEseOrigenCreaUnaNueva() {
+        ScheduledMaintenance schedule = scheduleFor(null);
+
+        WorkOrderService.CreateResult result = service.create(fromSchedule(schedule));
+
+        assertTrue(result.created());
+        verify(workOrderRepository).save(any(WorkOrder.class));
+    }
+
+    @Test
+    void unaProgramacionDeOrigenDefectoSeDeduplicaPorElDefecto() throws Exception {
+        UUID defectId = UUID.randomUUID();
+        ScheduledMaintenance schedule = scheduleFor(defectId);
+        WorkOrder existing = new WorkOrder(vehicleId, WorkOrderSourceType.DEFECT, null, defectId, null,
+                "Pérdida de aceite", null, WorkOrderExecutionType.INTERNO, null, null, null);
+        setId(existing, UUID.randomUUID());
+        when(workOrderRepository.findFirstByDefectIdAndStatusInOrderByCreatedAtAsc(eq(defectId), any()))
+                .thenReturn(Optional.of(existing));
+
+        WorkOrderService.CreateResult result = service.create(fromSchedule(schedule));
+
+        assertFalse(result.created());
+        assertEquals(existing.getId().toString(), result.dto().id());
+        // La OT reusada queda apuntando a la programación vigente, que es la que cierra al finalizar.
+        assertEquals(schedule.getId().toString(), result.dto().scheduledMaintenanceId());
+    }
+
+    @Test
+    void cancelarYReplanificarUnPlanReusaLaOtAbiertaDeEsaAsignacion() throws Exception {
+        UUID assignmentId = UUID.randomUUID();
+        ScheduledMaintenance newSchedule = scheduleFor(null);
+        when(newSchedule.getAssignmentId()).thenReturn(assignmentId);
+        WorkOrder existing = new WorkOrder(vehicleId, WorkOrderSourceType.SCHEDULED_MAINTENANCE, UUID.randomUUID(), null,
+                assignmentId, "Cambio de aceite", null, WorkOrderExecutionType.INTERNO, null, null, technicianId);
+        setId(existing, UUID.randomUUID());
+        when(workOrderRepository.findFirstByAssignmentIdAndStatusInOrderByCreatedAtAsc(eq(assignmentId), any()))
+                .thenReturn(Optional.of(existing));
+
+        WorkOrderService.CreateResult result = service.create(fromSchedule(newSchedule));
+
+        assertFalse(result.created());
+        assertEquals(existing.getId().toString(), result.dto().id());
+        assertEquals(newSchedule.getId().toString(), result.dto().scheduledMaintenanceId());
+        assertEquals("tecnico", result.dto().technicianUsername());
+    }
+
+    @Test
+    void crearDirectoDesdeUnDefectoConOtAbiertaDevuelveLaExistente() throws Exception {
+        UUID defectId = UUID.randomUUID();
+        Defect defect = mock(Defect.class, RETURNS_DEEP_STUBS);
+        when(defect.getId()).thenReturn(defectId);
+        when(defect.getStatus()).thenReturn("open");
+        when(defect.getDescription()).thenReturn("Pérdida de aceite");
+        when(defect.getInspectionAnswer().getInspection().getVehicleId()).thenReturn(vehicleId);
+        when(defectRepository.findById(defectId)).thenReturn(Optional.of(defect));
+        WorkOrder existing = new WorkOrder(vehicleId, WorkOrderSourceType.DEFECT, null, defectId, null,
+                "Pérdida de aceite", null, WorkOrderExecutionType.INTERNO, null, null, null);
+        setId(existing, UUID.randomUUID());
+        when(workOrderRepository.findFirstByDefectIdAndStatusInOrderByCreatedAtAsc(eq(defectId), any()))
+                .thenReturn(Optional.of(existing));
+
+        WorkOrderService.CreateResult result = service.create(new CreateWorkOrderRequest("defect", defectId.toString(),
+                null, null, null, "interno", null, null, technicianId.toString()));
+
+        assertFalse(result.created());
+        assertEquals(existing.getId().toString(), result.dto().id());
+        // No se pisa: el técnico que venía en el body no se aplica sobre la OT existente.
+        assertNull(result.dto().technicianId());
+        verify(workOrderRepository, never()).save(any());
     }
 }

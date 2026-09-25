@@ -45,6 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -92,8 +93,14 @@ public class WorkOrderService {
         this.defectMapper = defectMapper;
     }
 
+    /** created=false si ya había una OT abierta para el mismo origen y se devolvió esa. */
+    public record CreateResult(WorkOrderDto dto, boolean created) {
+    }
+
+    private static final List<WorkOrderStatus> OPEN_STATUSES = List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO);
+
     @Transactional
-    public WorkOrderDto create(CreateWorkOrderRequest request) {
+    public CreateResult create(CreateWorkOrderRequest request) {
         List<FieldValidationErrorDetail> details = new ArrayList<>();
 
         WorkOrderSourceType sourceType = WorkOrderSourceType.fromJson(request.sourceType());
@@ -165,11 +172,44 @@ public class WorkOrderService {
             title = request.title();
         }
 
+        // Una sola OT abierta por origen: replanificar desde el calendario (o volver a planificar un
+        // defecto) no debe duplicar el trabajo del técnico. Se devuelve la existente sin cambiar sus
+        // datos; solo se la vincula a la programación vigente, que es la que tiene que cerrar al finalizar
+        // (si la anterior se canceló y se replanificó, el calendario creó una programación nueva).
+        Optional<WorkOrder> open = findOpenForSource(defectId, assignmentId, scheduledMaintenanceId);
+        if (open.isPresent()) {
+            WorkOrder existing = open.get();
+            if (scheduledMaintenanceId != null && !scheduledMaintenanceId.equals(existing.getScheduledMaintenanceId())) {
+                existing.setScheduledMaintenanceId(scheduledMaintenanceId);
+                workOrderRepository.save(existing);
+            }
+            return new CreateResult(toDto(existing), false);
+        }
+
         WorkOrder workOrder = new WorkOrder(vehicleId, sourceType, scheduledMaintenanceId, defectId, assignmentId,
                 title, request.description(), executionType, request.externalProvider(), request.assignee(), technicianId);
         workOrderRepository.save(workOrder);
 
-        return toDto(workOrder);
+        return new CreateResult(toDto(workOrder), true);
+    }
+
+    /**
+     * Se busca por el origen de fondo, no solo por la programación: el defecto (cubre la OT directa y
+     * la que pasa por el calendario) o la asignación del plan (sobrevive a cancelar y replanificar,
+     * que crea otra programación). Si no hay ninguno de los dos, la programación manual.
+     */
+    private Optional<WorkOrder> findOpenForSource(UUID defectId, UUID assignmentId, UUID scheduledMaintenanceId) {
+        if (defectId != null) {
+            return workOrderRepository.findFirstByDefectIdAndStatusInOrderByCreatedAtAsc(defectId, OPEN_STATUSES);
+        }
+        if (assignmentId != null) {
+            return workOrderRepository.findFirstByAssignmentIdAndStatusInOrderByCreatedAtAsc(assignmentId, OPEN_STATUSES);
+        }
+        if (scheduledMaintenanceId != null) {
+            return workOrderRepository.findFirstByScheduledMaintenanceIdAndStatusInOrderByCreatedAtAsc(
+                    scheduledMaintenanceId, OPEN_STATUSES);
+        }
+        return Optional.empty();
     }
 
     public WorkOrderDto get(String id) {

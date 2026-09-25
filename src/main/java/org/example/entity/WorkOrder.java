@@ -120,6 +120,12 @@ public class WorkOrder {
         return scheduledMaintenanceId;
     }
 
+    /** CAM-60: al reusar una OT abierta desde una programación nueva, pasa a apuntar a la vigente. */
+    public void setScheduledMaintenanceId(UUID scheduledMaintenanceId) {
+        this.scheduledMaintenanceId = scheduledMaintenanceId;
+        touch();
+    }
+
     public UUID getDefectId() {
         return defectId;
     }

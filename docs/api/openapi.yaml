@@ -916,6 +916,14 @@ paths:
         vehicleId y title a partir de sourceId; para manual los manda el
         cliente. Nace en status=asignada. Ver docs/api/CAM-60-technician-contract.md
         para las reglas de technicianId.
+
+        Una sola OT abierta por origen: si ya hay una asignada o en proceso para
+        el mismo defecto (directo o vía una programación de origen defecto), la
+        misma asignación de plan o la misma programación manual, no se crea otra
+        y se devuelve la existente con 200 en vez de 201. Sus datos (técnico,
+        tipo de ejecución, descripción) no se modifican con lo que venga en el
+        body; solo pasa a apuntar a la programación vigente. Las manuales siempre
+        crean una nueva.
       requestBody:
         required: true
         content:
@@ -925,6 +933,12 @@ paths:
       responses:
         "201":
           description: Orden de trabajo creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkOrder"
+        "200":
+          description: Ya había una OT abierta para ese origen -- se devuelve esa, con sus datos sin cambios
           content:
             application/json:
               schema:
