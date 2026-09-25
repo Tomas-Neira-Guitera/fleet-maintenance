@@ -42,8 +42,7 @@ public class LocalFilesystemPhotoStorage implements PhotoStorage {
         String contentType = file.getContentType();
         String extension = EXTENSION_BY_CONTENT_TYPE.get(contentType);
         if (extension == null) {
-            throw new UnsupportedPhotoTypeException(
-                    "El archivo debe ser image/jpeg o image/png (recibido: " + contentType + ").");
+            throw UnsupportedPhotoTypeException.wrongType(contentType);
         }
 
         String photoId = UUID.randomUUID().toString();

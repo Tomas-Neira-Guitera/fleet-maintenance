@@ -52,10 +52,25 @@ public class VehicleService {
         this.vehicleMapper = vehicleMapper;
     }
 
+    /** CAM-15: orden alfabético por patente, no el orden de inserción en la base. */
     public List<VehicleSummaryDto> listVehicles(boolean active) {
         return vehicleRepository.findByActive(active).stream()
+                .sorted(Comparator.comparing(Vehicle::getPlate, String.CASE_INSENSITIVE_ORDER))
                 .map(vehicle -> vehicleMapper.toSummary(vehicle, hasOpenTrip(vehicle.getId())))
                 .toList();
+    }
+
+    /** GET /api/vehicles/{id} -- CAM-22. Incluye vehículos dados de baja. */
+    public VehicleSummaryDto getById(String id) {
+        UUID vehicleId;
+        try {
+            vehicleId = UUID.fromString(id);
+        } catch (IllegalArgumentException e) {
+            throw new VehicleNotFoundException(id);
+        }
+        Vehicle vehicle = vehicleRepository.findById(vehicleId)
+                .orElseThrow(() -> new VehicleNotFoundException(id));
+        return vehicleMapper.toSummary(vehicle, hasOpenTrip(vehicle.getId()));
     }
 
     private boolean hasOpenTrip(UUID vehicleId) {

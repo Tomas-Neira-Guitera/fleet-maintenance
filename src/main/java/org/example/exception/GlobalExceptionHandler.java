@@ -112,6 +112,30 @@ public class GlobalExceptionHandler {
                 .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
     }
 
+    @ExceptionHandler(WorkOrderNotFoundException.class)
+    public ResponseEntity<ApiError> handleWorkOrderNotFound(WorkOrderNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("WORK_ORDER_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(WorkOrderConflictException.class)
+    public ResponseEntity<ApiError> handleWorkOrderConflict(WorkOrderConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError(ex.getErrorCode(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(WorkOrderValidationException.class)
+    public ResponseEntity<ValidationError<FieldValidationErrorDetail>> handleWorkOrderValidation(WorkOrderValidationException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
+    }
+
+    @ExceptionHandler(UserValidationException.class)
+    public ResponseEntity<ValidationError<FieldValidationErrorDetail>> handleUserValidation(UserValidationException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnexpected(Exception ex) {
         log.error("Unexpected error", ex);

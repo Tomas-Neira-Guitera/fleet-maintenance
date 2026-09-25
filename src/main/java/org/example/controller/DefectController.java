@@ -4,6 +4,7 @@ import org.example.dto.DefectDto;
 import org.example.service.DefectService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -20,7 +21,8 @@ public class DefectController {
     }
 
     @GetMapping
-    public List<DefectDto> listDefects() {
-        return defectService.listDefects();
+    public List<DefectDto> listDefects(@RequestParam(required = false) String vehicleId,
+                                        @RequestParam(required = false) String status) {
+        return defectService.listDefects(vehicleId, status);
     }
 }
