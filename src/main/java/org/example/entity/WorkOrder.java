@@ -58,7 +58,12 @@ public class WorkOrder {
     @Column(name = "external_provider")
     private String externalProvider;
 
+    /** Texto libre: en OTs externas, el contacto en el proveedor. En internas, lo reemplaza technicianId (CAM-60). */
     private String assignee;
+
+    /** Usuario con rol TECNICO a cargo (CAM-60). Solo en OTs internas; null si no hay técnico asignado. */
+    @Column(name = "technician_id")
+    private UUID technicianId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -82,7 +87,7 @@ public class WorkOrder {
 
     public WorkOrder(UUID vehicleId, WorkOrderSourceType sourceType, UUID scheduledMaintenanceId, UUID defectId,
                       UUID assignmentId, String title, String description, WorkOrderExecutionType executionType,
-                      String externalProvider, String assignee) {
+                      String externalProvider, String assignee, UUID technicianId) {
         this.vehicleId = vehicleId;
         this.sourceType = sourceType;
         this.scheduledMaintenanceId = scheduledMaintenanceId;
@@ -93,6 +98,7 @@ public class WorkOrder {
         this.executionType = executionType;
         this.externalProvider = externalProvider;
         this.assignee = assignee;
+        this.technicianId = technicianId;
         Instant now = Instant.now();
         this.createdAt = now;
         this.updatedAt = now;
@@ -159,6 +165,15 @@ public class WorkOrder {
 
     public void setAssignee(String assignee) {
         this.assignee = assignee;
+        touch();
+    }
+
+    public UUID getTechnicianId() {
+        return technicianId;
+    }
+
+    public void setTechnicianId(UUID technicianId) {
+        this.technicianId = technicianId;
         touch();
     }
 

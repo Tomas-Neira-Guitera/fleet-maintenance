@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: FleetGuard API — Inspecciones DVIR (CAM-11), login (CAM-43), mantenimiento preventivo (CAM-40) y programación (CAM-42)
+  title: FleetGuard API — Inspecciones DVIR (CAM-11), login (CAM-43), mantenimiento preventivo (CAM-40) programación (CAM-42) y órdenes de trabajo (CAM-14, CAM-60)
   description: >
     Contrato para la carga de inspecciones pre-trip / post-trip del chofer y
     para la consulta de los defectos que generan (CAM-13). Cubre el listado
@@ -22,7 +22,12 @@ info:
     CAM-50, CAM-51): cuándo se planea hacer un mantenimiento o resolver un
     defecto, distinto de cuándo corresponde (calculado) y de cuándo ya se
     hizo (historial). Ver docs/api/CAM-42-schedule-contract.md.
-  version: "1.5"
+
+
+    Y las órdenes de trabajo (CAM-14, CAM-15, CAM-62, CAM-63), con el
+    técnico a cargo (CAM-60) y el listado de usuarios de solo lectura que
+    alimenta su selector. Ver docs/api/CAM-60-technician-contract.md.
+  version: "1.6"
 
 servers:
   - url: http://localhost:8080
@@ -865,6 +870,255 @@ paths:
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
 
+  # --- Órdenes de trabajo (CAM-14, CAM-15, CAM-62, CAM-63) y técnico a cargo (CAM-60) ---
+
+  /api/work-orders:
+    get:
+      summary: Listar órdenes de trabajo, de la más nueva a la más vieja
+      description: >
+        Todos los filtros son opcionales y combinables. technicianId es el
+        vínculo técnico ↔ vehículos (CAM-60): las OTs de un técnico traen
+        vehicleId/plate. Un technicianId que no corresponde a ninguna OT
+        (incluido uno malformado) devuelve una lista vacía, no un error.
+      parameters:
+        - name: vehicleId
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/WorkOrderStatus"
+        - name: executionType
+          in: query
+          schema:
+            $ref: "#/components/schemas/WorkOrderExecutionType"
+        - name: technicianId
+          in: query
+          description: Id de un usuario con rol TECNICO (CAM-60).
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkOrder"
+    post:
+      summary: Crear una orden de trabajo (desde un mantenimiento programado, un defecto, o manual)
+      description: >
+        Para sourceType scheduled_maintenance/defect el servidor resuelve
+        vehicleId y title a partir de sourceId; para manual los manda el
+        cliente. Nace en status=asignada. Ver docs/api/CAM-60-technician-contract.md
+        para las reglas de technicianId.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkOrderRequest"
+      responses:
+        "201":
+          description: Orden de trabajo creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkOrder"
+        "404":
+          description: SCHEDULE_NOT_FOUND, DEFECT_NOT_FOUND o VEHICLE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: DEFECT_RESOLVED -- no se abre una OT sobre un defecto ya resuelto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/work-orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Detalle de una orden de trabajo, con gastos y fotos
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkOrder"
+        "404":
+          description: WORK_ORDER_NOT_FOUND
+    patch:
+      summary: Editar datos y/o avanzar de estado una orden de trabajo
+      description: >
+        Campos parciales: lo que no viene no se toca. Transiciones válidas:
+        asignada→en_proceso, en_proceso→finalizada, asignada|en_proceso→cancelada.
+        Finalizar exige closingDescription y al menos una foto, y cierra el
+        origen (completion de la asignación, programación o defecto).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkOrderRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkOrder"
+        "404":
+          description: WORK_ORDER_NOT_FOUND
+        "409":
+          description: INVALID_STATUS_TRANSITION
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/work-orders/{id}/expenses:
+    post:
+      summary: Cargar un gasto a una orden de trabajo abierta (CAM-63)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkOrderExpenseRequest"
+      responses:
+        "201":
+          description: Gasto creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkOrderExpense"
+        "404":
+          description: WORK_ORDER_NOT_FOUND
+        "409":
+          description: WORK_ORDER_FINALIZED -- la OT está finalizada o cancelada
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/work-orders/{id}/expenses/{expenseId}:
+    delete:
+      summary: Borrar un gasto de una orden de trabajo abierta
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: expenseId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Borrado
+        "404":
+          description: WORK_ORDER_NOT_FOUND (también si el gasto no es de esa OT)
+        "409":
+          description: WORK_ORDER_FINALIZED
+
+  /api/work-orders/{id}/photos:
+    post:
+      summary: Adjuntar una foto (ya subida con POST /api/photos) a una orden de trabajo abierta
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkOrderPhotoRequest"
+      responses:
+        "201":
+          description: Foto adjuntada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkOrderPhoto"
+        "404":
+          description: WORK_ORDER_NOT_FOUND
+        "409":
+          description: WORK_ORDER_CLOSED
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/work-orders/{id}/photos/{photoId}:
+    delete:
+      summary: Quitar una foto de una orden de trabajo abierta
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: photoId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Borrada
+        "404":
+          description: WORK_ORDER_NOT_FOUND (también si la foto no es de esa OT)
+        "409":
+          description: WORK_ORDER_CLOSED
+
+  /api/users:
+    get:
+      summary: Listar usuarios (solo lectura, CAM-60)
+      description: >
+        Existe para poblar el selector de técnico de una orden de trabajo
+        (role=TECNICO). No es gestión de usuarios (alta, invitaciones, roles):
+        eso es CAM-23. Nunca devuelve el hash de la contraseña.
+      parameters:
+        - name: role
+          in: query
+          required: true
+          description: Obligatorio -- sin JWT que proteja el endpoint, no se lista el total de usuarios.
+          schema:
+            $ref: "#/components/schemas/Role"
+      responses:
+        "200":
+          description: OK, ordenado por username
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/UserSummary"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1097,7 +1351,8 @@ components:
 
     Role:
       type: string
-      enum: [ADMIN, CHOFER]
+      description: TECNICO desde CAM-67 (usuario de taller).
+      enum: [ADMIN, CHOFER, TECNICO]
 
     LoginRequest:
       type: object
@@ -1394,3 +1649,144 @@ components:
         status:
           type: string
           enum: [done, cancelled]
+
+    # --- Órdenes de trabajo (CAM-14, CAM-15, CAM-62, CAM-63, CAM-60) ---
+
+    WorkOrderSourceType:
+      type: string
+      enum: [scheduled_maintenance, defect, manual]
+
+    WorkOrderExecutionType:
+      type: string
+      description: interno = personal propio (puede tener técnico); externo = taller de terceros (CAM-62).
+      enum: [interno, externo]
+
+    WorkOrderStatus:
+      type: string
+      enum: [asignada, en_proceso, finalizada, cancelada]
+
+    WorkOrderExpenseCategory:
+      type: string
+      enum: [repuesto, mano_de_obra, otro]
+
+    WorkOrder:
+      type: object
+      required: [id, vehicleId, sourceType, title, executionType, status, expenses, totalExpenses, photos, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        vehicleId: { type: string }
+        plate: { type: string, nullable: true }
+        sourceType:
+          $ref: "#/components/schemas/WorkOrderSourceType"
+        scheduledMaintenanceId: { type: string, nullable: true }
+        defectId: { type: string, nullable: true }
+        assignmentId: { type: string, nullable: true }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        executionType:
+          $ref: "#/components/schemas/WorkOrderExecutionType"
+        externalProvider: { type: string, nullable: true, description: Obligatorio si executionType=externo. }
+        assignee: { type: string, nullable: true, description: "Texto libre. En OTs externas, el contacto en el proveedor; en internas lo reemplaza technicianId (CAM-60)." }
+        technicianId: { type: string, nullable: true, description: "Usuario con rol TECNICO a cargo (CAM-60). Solo en OTs internas." }
+        technicianUsername: { type: string, nullable: true, description: Resuelto por el servidor a partir de technicianId. }
+        status:
+          $ref: "#/components/schemas/WorkOrderStatus"
+        closingDescription: { type: string, nullable: true }
+        expenses:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkOrderExpense"
+        totalExpenses: { type: number }
+        photos:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkOrderPhoto"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        finalizedAt: { type: string, format: date-time, nullable: true }
+
+    CreateWorkOrderRequest:
+      type: object
+      required: [sourceType, executionType]
+      description: >
+        sourceId es obligatorio si sourceType es scheduled_maintenance/defect;
+        vehicleId+title son obligatorios si sourceType es manual.
+      properties:
+        sourceType:
+          $ref: "#/components/schemas/WorkOrderSourceType"
+        sourceId: { type: string }
+        vehicleId: { type: string }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        executionType:
+          $ref: "#/components/schemas/WorkOrderExecutionType"
+        externalProvider: { type: string, nullable: true }
+        assignee: { type: string, nullable: true }
+        technicianId:
+          type: string
+          nullable: true
+          description: "Opcional. Tiene que ser un usuario con rol TECNICO (422 technicianId si no) y la OT tiene que ser interna (422 si es externa)."
+
+    UpdateWorkOrderRequest:
+      type: object
+      description: Campos parciales -- lo que no viene no se toca.
+      properties:
+        status:
+          type: string
+          enum: [en_proceso, finalizada, cancelada]
+        closingDescription: { type: string, description: Obligatoria para finalizar. }
+        completedKm: { type: integer, format: int64, nullable: true }
+        assignee: { type: string }
+        technicianId:
+          type: string
+          description: >
+            Un id asigna (mismas reglas que al crear); "" desasigna. Si la OT
+            pasa a executionType=externo, el técnico se desasigna solo; si pasa
+            a interno, se limpian assignee y externalProvider.
+        executionType:
+          $ref: "#/components/schemas/WorkOrderExecutionType"
+        externalProvider: { type: string }
+        description: { type: string }
+
+    WorkOrderExpense:
+      type: object
+      required: [id, category, description, amount, createdAt]
+      properties:
+        id: { type: string }
+        category:
+          $ref: "#/components/schemas/WorkOrderExpenseCategory"
+        description: { type: string }
+        amount: { type: number }
+        createdAt: { type: string, format: date-time }
+
+    CreateWorkOrderExpenseRequest:
+      type: object
+      required: [category, description, amount]
+      properties:
+        category:
+          $ref: "#/components/schemas/WorkOrderExpenseCategory"
+        description: { type: string }
+        amount: { type: number, minimum: 0, exclusiveMinimum: true }
+
+    WorkOrderPhoto:
+      type: object
+      required: [id, photoUrl, createdAt]
+      properties:
+        id: { type: string }
+        photoUrl: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    CreateWorkOrderPhotoRequest:
+      type: object
+      required: [photoUrl]
+      properties:
+        photoUrl: { type: string, description: La URL que devolvió POST /api/photos. }
+
+    UserSummary:
+      type: object
+      required: [id, username, role]
+      properties:
+        id: { type: string }
+        username: { type: string }
+        role:
+          $ref: "#/components/schemas/Role"

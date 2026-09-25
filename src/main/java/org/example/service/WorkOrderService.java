@@ -11,8 +11,10 @@ import org.example.dto.WorkOrderDto;
 import org.example.dto.WorkOrderExpenseDto;
 import org.example.dto.WorkOrderPhotoDto;
 import org.example.entity.Defect;
+import org.example.entity.Role;
 import org.example.entity.ScheduleSourceType;
 import org.example.entity.ScheduledMaintenance;
+import org.example.entity.User;
 import org.example.entity.Vehicle;
 import org.example.entity.WorkOrder;
 import org.example.entity.WorkOrderExecutionType;
@@ -30,6 +32,7 @@ import org.example.exception.WorkOrderValidationException;
 import org.example.mapper.WorkOrderMapper;
 import org.example.repository.DefectRepository;
 import org.example.repository.ScheduledMaintenanceRepository;
+import org.example.repository.UserRepository;
 import org.example.repository.VehicleRepository;
 import org.example.repository.WorkOrderExpenseRepository;
 import org.example.repository.WorkOrderPhotoRepository;
@@ -51,6 +54,11 @@ import java.util.UUID;
 @Service
 public class WorkOrderService {
 
+    private static final FieldValidationErrorDetail TECHNICIAN_NOT_FOUND =
+            new FieldValidationErrorDetail("technicianId", "No existe un técnico con ese id");
+    private static final FieldValidationErrorDetail TECHNICIAN_ONLY_INTERNAL =
+            new FieldValidationErrorDetail("technicianId", "Solo se puede asignar un técnico a una orden de trabajo interna");
+
     private final WorkOrderRepository workOrderRepository;
     private final WorkOrderExpenseRepository expenseRepository;
     private final WorkOrderPhotoRepository photoRepository;
@@ -59,13 +67,15 @@ public class WorkOrderService {
     private final ScheduledMaintenanceRepository scheduleRepository;
     private final ScheduledMaintenanceService scheduledMaintenanceService;
     private final MaintenanceCompletionService completionService;
+    private final UserRepository userRepository;
     private final WorkOrderMapper mapper;
 
     public WorkOrderService(WorkOrderRepository workOrderRepository, WorkOrderExpenseRepository expenseRepository,
                              WorkOrderPhotoRepository photoRepository, VehicleRepository vehicleRepository,
                              DefectRepository defectRepository, ScheduledMaintenanceRepository scheduleRepository,
                              ScheduledMaintenanceService scheduledMaintenanceService,
-                             MaintenanceCompletionService completionService, WorkOrderMapper mapper) {
+                             MaintenanceCompletionService completionService, UserRepository userRepository,
+                             WorkOrderMapper mapper) {
         this.workOrderRepository = workOrderRepository;
         this.expenseRepository = expenseRepository;
         this.photoRepository = photoRepository;
@@ -74,6 +84,7 @@ public class WorkOrderService {
         this.scheduleRepository = scheduleRepository;
         this.scheduledMaintenanceService = scheduledMaintenanceService;
         this.completionService = completionService;
+        this.userRepository = userRepository;
         this.mapper = mapper;
     }
 
@@ -103,6 +114,17 @@ public class WorkOrderService {
         if (executionType == WorkOrderExecutionType.EXTERNO
                 && (request.externalProvider() == null || request.externalProvider().isBlank())) {
             details.add(new FieldValidationErrorDetail("externalProvider", "Obligatorio si executionType es 'externo'"));
+        }
+        UUID technicianId = null;
+        if (request.technicianId() != null && !request.technicianId().isBlank()) {
+            if (executionType == WorkOrderExecutionType.EXTERNO) {
+                details.add(TECHNICIAN_ONLY_INTERNAL);
+            } else {
+                technicianId = resolveTechnicianId(request.technicianId());
+                if (technicianId == null) {
+                    details.add(TECHNICIAN_NOT_FOUND);
+                }
+            }
         }
         if (!details.isEmpty()) {
             throw new WorkOrderValidationException("Datos inválidos para crear la orden de trabajo", details);
@@ -140,7 +162,7 @@ public class WorkOrderService {
         }
 
         WorkOrder workOrder = new WorkOrder(vehicleId, sourceType, scheduledMaintenanceId, defectId, assignmentId,
-                title, request.description(), executionType, request.externalProvider(), request.assignee());
+                title, request.description(), executionType, request.externalProvider(), request.assignee(), technicianId);
         workOrderRepository.save(workOrder);
 
         return toDto(workOrder);
@@ -150,7 +172,8 @@ public class WorkOrderService {
         return toDto(findWorkOrder(id));
     }
 
-    public List<WorkOrderDto> list(String vehicleIdParam, String statusParam, String executionTypeParam) {
+    public List<WorkOrderDto> list(String vehicleIdParam, String statusParam, String executionTypeParam,
+                                   String technicianIdParam) {
         List<WorkOrder> workOrders = vehicleIdParam != null && !vehicleIdParam.isBlank()
                 ? workOrderRepository.findByVehicleIdOrderByCreatedAtDesc(UUID.fromString(vehicleIdParam))
                 : workOrderRepository.findAllByOrderByCreatedAtDesc();
@@ -162,6 +185,13 @@ public class WorkOrderService {
         if (executionTypeParam != null) {
             WorkOrderExecutionType executionType = WorkOrderExecutionType.fromJson(executionTypeParam);
             workOrders = workOrders.stream().filter(w -> w.getExecutionType() == executionType).toList();
+        }
+        if (technicianIdParam != null && !technicianIdParam.isBlank()) {
+            // Comparación por string: un id malformado o inexistente devuelve lista vacía, no 500.
+            workOrders = workOrders.stream()
+                    .filter(w -> w.getTechnicianId() != null
+                            && w.getTechnicianId().toString().equalsIgnoreCase(technicianIdParam.trim()))
+                    .toList();
         }
 
         return workOrders.stream().map(this::toDto).toList();
@@ -183,6 +213,13 @@ public class WorkOrderService {
                 throw new WorkOrderValidationException("Tipo de ejecución inválido",
                         List.of(new FieldValidationErrorDetail("executionType", "Debe ser 'interno' o 'externo'")));
             }
+            if (executionType == WorkOrderExecutionType.INTERNO
+                    && workOrder.getExecutionType() == WorkOrderExecutionType.EXTERNO) {
+                // CAM-60: en una OT interna el responsable es technicianId; el contacto y el
+                // proveedor externos dejan de aplicar y no deben quedar como "responsable".
+                workOrder.setAssignee(null);
+                workOrder.setExternalProvider(null);
+            }
             workOrder.setExecutionType(executionType);
         }
         if (request.externalProvider() != null) {
@@ -193,6 +230,7 @@ public class WorkOrderService {
             throw new WorkOrderValidationException("Datos inválidos",
                     List.of(new FieldValidationErrorDetail("externalProvider", "Obligatorio si executionType es 'externo'")));
         }
+        applyTechnicianChange(workOrder, request.technicianId());
 
         if (request.status() != null) {
             applyStatusChange(workOrder, request);
@@ -200,6 +238,37 @@ public class WorkOrderService {
 
         workOrderRepository.save(workOrder);
         return toDto(workOrder);
+    }
+
+    /**
+     * CAM-60. technicianId ausente (null) no toca nada; "" desasigna; un id asigna. El técnico
+     * solo tiene sentido en OTs internas: si la OT queda externa, se desasigna sola.
+     */
+    private void applyTechnicianChange(WorkOrder workOrder, String technicianIdParam) {
+        boolean external = workOrder.getExecutionType() == WorkOrderExecutionType.EXTERNO;
+        if (technicianIdParam != null && !technicianIdParam.isBlank()) {
+            if (external) {
+                throw new WorkOrderValidationException("Datos inválidos", List.of(TECHNICIAN_ONLY_INTERNAL));
+            }
+            UUID technicianId = resolveTechnicianId(technicianIdParam);
+            if (technicianId == null) {
+                throw new WorkOrderValidationException("Datos inválidos", List.of(TECHNICIAN_NOT_FOUND));
+            }
+            workOrder.setTechnicianId(technicianId);
+        } else if ((technicianIdParam != null || external) && workOrder.getTechnicianId() != null) {
+            workOrder.setTechnicianId(null);
+        }
+    }
+
+    /** Devuelve el id si es un usuario con rol TECNICO; null si no existe, no es técnico o está malformado. */
+    private UUID resolveTechnicianId(String technicianIdParam) {
+        UUID id;
+        try {
+            id = UUID.fromString(technicianIdParam);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        return userRepository.findById(id).filter(u -> u.getRole() == Role.TECNICO).map(User::getId).orElse(null);
     }
 
     private void applyStatusChange(WorkOrder workOrder, UpdateWorkOrderRequest request) {
@@ -344,6 +413,8 @@ public class WorkOrderService {
         String plate = vehicleRepository.findById(workOrder.getVehicleId()).map(Vehicle::getPlate).orElse(null);
         List<WorkOrderExpense> expenses = expenseRepository.findByWorkOrder_IdOrderByCreatedAtAsc(workOrder.getId());
         List<WorkOrderPhoto> photos = photoRepository.findByWorkOrder_IdOrderByCreatedAtAsc(workOrder.getId());
-        return mapper.toDto(workOrder, plate, expenses, photos);
+        String technicianUsername = workOrder.getTechnicianId() == null ? null
+                : userRepository.findById(workOrder.getTechnicianId()).map(User::getUsername).orElse(null);
+        return mapper.toDto(workOrder, plate, technicianUsername, expenses, photos);
     }
 }

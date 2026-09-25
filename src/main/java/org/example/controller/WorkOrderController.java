@@ -44,8 +44,9 @@ public class WorkOrderController {
     @GetMapping
     public ListResponse<WorkOrderDto> list(@RequestParam(required = false) String vehicleId,
                                             @RequestParam(required = false) String status,
-                                            @RequestParam(required = false) String executionType) {
-        return new ListResponse<>(service.list(vehicleId, status, executionType));
+                                            @RequestParam(required = false) String executionType,
+                                            @RequestParam(required = false) String technicianId) {
+        return new ListResponse<>(service.list(vehicleId, status, executionType, technicianId));
     }
 
     @GetMapping("/{id}")

@@ -10,6 +10,7 @@ public record UpdateWorkOrderRequest(
         String closingDescription,
         Long completedKm,
         String assignee,
+        String technicianId,
         String executionType,
         String externalProvider,
         String description

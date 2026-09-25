@@ -13,6 +13,7 @@ public record CreateWorkOrderRequest(
         String description,
         String executionType,
         String externalProvider,
-        String assignee
+        String assignee,
+        String technicianId
 ) {
 }

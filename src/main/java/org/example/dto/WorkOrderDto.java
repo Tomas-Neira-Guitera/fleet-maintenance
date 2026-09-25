@@ -17,6 +17,8 @@ public record WorkOrderDto(
         String executionType,
         String externalProvider,
         String assignee,
+        String technicianId,
+        String technicianUsername,
         String status,
         String closingDescription,
         List<WorkOrderExpenseDto> expenses,

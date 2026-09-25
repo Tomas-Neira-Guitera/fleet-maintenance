@@ -14,7 +14,8 @@ import java.util.List;
 @Component
 public class WorkOrderMapper {
 
-    public WorkOrderDto toDto(WorkOrder workOrder, String plate, List<WorkOrderExpense> expenses, List<WorkOrderPhoto> photos) {
+    public WorkOrderDto toDto(WorkOrder workOrder, String plate, String technicianUsername,
+                              List<WorkOrderExpense> expenses, List<WorkOrderPhoto> photos) {
         List<WorkOrderExpenseDto> expenseDtos = expenses.stream().map(this::toExpenseDto).toList();
         List<WorkOrderPhotoDto> photoDtos = photos.stream().map(this::toPhotoDto).toList();
         BigDecimal total = expenses.stream().map(WorkOrderExpense::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -32,6 +33,8 @@ public class WorkOrderMapper {
                 workOrder.getExecutionType().toJson(),
                 workOrder.getExternalProvider(),
                 workOrder.getAssignee(),
+                workOrder.getTechnicianId() == null ? null : workOrder.getTechnicianId().toString(),
+                technicianUsername,
                 workOrder.getStatus().toJson(),
                 workOrder.getClosingDescription(),
                 expenseDtos,
