@@ -27,8 +27,7 @@ public class PhotoService {
             throw new UnsupportedPhotoTypeException("El archivo está vacío.");
         }
         if (!ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
-            throw new UnsupportedPhotoTypeException(
-                    "El archivo debe ser image/jpeg o image/png (recibido: " + file.getContentType() + ").");
+            throw UnsupportedPhotoTypeException.wrongType(file.getContentType());
         }
 
         PhotoStorage.StoredPhoto stored = photoStorage.store(file);
