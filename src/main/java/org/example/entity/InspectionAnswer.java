@@ -31,6 +31,10 @@ public class InspectionAnswer {
     @Column(name = "item_id", nullable = false)
     private String itemId;
 
+    // CAM-31: label del ítem al momento de responder; el checklist del vehículo puede cambiar después.
+    @Column(name = "item_label")
+    private String itemLabel;
+
     @Enumerated(EnumType.STRING)
     private CheckOutcome outcome;
 
@@ -47,6 +51,15 @@ public class InspectionAnswer {
         this.itemId = itemId;
         this.outcome = outcome;
         this.numberValue = numberValue;
+    }
+
+    public InspectionAnswer(String itemId, String itemLabel, CheckOutcome outcome, Double numberValue) {
+        this(itemId, outcome, numberValue);
+        this.itemLabel = itemLabel;
+    }
+
+    public String getItemLabel() {
+        return itemLabel;
     }
 
     public void setInspection(Inspection inspection) {

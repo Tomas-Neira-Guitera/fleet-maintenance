@@ -30,7 +30,12 @@ public class InspectionValidator {
         List<ChecklistItemDef> catalogItems = type == InspectionType.PRE_TRIP
                 ? ChecklistCatalog.preTripItems()
                 : ChecklistCatalog.postTripItems();
+        return validate(type, catalogItems, answers);
+    }
 
+    /** CAM-31: valida contra el checklist propio del vehículo (base − desactivados + extras). */
+    public ValidationOutcome validate(InspectionType type, List<ChecklistItemDef> catalogItems,
+                                      List<ChecklistAnswerDto> answers) {
         Map<String, ChecklistItemDef> catalogById = new LinkedHashMap<>();
         for (ChecklistItemDef item : catalogItems) {
             catalogById.put(item.id(), item);

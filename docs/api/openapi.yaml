@@ -145,6 +145,136 @@ paths:
         "404":
           description: VEHICLE_NOT_FOUND
 
+  /api/vehicles/{vehicleId}/checklist:
+    get:
+      summary: Checklist DVIR efectivo de un vehículo (CAM-31)
+      description: >
+        Lo que el chofer tiene que completar para este vehículo. pre-trip =
+        catálogo base − ítems desactivados + ítems extra del vehículo; post-trip
+        es siempre la lista fija. Ver CAM-31-vehicle-checklist-contract.md.
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pre-trip, post-trip]
+            default: pre-trip
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChecklistItem"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{vehicleId}/checklist-items:
+    get:
+      summary: Configuración del checklist pre-trip de un vehículo (admin, CAM-31)
+      description: >
+        Todos los ítems del catálogo base (con enabled según el vehículo) más los
+        ítems extra vigentes. locked=true son obligatorios y no se pueden quitar.
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/VehicleChecklistItem"
+        "404":
+          description: VEHICLE_NOT_FOUND
+    post:
+      summary: Agregar un ítem extra al checklist pre-trip del vehículo (CAM-31)
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVehicleChecklistItemRequest"
+      responses:
+        "201":
+          description: Creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleChecklistItem"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{vehicleId}/checklist-items/{itemId}:
+    patch:
+      summary: Quitar o volver a activar un ítem del checklist del vehículo (CAM-31)
+      description: >
+        Sirve para ítems base (se guardan como desactivados para este vehículo) y
+        para ítems extra (baja lógica). Las inspecciones viejas no cambian.
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVehicleChecklistItemRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleChecklistItem"
+        "404":
+          description: VEHICLE_NOT_FOUND / CHECKLIST_ITEM_NOT_FOUND
+        "409":
+          description: ITEM_LOCKED -- el ítem es obligatorio (kilómetros actuales)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
   /api/vehicles/{id}:
     get:
       summary: Detalle de un vehículo (CAM-22)
@@ -1239,6 +1369,40 @@ components:
           description: >
             Requerido por el servidor cuando severity=blocking (ver reglas de
             validación en CAM-11-dvir-contract.md). Viene de POST /api/photos.
+
+    ChecklistItem:
+      type: object
+      required: [id, label, type, section, required]
+      properties:
+        id: { type: string, description: "Id del catálogo base (ej. ext-luces) o extra-<uuid> si es un ítem extra del vehículo." }
+        label: { type: string }
+        type: { type: string, enum: [check, number] }
+        section: { type: string, enum: [exterior, interior, posttrip] }
+        required: { type: boolean }
+
+    VehicleChecklistItem:
+      allOf:
+        - $ref: "#/components/schemas/ChecklistItem"
+        - type: object
+          required: [origin, enabled, locked]
+          properties:
+            origin: { type: string, enum: [base, extra] }
+            enabled: { type: boolean }
+            locked: { type: boolean, description: Obligatorio, no se puede quitar. }
+
+    CreateVehicleChecklistItemRequest:
+      type: object
+      required: [label, type, section]
+      properties:
+        label: { type: string, minLength: 1, maxLength: 60 }
+        type: { type: string, enum: [check, number] }
+        section: { type: string, enum: [exterior, interior] }
+
+    UpdateVehicleChecklistItemRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
 
     ChecklistAnswer:
       type: object
