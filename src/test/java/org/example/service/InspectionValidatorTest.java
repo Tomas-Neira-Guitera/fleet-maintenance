@@ -132,4 +132,17 @@ class InspectionValidatorTest {
         assertEquals(12400.0, outcome.odometerKm());
         assertEquals(4, outcome.recognizedAnswers().size());
     }
+
+    @Test
+    void defectDescriptionLongerThanThirtyCharactersIsRejected() {
+        List<ChecklistAnswerDto> answers = new java.util.ArrayList<>(minimalValidPreTripAnswers().stream()
+                .filter(a -> !a.itemId().equals("ext-luces")).toList());
+        answers.add(new ChecklistAnswerDto("ext-luces", "defect", null,
+                new DefectDetailDto("non-blocking", "Foco trasero tenue del lado izquierdo", null)));
+
+        InspectionValidationException ex = assertThrows(InspectionValidationException.class,
+                () -> validator.validate(InspectionType.PRE_TRIP, answers));
+
+        assertTrue(ex.getDetails().stream().anyMatch(d -> d.itemId().equals("ext-luces")));
+    }
 }

@@ -1231,6 +1231,8 @@ components:
         description:
           type: string
           minLength: 1
+          maxLength: 30
+          description: Máximo 30 caracteres (CAM-79) -- se usa como título del defecto en programaciones y OTs.
         photoUrl:
           type: string
           format: uri
@@ -1494,7 +1496,7 @@ components:
         intervalKm/intervalDays son obligatorios o deben venir null según
         intervalType -- ver CAM-40-maintenance-api-contract.md decisión 5.
       properties:
-        name: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1, maxLength: 30 }
         category: { type: string }
         intervalType:
           $ref: "#/components/schemas/IntervalType"
@@ -1505,7 +1507,7 @@ components:
       type: object
       description: Campos ausentes (null) no se modifican.
       properties:
-        name: { type: string }
+        name: { type: string, minLength: 1, maxLength: 30 }
         category: { type: string }
         intervalType:
           $ref: "#/components/schemas/IntervalType"
@@ -1651,7 +1653,7 @@ components:
           $ref: "#/components/schemas/ScheduleSourceType"
         sourceId: { type: string, description: assignmentId si sourceType=assignment, defectId si sourceType=defect. Ignorado si sourceType=manual. }
         vehicleId: { type: string, description: Obligatorio si sourceType=manual. }
-        title: { type: string, description: Obligatorio si sourceType=manual. }
+        title: { type: string, maxLength: 30, description: "Obligatorio si sourceType=manual. Máximo 30 caracteres (CAM-79)." }
         scheduledAt: { type: string, format: date-time }
         notes: { type: string, nullable: true }
 
@@ -1736,7 +1738,7 @@ components:
           $ref: "#/components/schemas/WorkOrderSourceType"
         sourceId: { type: string }
         vehicleId: { type: string }
-        title: { type: string }
+        title: { type: string, maxLength: 30, description: "Obligatorio si sourceType=manual. Máximo 30 caracteres (CAM-79)." }
         description: { type: string, nullable: true }
         executionType:
           $ref: "#/components/schemas/WorkOrderExecutionType"

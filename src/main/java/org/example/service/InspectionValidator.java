@@ -92,6 +92,11 @@ public class InspectionValidator {
                     details.add(new ValidationErrorDetail(item.id(), "La descripción del defecto es obligatoria."));
                     continue;
                 }
+                if (TextLimits.exceedsTitle(defect.description())) {
+                    details.add(new ValidationErrorDetail(item.id(),
+                            "La descripción del defecto no puede superar los " + TextLimits.TITLE_MAX_LENGTH + " caracteres."));
+                    continue;
+                }
                 if (severity == DefectSeverity.BLOCKING && (defect.photoUrl() == null || defect.photoUrl().isBlank())) {
                     details.add(new ValidationErrorDetail(item.id(), "La foto es obligatoria para defectos bloqueantes."));
                     continue;

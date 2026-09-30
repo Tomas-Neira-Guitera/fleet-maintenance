@@ -78,6 +78,8 @@ public class ScheduledMaintenanceService {
         }
         if (manual && (request.title() == null || request.title().isBlank())) {
             details.add(new FieldValidationErrorDetail("title", "Obligatorio para sourceType manual"));
+        } else if (manual && TextLimits.exceedsTitle(request.title())) {
+            details.add(new FieldValidationErrorDetail("title", TextLimits.titleTooLongMessage()));
         }
         Instant scheduledAt = parseInstant(request.scheduledAt(), "scheduledAt", details);
         if (scheduledAt != null && scheduledAt.isBefore(Instant.now())) {
@@ -117,7 +119,7 @@ public class ScheduledMaintenanceService {
             Vehicle manualVehicle = vehicleRepository.findById(UUID.fromString(request.vehicleId()))
                     .orElseThrow(() -> new VehicleNotFoundException(request.vehicleId()));
             vehicleId = manualVehicle.getId();
-            title = request.title();
+            title = request.title().trim();
         }
 
         // Manual nunca deduplica -- no hay un origen único del que solo pueda existir una
