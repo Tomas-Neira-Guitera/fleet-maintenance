@@ -374,7 +374,7 @@ public class WorkOrderService {
         } else if (workOrder.getScheduledMaintenanceId() != null) {
             scheduleRepository.findById(workOrder.getScheduledMaintenanceId()).ifPresent(schedule -> {
                 if (schedule.getSourceType() != ScheduleSourceType.ASSIGNMENT) {
-                    scheduledMaintenanceService.update(schedule.getId().toString(), new UpdateScheduleRequest(null, "done"));
+                    scheduledMaintenanceService.update(schedule.getId().toString(), new UpdateScheduleRequest(null, "done", null));
                 }
             });
         }

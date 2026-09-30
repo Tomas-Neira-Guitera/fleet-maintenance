@@ -8,8 +8,11 @@ import org.example.entity.Defect;
 import org.example.entity.ScheduleSourceType;
 import org.example.entity.ScheduleStatus;
 import org.example.entity.ScheduledMaintenance;
+import org.example.entity.User;
 import org.example.entity.Vehicle;
 import org.example.entity.VehicleMaintenanceAssignment;
+import org.example.entity.WorkOrder;
+import org.example.entity.WorkOrderStatus;
 import org.example.exception.AssignmentNotFoundException;
 import org.example.exception.DefectNotFoundException;
 import org.example.exception.MaintenanceConflictException;
@@ -18,8 +21,10 @@ import org.example.exception.ScheduleNotFoundException;
 import org.example.exception.VehicleNotFoundException;
 import org.example.repository.DefectRepository;
 import org.example.repository.ScheduledMaintenanceRepository;
+import org.example.repository.UserRepository;
 import org.example.repository.VehicleMaintenanceAssignmentRepository;
 import org.example.repository.VehicleRepository;
+import org.example.repository.WorkOrderRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,15 +52,21 @@ public class ScheduledMaintenanceService {
     private final VehicleMaintenanceAssignmentRepository assignmentRepository;
     private final DefectRepository defectRepository;
     private final VehicleRepository vehicleRepository;
+    private final WorkOrderRepository workOrderRepository;
+    private final UserRepository userRepository;
 
     public ScheduledMaintenanceService(ScheduledMaintenanceRepository scheduleRepository,
                                         VehicleMaintenanceAssignmentRepository assignmentRepository,
                                         DefectRepository defectRepository,
-                                        VehicleRepository vehicleRepository) {
+                                        VehicleRepository vehicleRepository,
+                                        WorkOrderRepository workOrderRepository,
+                                        UserRepository userRepository) {
         this.scheduleRepository = scheduleRepository;
         this.assignmentRepository = assignmentRepository;
         this.defectRepository = defectRepository;
         this.vehicleRepository = vehicleRepository;
+        this.workOrderRepository = workOrderRepository;
+        this.userRepository = userRepository;
     }
 
     public record CreateResult(ScheduleDto dto, boolean created) {
@@ -165,6 +176,7 @@ public class ScheduledMaintenanceService {
             if (newStatus == ScheduleStatus.DONE) {
                 schedule.markDone();
             } else if (newStatus == ScheduleStatus.CANCELLED) {
+                cancelOpenWorkOrders(schedule, Boolean.TRUE.equals(request.cancelWorkOrder()));
                 schedule.cancel();
             }
         }
@@ -209,6 +221,43 @@ public class ScheduledMaintenanceService {
                 .collect(Collectors.toMap(Vehicle::getId, Vehicle::getPlate));
 
         return schedules.stream().map(s -> toDto(s, plateByVehicleId.get(s.getVehicleId()))).toList();
+    }
+
+    /**
+     * CAM-77: cancelar la programación cancela sus OTs abiertas. Una OT asignada se cancela
+     * directo; una en curso exige confirmación (cancelWorkOrder=true). Las finalizadas no se tocan.
+     */
+    private void cancelOpenWorkOrders(ScheduledMaintenance schedule, boolean confirmInProgress) {
+        List<WorkOrder> open = workOrderRepository.findByScheduledMaintenanceIdAndStatusIn(schedule.getId(),
+                List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO));
+        Optional<WorkOrder> inProgress = open.stream()
+                .filter(w -> w.getStatus() == WorkOrderStatus.EN_PROCESO)
+                .findFirst();
+        if (inProgress.isPresent() && !confirmInProgress) {
+            throw new MaintenanceConflictException("WORK_ORDER_IN_PROGRESS",
+                    "Esta programación tiene una OT en curso asignada a " + responsibleOf(inProgress.get())
+                            + ". ¿Cancelar las dos?");
+        }
+        for (WorkOrder workOrder : open) {
+            workOrder.cancel();
+            workOrderRepository.save(workOrder);
+        }
+    }
+
+    private String responsibleOf(WorkOrder workOrder) {
+        if (workOrder.getTechnicianId() != null) {
+            Optional<String> username = userRepository.findById(workOrder.getTechnicianId()).map(User::getUsername);
+            if (username.isPresent()) {
+                return username.get();
+            }
+        }
+        if (workOrder.getExternalProvider() != null && !workOrder.getExternalProvider().isBlank()) {
+            return workOrder.getExternalProvider();
+        }
+        if (workOrder.getAssignee() != null && !workOrder.getAssignee().isBlank()) {
+            return workOrder.getAssignee();
+        }
+        return "un responsable sin nombre";
     }
 
     /** Cierra automáticamente la programación activa de una asignación al registrar su completion. */

@@ -26,4 +26,7 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, UUID> {
 
     Optional<WorkOrder> findFirstByScheduledMaintenanceIdAndStatusInOrderByCreatedAtAsc(UUID scheduledMaintenanceId,
                                                                                        Collection<WorkOrderStatus> statuses);
+
+    List<WorkOrder> findByScheduledMaintenanceIdAndStatusIn(UUID scheduledMaintenanceId,
+                                                             Collection<WorkOrderStatus> statuses);
 }

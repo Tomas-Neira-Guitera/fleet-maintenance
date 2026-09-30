@@ -78,6 +78,23 @@ para que armar el rango de una semana desde el frontend sea directo.
   está cerrado.
 - `404 SCHEDULE_NOT_FOUND` en el `PATCH` si el id no existe.
 - `409 USE_COMPLETION_ENDPOINT` -- ver decisión 4.
+- `409 WORK_ORDER_IN_PROGRESS` -- ver decisión 8.
+
+### 8. Cancelar la programación cancela su OT abierta (CAM-77)
+`PATCH /api/maintenance-schedule/{id}` con `{ "status": "cancelled" }` también cancela,
+en la misma transacción, las órdenes de trabajo abiertas vinculadas a esa programación
+(`scheduledMaintenanceId`), para que el técnico no siga viendo un trabajo que ya no hay
+que hacer en "Mis órdenes".
+- OT `asignada` (no empezada): se cancela sin preguntar.
+- OT `en_proceso`: el servidor responde `409 WORK_ORDER_IN_PROGRESS` con un `message`
+  listo para mostrar ("Esta programación tiene una OT en curso asignada a X. ¿Cancelar
+  las dos?") y no cambia nada. Si el admin confirma, el cliente reenvía el mismo `PATCH`
+  con `"cancelWorkOrder": true` y se cancelan las dos. El chequeo vive en el servidor para
+  que ningún cliente cancele por error un trabajo ya empezado.
+- OT `finalizada` o `cancelada`: no se toca.
+- Cancelar la OT así no tiene efectos sobre su origen (mismo criterio que cancelar una OT
+  a mano): el defecto sigue abierto y la asignación sin completion, para volver a
+  planificarlos.
 
 ### 7. Preview de "qué más hay programado ese día" en el modal de Planificar
 El modal de "Planificar" (`SchedulePickerModal`, CAM-50/51/manual) muestra, apenas se

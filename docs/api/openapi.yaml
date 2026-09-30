@@ -969,6 +969,10 @@ paths:
         status=done solo es válido para sourceType=defect -- una programación
         de origen assignment se cierra sola al registrar el completion de esa
         asignación (409 USE_COMPLETION_ENDPOINT si se intenta acá).
+        status=cancelled cancela también las OTs abiertas de la programación
+        (CAM-77): las asignadas sin preguntar; si hay una en_proceso responde
+        409 WORK_ORDER_IN_PROGRESS salvo que venga cancelWorkOrder=true. Las
+        finalizadas no se tocan.
       parameters:
         - name: id
           in: path
@@ -991,7 +995,10 @@ paths:
         "404":
           description: SCHEDULE_NOT_FOUND
         "409":
-          description: USE_COMPLETION_ENDPOINT
+          description: >
+            USE_COMPLETION_ENDPOINT, o WORK_ORDER_IN_PROGRESS al cancelar una
+            programación con una OT en curso sin cancelWorkOrder=true (el message
+            dice a quién está asignada, listo para mostrar en la confirmación).
           content:
             application/json:
               schema:
@@ -1829,6 +1836,10 @@ components:
         status:
           type: string
           enum: [done, cancelled]
+        cancelWorkOrder:
+          type: boolean
+          nullable: true
+          description: "Solo con status=cancelled (CAM-77): confirma cancelar también la OT en curso de la programación."
 
     # --- Órdenes de trabajo (CAM-14, CAM-15, CAM-62, CAM-63, CAM-60) ---
 

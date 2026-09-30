@@ -6,6 +6,8 @@ package org.example.dto;
  */
 public record UpdateScheduleRequest(
         String scheduledAt,
-        String status
+        String status,
+        // CAM-77: confirma cancelar también la OT en curso de la programación.
+        Boolean cancelWorkOrder
 ) {
 }
