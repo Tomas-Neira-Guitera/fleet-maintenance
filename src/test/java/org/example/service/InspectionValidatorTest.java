@@ -174,4 +174,22 @@ class InspectionValidatorTest {
 
         assertEquals(6, outcome.recognizedAnswers().size());
     }
+
+    @Test
+    void defectDetailsAreOptionalButLimitedInLength() {
+        List<ChecklistAnswerDto> base = minimalValidPreTripAnswers().stream()
+                .filter(a -> !a.itemId().equals("ext-luces")).toList();
+
+        List<ChecklistAnswerDto> withDetails = new java.util.ArrayList<>(base);
+        withDetails.add(new ChecklistAnswerDto("ext-luces", "defect", null, new DefectDetailDto("non-blocking",
+                "Foco trasero tenue", null, "El foco trasero izquierdo alumbra muy poco y parpadea al frenar.")));
+        assertFalse(validator.validate(InspectionType.PRE_TRIP, withDetails).hasBlockingDefect());
+
+        List<ChecklistAnswerDto> tooLong = new java.util.ArrayList<>(base);
+        tooLong.add(new ChecklistAnswerDto("ext-luces", "defect", null,
+                new DefectDetailDto("non-blocking", "Foco trasero tenue", null, "a".repeat(1001))));
+        InspectionValidationException ex = assertThrows(InspectionValidationException.class,
+                () -> validator.validate(InspectionType.PRE_TRIP, tooLong));
+        assertTrue(ex.getDetails().stream().anyMatch(d -> d.itemId().equals("ext-luces")));
+    }
 }

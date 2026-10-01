@@ -106,7 +106,10 @@ public class InspectionService {
 
             if (checkOutcome == CheckOutcome.DEFECT && answerDto.defect() != null) {
                 DefectSeverity severity = DefectSeverity.fromJson(answerDto.defect().severity());
-                Defect defect = new Defect(severity, answerDto.defect().description(), answerDto.defect().photoUrl(), now);
+                String defectDetails = answerDto.defect().details();
+                Defect defect = new Defect(severity, answerDto.defect().description(),
+                        defectDetails == null || defectDetails.isBlank() ? null : defectDetails.trim(),
+                        answerDto.defect().photoUrl(), now);
                 answerEntity.attachDefect(defect);
             }
         }

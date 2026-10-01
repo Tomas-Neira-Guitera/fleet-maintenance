@@ -708,6 +708,26 @@ ITEM_LABELS = {
     "post-km": "Kilómetros finales",
 }
 
+# CAM-32: descripción larga (lo que el chofer dictaría) de cada defecto, por título. Sin entrada = sin descripción.
+DEFECT_DETAILS = {
+    "Pérdida de aire en frenos": "Pérdida de aire en el circuito de frenos, se escucha el escape en el eje trasero.",
+    "Frenos pierden aire detenido": "Pérdida de aire en el circuito de frenos. El manómetro baja solo con el camión detenido y el motor apagado.",
+    "Pérdida de aceite del motor": "Pérdida importante de aceite debajo del motor, deja charco al estacionar.",
+    "No encienden luces de freno": "Al pisar el freno no enciende ninguna de las luces traseras. Las de posición sí andan.",
+    "Espejo izquierdo arrancado": "El espejo retrovisor izquierdo quedó arrancado por una rama en la ruta. Se sujetó con cinta para volver.",
+    "Desgaste irregular neumático": "Neumático trasero con desgaste irregular en el borde externo.",
+    "Neumático gastado, se ve tela": "Neumático trasero derecho con desgaste irregular, ya se ve la tela en el borde externo.",
+    "Corte en flanco de neumático": "Corte en el flanco del neumático delantero derecho, de unos tres centímetros. No pierde aire.",
+    "Óptica delantera derecha rota": "La óptica delantera derecha está rota y alumbra poco de noche.",
+    "Farol trasero con tapa partida": "Farol trasero izquierdo con la tapa partida, la lámpara funciona.",
+    "Farol trasero roto sin tapa": "Farol trasero izquierdo roto, le falta la tapa. Lo golpearon en la playa de carga.",
+    "Parabrisas rajado": "Rajadura en el parabrisas del lado del acompañante.",
+    "Parabrisas rajado (10 cm)": "Rajadura chica en el parabrisas del lado del acompañante, de unos diez centímetros. No molesta la visión.",
+    "Abolladura lateral de la caja": "Abolladura en el lateral de la caja por una maniobra en el depósito.",
+    "Testigo de ABS intermitente": "El testigo de ABS se enciende de forma intermitente, sobre todo al frenar en mojado.",
+    "Testigo de batería encendido": "El testigo de carga de batería queda prendido unos minutos después de arrancar.",
+}
+
 # CAM-79: los títulos (planes, defectos, programaciones y OTs) no pueden superar 30 caracteres
 too_long = [x for x in [p["name"] for p in PLANS] + [d["description"] for d in defects]
             + [s["title"] for s in schedules] + [o["title"] for o in work_orders] if len(x) > 30]
@@ -720,7 +740,7 @@ KNOWN_COLUMNS = {
     "trips": "id vehicle_id status started_at ended_at",
     "inspections": "id trip_id vehicle_id driver_id driver_name type timestamp odometer_km notes has_blocking_defect",
     "inspection_answers": "id inspection_id item_id item_label outcome number_value",
-    "defects": "id inspection_answer_id severity description photo_url created_at status",
+    "defects": "id inspection_answer_id severity description details photo_url created_at status",
     "maintenance_plans": "id name category interval_type interval_km interval_days active",
     "vehicle_maintenance_assignments": "id vehicle_id maintenance_plan_id last_done_km last_done_date next_due_km next_due_date active",
     "maintenance_completions": "id assignment_id completed_at completed_km work_order_id notes",
@@ -828,8 +848,9 @@ insert("vehicle_checklist_items", ["id", "vehicle_id", "label", "type", "section
        [[q(c["id"]), q(VBY[c["vehicle"]]["id"]), q(c["label"]), q(c["type"]), q(c["section"]), "true" if c["active"] else "false", ts(-30, 10)]
         for c in checklist_extras])
 w("-- Defectos")
-insert("defects", ["id", "inspection_answer_id", "severity", "description", "photo_url", "created_at", "status"],
-       [[q(d["id"]), q(d["answer"]), q(d["severity"]), q(d["description"]), q(d["photo"]), ts(d["day"], d["hh"], d["mm"]),
+insert("defects", ["id", "inspection_answer_id", "severity", "description", "details", "photo_url", "created_at", "status"],
+       [[q(d["id"]), q(d["answer"]), q(d["severity"]), q(d["description"]), q(DEFECT_DETAILS.get(d["description"])),
+         q(d["photo"]), ts(d["day"], d["hh"], d["mm"]),
          q(d["status"])] for d in defects])
 w("-- Programaciones (calendario)")
 insert("scheduled_maintenances", ["id", "vehicle_id", "source_type", "assignment_id", "defect_id", "title", "scheduled_at",

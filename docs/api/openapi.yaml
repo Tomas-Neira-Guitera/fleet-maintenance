@@ -1398,6 +1398,11 @@ components:
           minLength: 1
           maxLength: 30
           description: Máximo 30 caracteres (CAM-79) -- se usa como título del defecto en programaciones y OTs.
+        details:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: "Descripción larga del defecto, opcional (CAM-32). El chofer la puede dictar o escribir."
         photoUrl:
           type: string
           format: uri
@@ -1524,6 +1529,7 @@ components:
         vehiclePlate: { type: string, nullable: true, description: Puede faltar si el vehículo fue eliminado. }
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
         reportedBy: { type: string, nullable: true, description: "Nombre del chofer que reportó el defecto (Inspection.driverName); puede faltar en datos antiguos." }
+        details: { type: string, nullable: true, description: "Descripción larga del defecto (CAM-32). description es el título corto." }
 
     VehicleHistory:
       type: object
