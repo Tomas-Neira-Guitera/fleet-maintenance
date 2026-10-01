@@ -8,6 +8,7 @@ import org.example.dto.VehicleChecklistItemDto;
 import org.example.service.VehicleChecklistService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -49,5 +50,11 @@ public class VehicleChecklistController {
     public VehicleChecklistItemDto updateItem(@PathVariable String vehicleId, @PathVariable String itemId,
                                               @RequestBody UpdateVehicleChecklistItemRequest request) {
         return service.setEnabled(vehicleId, itemId, request);
+    }
+
+    @DeleteMapping("/checklist-items/{itemId}")
+    public ResponseEntity<Void> deleteItem(@PathVariable String vehicleId, @PathVariable String itemId) {
+        service.deleteExtra(vehicleId, itemId);
+        return ResponseEntity.noContent().build();
     }
 }

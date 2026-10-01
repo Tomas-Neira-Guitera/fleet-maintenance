@@ -9,4 +9,6 @@ import java.util.UUID;
 public interface VehicleChecklistItemRepository extends JpaRepository<VehicleChecklistItem, UUID> {
 
     List<VehicleChecklistItem> findByVehicleIdAndActiveTrueOrderByCreatedAtAsc(UUID vehicleId);
+
+    List<VehicleChecklistItem> findByVehicleIdOrderByCreatedAtAsc(UUID vehicleId);
 }

@@ -13,8 +13,8 @@ import org.example.entity.checklist.ChecklistSection;
 import java.time.Instant;
 import java.util.UUID;
 
-// CAM-31: ítem extra del checklist pre-trip de un vehículo puntual. Quitarlo es baja lógica
-// (active=false) para que las respuestas viejas sigan apuntando a un ítem existente.
+// CAM-31: ítem propio de un vehículo. active indica si entra en el checklist pre-trip del chofer;
+// con active=false queda cargado en el vehículo pero no se revisa en la inspección.
 @Entity
 @Table(name = "vehicle_checklist_items")
 public class VehicleChecklistItem {
@@ -50,6 +50,12 @@ public class VehicleChecklistItem {
     }
 
     public VehicleChecklistItem(UUID vehicleId, String label, ChecklistItemType type, ChecklistSection section) {
+        this(vehicleId, label, type, section, true);
+    }
+
+    public VehicleChecklistItem(UUID vehicleId, String label, ChecklistItemType type, ChecklistSection section,
+                                boolean active) {
+        this.active = active;
         this.vehicleId = vehicleId;
         this.label = label;
         this.type = type;

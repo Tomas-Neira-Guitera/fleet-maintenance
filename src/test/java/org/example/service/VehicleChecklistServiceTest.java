@@ -63,6 +63,12 @@ class VehicleChecklistServiceTest {
             UUID id = inv.getArgument(0);
             return extras.stream().filter(e -> e.getVehicleId().equals(id) && e.isActive()).toList();
         });
+        when(extraRepository.findByVehicleIdOrderByCreatedAtAsc(any())).thenAnswer(inv -> {
+            UUID id = inv.getArgument(0);
+            return extras.stream().filter(e -> e.getVehicleId().equals(id)).toList();
+        });
+        doAnswer(inv -> extras.remove(inv.<VehicleChecklistItem>getArgument(0)))
+                .when(extraRepository).delete(any(VehicleChecklistItem.class));
         when(extraRepository.findById(any())).thenAnswer(inv -> {
             UUID id = inv.getArgument(0);
             return extras.stream().filter(e -> id.equals(e.getId())).findFirst();
@@ -136,15 +142,46 @@ class VehicleChecklistServiceTest {
     }
 
     @Test
-    void removedExtraItemIsSoftDeleted() {
+    void extraItemTakenOutOfTheChecklistStaysOnTheVehicle() {
         VehicleChecklistItemDto created = service.addExtra(vehicleId.toString(),
                 new CreateVehicleChecklistItemRequest("Traca", "check", "exterior"));
 
         service.setEnabled(vehicleId.toString(), created.id(), new UpdateVehicleChecklistItemRequest(false));
 
         assertFalse(preTripIds(vehicleId).contains(created.id()));
-        assertEquals(1, extras.size());
-        assertFalse(extras.get(0).isActive());
+        VehicleChecklistItemDto inConfig = service.getConfig(vehicleId.toString()).stream()
+                .filter(i -> i.id().equals(created.id())).findFirst().orElseThrow();
+        assertFalse(inConfig.enabled());
+    }
+
+    @Test
+    void extraItemCanBeCreatedOutsideTheChecklistAndDefaultsToCheck() {
+        VehicleChecklistItemDto created = service.addExtra(vehicleId.toString(),
+                new CreateVehicleChecklistItemRequest("Rampa hidráulica", null, "exterior", false));
+
+        assertEquals("check", created.type());
+        assertFalse(created.enabled());
+        assertFalse(preTripIds(vehicleId).contains(created.id()));
+        assertTrue(service.getConfig(vehicleId.toString()).stream().anyMatch(i -> i.id().equals(created.id())));
+    }
+
+    @Test
+    void deletedExtraItemDisappearsFromTheVehicle() {
+        VehicleChecklistItemDto created = service.addExtra(vehicleId.toString(),
+                new CreateVehicleChecklistItemRequest("Traca", "check", "exterior"));
+
+        service.deleteExtra(vehicleId.toString(), created.id());
+
+        assertTrue(extras.isEmpty());
+        assertFalse(service.getConfig(vehicleId.toString()).stream().anyMatch(i -> i.id().equals(created.id())));
+    }
+
+    @Test
+    void baseItemsCannotBeDeleted() {
+        VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class,
+                () -> service.deleteExtra(vehicleId.toString(), "ext-luces"));
+
+        assertEquals("BASE_ITEM_NOT_DELETABLE", ex.getErrorCode());
     }
 
     @Test

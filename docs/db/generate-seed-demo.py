@@ -691,13 +691,15 @@ new_schedule("tector", "DEFECT", D_ABS["description"], 4, 10, "SCHEDULED", D_ABS
 # Scania (farol) y S-Way (parabrisas): abiertos sin planificar
 
 # ---- CAM-31: checklist pre-trip propio de algunos camiones (agregado antes del día 0)
+# El último campo indica si el ítem entra en el checklist del chofer o solo queda cargado en el vehículo.
 CHECKLIST_EXTRAS = [
-    ("scania", "Estado de la faja de sujeción", "CHECK", "EXTERIOR"),
-    ("actros", "Estado de la faja de sujeción", "CHECK", "EXTERIOR"),
-    ("cargo", "Estado de la lona de la caja", "CHECK", "EXTERIOR"),
+    ("scania", "Estado de la faja de sujeción", "CHECK", "EXTERIOR", True),
+    ("actros", "Estado de la faja de sujeción", "CHECK", "EXTERIOR", True),
+    ("cargo", "Estado de la lona de la caja", "CHECK", "EXTERIOR", True),
+    ("delivery", "Rampa hidráulica trasera", "CHECK", "EXTERIOR", False),
 ]
-checklist_extras = [dict(id=uid("checklistitem"), vehicle=k, label=label, type=typ, section=sec)
-                    for k, label, typ, sec in CHECKLIST_EXTRAS]
+checklist_extras = [dict(id=uid("checklistitem"), vehicle=k, label=label, type=typ, section=sec, active=active)
+                    for k, label, typ, sec, active in CHECKLIST_EXTRAS]
 ITEM_LABELS = {
     "ext-luces": "Luces", "ext-neumaticos": "Neumáticos", "ext-carroceria": "Carrocería, vidrios y espejos",
     "ext-fugas": "Fugas visibles debajo del vehículo", "int-km": "Kilómetros actuales",
@@ -823,7 +825,7 @@ insert("inspection_answers", ["id", "inspection_id", "item_id", "item_label", "o
         for i in inspections for a in i["answers"]])
 w("-- Checklist pre-trip propio de cada camión (CAM-31)")
 insert("vehicle_checklist_items", ["id", "vehicle_id", "label", "type", "section", "active", "created_at"],
-       [[q(c["id"]), q(VBY[c["vehicle"]]["id"]), q(c["label"]), q(c["type"]), q(c["section"]), "true", ts(-30, 10)]
+       [[q(c["id"]), q(VBY[c["vehicle"]]["id"]), q(c["label"]), q(c["type"]), q(c["section"]), "true" if c["active"] else "false", ts(-30, 10)]
         for c in checklist_extras])
 w("-- Defectos")
 insert("defects", ["id", "inspection_answer_id", "severity", "description", "photo_url", "created_at", "status"],

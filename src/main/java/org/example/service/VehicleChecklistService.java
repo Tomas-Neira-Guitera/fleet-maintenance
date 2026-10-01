@@ -30,7 +30,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * CAM-31: checklist pre-trip por vehículo = catálogo base − ítems desactivados + ítems extra.
+ * CAM-31: checklist pre-trip por vehículo = catálogo base − ítems desactivados + ítems extra incluidos.
  * El post-trip sigue siendo la lista fija acotada. Los ítems obligatorios (km) no se pueden quitar.
  */
 @Service
@@ -84,7 +84,7 @@ public class VehicleChecklistService {
                 .toList();
     }
 
-    /** Configuración para el admin: todos los ítems base (activos o no) + los extra vigentes. */
+    /** Configuración para el admin: todos los ítems base y todos los extra, estén o no en el checklist. */
     public List<VehicleChecklistItemDto> getConfig(String vehicleIdRaw) {
         UUID vehicleId = requireVehicle(vehicleIdRaw);
         Set<String> disabled = disabledBaseIds(vehicleId);
@@ -94,7 +94,7 @@ public class VehicleChecklistService {
             result.add(new VehicleChecklistItemDto(base.id(), base.label(), base.type().toJson(),
                     base.section().toJson(), base.required(), "base", enabled, base.required()));
         }
-        for (VehicleChecklistItem extra : extraRepository.findByVehicleIdAndActiveTrueOrderByCreatedAtAsc(vehicleId)) {
+        for (VehicleChecklistItem extra : extraRepository.findByVehicleIdOrderByCreatedAtAsc(vehicleId)) {
             result.add(toExtraDto(extra));
         }
         return result;
@@ -110,7 +110,7 @@ public class VehicleChecklistService {
         } else if (label.length() > LABEL_MAX_LENGTH) {
             details.add(new FieldValidationErrorDetail("label", "No puede superar los " + LABEL_MAX_LENGTH + " caracteres"));
         }
-        ChecklistItemType type = ChecklistItemType.fromJson(request.type());
+        ChecklistItemType type = request.type() == null ? ChecklistItemType.CHECK : ChecklistItemType.fromJson(request.type());
         if (type == null) {
             details.add(new FieldValidationErrorDetail("type", "Debe ser 'check' o 'number'"));
         }
@@ -122,7 +122,8 @@ public class VehicleChecklistService {
             throw new VehicleValidationException("Datos inválidos para el ítem del checklist", details);
         }
 
-        VehicleChecklistItem extra = extraRepository.save(new VehicleChecklistItem(vehicleId, label, type, section));
+        boolean enabled = request.enabled() == null || request.enabled();
+        VehicleChecklistItem extra = extraRepository.save(new VehicleChecklistItem(vehicleId, label, type, section, enabled));
         return toExtraDto(extra);
     }
 
@@ -158,6 +159,21 @@ public class VehicleChecklistService {
         }
         return new VehicleChecklistItemDto(base.id(), base.label(), base.type().toJson(), base.section().toJson(),
                 false, "base", enabled, false);
+    }
+
+    /** Elimina del vehículo un ítem extra. Las inspecciones viejas conservan su nombre (item_label). */
+    @Transactional
+    public void deleteExtra(String vehicleIdRaw, String itemId) {
+        UUID vehicleId = requireVehicle(vehicleIdRaw);
+        if (!itemId.startsWith(VehicleChecklistItem.ID_PREFIX)) {
+            boolean base = ChecklistCatalog.preTripItems().stream().anyMatch(i -> i.id().equals(itemId));
+            if (!base) {
+                throw new ChecklistItemNotFoundException(itemId);
+            }
+            throw new VehicleStateConflictException("BASE_ITEM_NOT_DELETABLE",
+                    "Los ítems del checklist base no se eliminan: se quitan del checklist de este vehículo");
+        }
+        extraRepository.delete(findExtra(vehicleId, itemId));
     }
 
     private VehicleChecklistItem findExtra(UUID vehicleId, String itemId) {

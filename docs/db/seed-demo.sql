@@ -6256,7 +6256,8 @@ insert into inspection_answers (id, inspection_id, item_id, item_label, outcome,
 insert into vehicle_checklist_items (id, vehicle_id, label, type, section, active, created_at) values
   ('eaeb2e77-2055-55dc-9660-2d1c84546be9', '2e44e05a-6af6-52c7-bc82-7d1bb2276cb3', 'Estado de la faja de sujeción', 'CHECK', 'EXTERIOR', true, pg_temp.ts(-30,'10:00')),
   ('5962dd14-d247-5ca6-887e-c477afa73c9f', 'fba0cf28-18ca-5556-afdd-0b524aedc0e3', 'Estado de la faja de sujeción', 'CHECK', 'EXTERIOR', true, pg_temp.ts(-30,'10:00')),
-  ('c83b4d70-e4ce-599e-b15d-24e17f522106', '26ccd7e1-d620-52af-97c4-e1d0cc8f523b', 'Estado de la lona de la caja', 'CHECK', 'EXTERIOR', true, pg_temp.ts(-30,'10:00'));
+  ('c83b4d70-e4ce-599e-b15d-24e17f522106', '26ccd7e1-d620-52af-97c4-e1d0cc8f523b', 'Estado de la lona de la caja', 'CHECK', 'EXTERIOR', true, pg_temp.ts(-30,'10:00')),
+  ('637b9dcc-bce5-5f41-93ca-9d0c2ee8115f', 'e33397f9-571a-528e-8613-338f4ce8f549', 'Rampa hidráulica trasera', 'CHECK', 'EXTERIOR', false, pg_temp.ts(-30,'10:00'));
 
 -- Defectos
 insert into defects (id, inspection_answer_id, severity, description, photo_url, created_at, status) values

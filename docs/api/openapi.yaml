@@ -236,10 +236,11 @@ paths:
 
   /api/vehicles/{vehicleId}/checklist-items/{itemId}:
     patch:
-      summary: Quitar o volver a activar un ítem del checklist del vehículo (CAM-31)
+      summary: Quitar del checklist o volver a incluir un ítem del vehículo (CAM-31)
       description: >
         Sirve para ítems base (se guardan como desactivados para este vehículo) y
-        para ítems extra (baja lógica). Las inspecciones viejas no cambian.
+        para ítems extra (siguen cargados en el vehículo con enabled=false). Las
+        inspecciones viejas no cambian.
       parameters:
         - name: vehicleId
           in: path
@@ -274,6 +275,33 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Eliminar del vehículo un ítem extra (CAM-31)
+      description: >
+        Solo para ítems extra (extra-<uuid>). Las inspecciones que ya lo
+        respondieron conservan su nombre (item_label).
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Eliminado
+        "404":
+          description: VEHICLE_NOT_FOUND / CHECKLIST_ITEM_NOT_FOUND
+        "409":
+          description: BASE_ITEM_NOT_DELETABLE -- los ítems del checklist base solo se quitan, no se eliminan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /api/vehicles/{id}:
     get:
@@ -1399,11 +1427,12 @@ components:
 
     CreateVehicleChecklistItemRequest:
       type: object
-      required: [label, type, section]
+      required: [label, section]
       properties:
         label: { type: string, minLength: 1, maxLength: 60 }
-        type: { type: string, enum: [check, number] }
+        type: { type: string, enum: [check, number], default: check, description: "Opcional. El panel de admin siempre crea ítems check." }
         section: { type: string, enum: [exterior, interior] }
+        enabled: { type: boolean, default: true, description: "false = el ítem queda cargado en el vehículo pero no entra en el checklist del chofer." }
 
     UpdateVehicleChecklistItemRequest:
       type: object
