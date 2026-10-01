@@ -1,5 +1,6 @@
 package org.example.service;
 
+import org.example.dto.ScheduleDto;
 import org.example.dto.UpdateScheduleRequest;
 import org.example.entity.Role;
 import org.example.entity.ScheduleSourceType;
@@ -11,6 +12,7 @@ import org.example.entity.WorkOrderExecutionType;
 import org.example.entity.WorkOrderSourceType;
 import org.example.entity.WorkOrderStatus;
 import org.example.exception.MaintenanceConflictException;
+import org.example.exception.MaintenanceValidationException;
 import org.example.repository.DefectRepository;
 import org.example.repository.ScheduledMaintenanceRepository;
 import org.example.repository.UserRepository;
@@ -30,6 +32,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -151,5 +154,50 @@ class ScheduledMaintenanceServiceTest {
 
         assertEquals(ScheduleStatus.CANCELLED, schedule.getStatus());
         verify(workOrderRepository, never()).save(any());
+    }
+
+    @Test
+    void manualScheduleTitleAndNotesCanBeEdited() {
+        schedule.setNotes("Nota vieja");
+
+        ScheduleDto dto = service.update(schedule.getId().toString(),
+                new UpdateScheduleRequest(null, null, null, "  Revisión de luces ", ""));
+
+        assertEquals("Revisión de luces", dto.title());
+        assertNull(dto.notes());
+    }
+
+    @Test
+    void titleOfAScheduleFromAPlanCannotBeEdited() throws Exception {
+        ScheduledMaintenance fromPlan = new ScheduledMaintenance(vehicleId, ScheduleSourceType.ASSIGNMENT, UUID.randomUUID(),
+                null, "Cambio de aceite", Instant.now().plus(1, ChronoUnit.DAYS));
+        setId(fromPlan, UUID.randomUUID());
+        when(scheduleRepository.findById(fromPlan.getId())).thenReturn(Optional.of(fromPlan));
+
+        MaintenanceValidationException ex = assertThrows(MaintenanceValidationException.class,
+                () -> service.update(fromPlan.getId().toString(), new UpdateScheduleRequest(null, null, null, "Otro", null)));
+
+        assertEquals("title", ex.getDetails().get(0).field());
+        assertEquals("Cambio de aceite", fromPlan.getTitle());
+    }
+
+    @Test
+    void editedTitleLongerThanThirtyCharactersIsRejected() {
+        assertThrows(MaintenanceValidationException.class, () -> service.update(schedule.getId().toString(),
+                new UpdateScheduleRequest(null, null, null, "Revisión completa del sistema eléctrico", null)));
+    }
+
+    @Test
+    void scheduleShowsItsOpenWorkOrder() throws Exception {
+        WorkOrder workOrder = workOrderFor(schedule);
+        setId(workOrder, UUID.randomUUID());
+        workOrder.start();
+        when(workOrderRepository.findFirstByScheduledMaintenanceIdAndStatusInOrderByCreatedAtAsc(eq(schedule.getId()), any()))
+                .thenReturn(Optional.of(workOrder));
+
+        ScheduleDto dto = service.update(schedule.getId().toString(), new UpdateScheduleRequest(null, null, null, null, "Ok"));
+
+        assertEquals("en_proceso", dto.workOrder().status());
+        assertEquals("tecnico", dto.workOrder().responsible());
     }
 }

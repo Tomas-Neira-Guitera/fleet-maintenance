@@ -111,6 +111,18 @@ del jefe de mantenimiento.
 general, pensado por ejemplo para una futura vista de calendario de un solo vehículo) --
 no lo usa este preview.
 
+### 9. Editar desde el detalle del calendario
+Al hacer clic en un mantenimiento del calendario semanal se abre su detalle, con dos acciones: "Editar" y
+"Eliminar".
+- **Editar** usa el mismo `PATCH /api/maintenance-schedule/{id}`, que además de `scheduledAt` acepta `notes`
+  (un string vacío las borra) y `title`. El título solo se puede editar en programaciones `manual`; en
+  `assignment`/`defect` sale del plan o del defecto y el servidor responde `422` con `details[].field =
+  "title"`. También aplica el límite de 30 caracteres de CAM-79.
+- **Eliminar** cancela la programación (`status: cancelled`, baja lógica, queda en el historial), con las
+  mismas reglas de OT de la decisión 8.
+- Cada programación trae `workOrder` (`id`, `status`, `responsible`) con la OT abierta vinculada, o `null`,
+  para mostrarla en el detalle sin pedir el listado de OTs.
+
 ## Fuera de alcance
 
 - Historial de reprogramaciones (ver decisión 3).

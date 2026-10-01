@@ -3,6 +3,7 @@ package org.example.service;
 import org.example.dto.CreateScheduleRequest;
 import org.example.dto.FieldValidationErrorDetail;
 import org.example.dto.ScheduleDto;
+import org.example.dto.ScheduleWorkOrderDto;
 import org.example.dto.UpdateScheduleRequest;
 import org.example.entity.Defect;
 import org.example.entity.ScheduleSourceType;
@@ -188,6 +189,12 @@ public class ScheduledMaintenanceService {
             }
             schedule.reschedule(parsed);
         }
+        if (request.title() != null) {
+            applyTitle(schedule, request.title());
+        }
+        if (request.notes() != null) {
+            schedule.setNotes(request.notes().isBlank() ? null : request.notes().trim());
+        }
 
         scheduleRepository.save(schedule);
         Vehicle vehicle = vehicleRepository.findById(schedule.getVehicleId()).orElse(null);
@@ -244,7 +251,29 @@ public class ScheduledMaintenanceService {
         }
     }
 
+    // El título de assignment/defect lo resuelve el servidor desde el plan o el defecto: solo se edita en manuales.
+    private void applyTitle(ScheduledMaintenance schedule, String title) {
+        String detail = null;
+        if (schedule.getSourceType() != ScheduleSourceType.MANUAL) {
+            detail = "Solo se puede editar el título de una programación manual";
+        } else if (title.isBlank()) {
+            detail = "Obligatorio";
+        } else if (TextLimits.exceedsTitle(title)) {
+            detail = TextLimits.titleTooLongMessage();
+        }
+        if (detail != null) {
+            throw new MaintenanceValidationException("Título inválido",
+                    List.of(new FieldValidationErrorDetail("title", detail)));
+        }
+        schedule.setTitle(title.trim());
+    }
+
     private String responsibleOf(WorkOrder workOrder) {
+        String responsible = responsibleNameOf(workOrder);
+        return responsible == null ? "un responsable sin nombre" : responsible;
+    }
+
+    private String responsibleNameOf(WorkOrder workOrder) {
         if (workOrder.getTechnicianId() != null) {
             Optional<String> username = userRepository.findById(workOrder.getTechnicianId()).map(User::getUsername);
             if (username.isPresent()) {
@@ -257,7 +286,7 @@ public class ScheduledMaintenanceService {
         if (workOrder.getAssignee() != null && !workOrder.getAssignee().isBlank()) {
             return workOrder.getAssignee();
         }
-        return "un responsable sin nombre";
+        return null;
     }
 
     /** Cierra automáticamente la programación activa de una asignación al registrar su completion. */
@@ -281,8 +310,16 @@ public class ScheduledMaintenanceService {
                 schedule.getTitle(),
                 schedule.getScheduledAt().toString(),
                 schedule.getStatus().toJson(),
-                schedule.getNotes()
+                schedule.getNotes(),
+                openWorkOrderOf(schedule)
         );
+    }
+
+    private ScheduleWorkOrderDto openWorkOrderOf(ScheduledMaintenance schedule) {
+        return workOrderRepository.findFirstByScheduledMaintenanceIdAndStatusInOrderByCreatedAtAsc(schedule.getId(),
+                        List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO))
+                .map(w -> new ScheduleWorkOrderDto(w.getId().toString(), w.getStatus().toJson(), responsibleNameOf(w)))
+                .orElse(null);
     }
 
     /** Acepta timestamp ISO completo (con hora) o solo fecha (YYYY-MM-DD, se toma como inicio del día UTC). */

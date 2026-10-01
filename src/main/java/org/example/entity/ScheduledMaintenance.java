@@ -116,6 +116,12 @@ public class ScheduledMaintenance {
 
     public void setNotes(String notes) {
         this.notes = notes;
+        this.updatedAt = Instant.now();
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+        this.updatedAt = Instant.now();
     }
 
     public Instant getCreatedAt() {

@@ -1811,6 +1811,14 @@ components:
         status:
           $ref: "#/components/schemas/ScheduleStatus"
         notes: { type: string, nullable: true }
+        workOrder:
+          type: object
+          nullable: true
+          description: OT abierta (asignada o en proceso) vinculada a la programación, si hay una.
+          properties:
+            id: { type: string }
+            status: { type: string, enum: [asignada, en_proceso] }
+            responsible: { type: string, nullable: true, description: "Técnico, proveedor externo o contacto." }
 
     CreateScheduleRequest:
       type: object
@@ -1840,6 +1848,13 @@ components:
           type: boolean
           nullable: true
           description: "Solo con status=cancelled (CAM-77): confirma cancelar también la OT en curso de la programación."
+        title:
+          type: string
+          maxLength: 30
+          description: "Solo editable si sourceType=manual (422 title si no). En assignment/defect lo resuelve el servidor."
+        notes:
+          type: string
+          description: "Reemplaza las notas. Un string vacío las borra."
 
     # --- Órdenes de trabajo (CAM-14, CAM-15, CAM-62, CAM-63, CAM-60) ---
 
