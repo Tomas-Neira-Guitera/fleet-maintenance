@@ -42,6 +42,7 @@ import org.fleetguard.repository.WorkOrderRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -375,6 +376,7 @@ public class WorkOrderService {
         if (photoCount == 0) {
             details.add(new FieldValidationErrorDetail("photos", "Hace falta al menos una foto para finalizar la orden de trabajo"));
         }
+        Long completedKm = validateCompletedKm(workOrder, request.completedKm(), details);
         if (!details.isEmpty()) {
             throw new WorkOrderValidationException("Datos inválidos para finalizar la orden de trabajo", details);
         }
@@ -383,7 +385,7 @@ public class WorkOrderService {
 
         if (workOrder.getAssignmentId() != null) {
             CreateCompletionRequest completionRequest = new CreateCompletionRequest(
-                    LocalDate.now().toString(), request.completedKm(), workOrder.getId().toString(),
+                    LocalDate.now().toString(), completedKm, workOrder.getId().toString(),
                     "Registrado automáticamente al finalizar la orden de trabajo");
             completionService.create(workOrder.getVehicleId().toString(), workOrder.getAssignmentId().toString(), completionRequest);
         } else if (workOrder.getScheduledMaintenanceId() != null) {
@@ -397,6 +399,40 @@ public class WorkOrderService {
         if (workOrder.getDefectId() != null) {
             defectRepository.findById(workOrder.getDefectId()).ifPresent(Defect::resolve);
         }
+    }
+
+    /**
+     * CAM-74: el km al finalizar es un entero, no negativo y no menor al que ya tiene cargado el
+     * vehículo (el odómetro no retrocede, mismo criterio que ODOMETER_REGRESSION). Ausente es
+     * válido acá; si el plan lo exige, lo reclama MaintenanceCompletionService.
+     */
+    private Long validateCompletedKm(WorkOrder workOrder, BigDecimal km, List<FieldValidationErrorDetail> details) {
+        if (km == null) {
+            return null;
+        }
+        if (km.signum() < 0) {
+            details.add(new FieldValidationErrorDetail("completedKm", "El kilometraje no puede ser negativo"));
+            return null;
+        }
+        if (km.remainder(BigDecimal.ONE).signum() != 0) {
+            details.add(new FieldValidationErrorDetail("completedKm",
+                    "El kilometraje tiene que ser un número entero, sin decimales"));
+            return null;
+        }
+        long value;
+        try {
+            value = km.longValueExact();
+        } catch (ArithmeticException e) {
+            details.add(new FieldValidationErrorDetail("completedKm", "El kilometraje está fuera de rango"));
+            return null;
+        }
+        long current = vehicleRepository.findById(workOrder.getVehicleId()).map(Vehicle::getOdometerKm).orElse(0L);
+        if (value < current) {
+            details.add(new FieldValidationErrorDetail("completedKm",
+                    "El kilometraje no puede ser menor al que ya tiene cargado el vehículo (" + current + " km)"));
+            return null;
+        }
+        return value;
     }
 
     @Transactional

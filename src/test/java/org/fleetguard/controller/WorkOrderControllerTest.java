@@ -1,6 +1,7 @@
 package org.fleetguard.controller;
 
 import org.fleetguard.dto.FieldValidationErrorDetail;
+import org.fleetguard.dto.UpdateWorkOrderRequest;
 import org.fleetguard.dto.WorkOrderDto;
 import org.fleetguard.dto.WorkOrderExpenseDto;
 import org.fleetguard.dto.WorkOrderPhotoDto;
@@ -9,6 +10,7 @@ import org.fleetguard.exception.WorkOrderNotFoundException;
 import org.fleetguard.exception.WorkOrderValidationException;
 import org.fleetguard.service.WorkOrderService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
@@ -16,6 +18,7 @@ import org.springframework.http.MediaType;
 import java.math.BigDecimal;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -81,6 +84,20 @@ class WorkOrderControllerTest extends WebMvcTestBase {
         mvc.perform(patch("/work-orders/wo-1").contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"finalizada\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("INVALID_STATUS_TRANSITION"));
+    }
+
+    @Test
+    void unKilometrajeConDecimalesLlegaAlServiceSinTruncar() throws Exception {
+        when(service.update(eq("wo-1"), any())).thenReturn(workOrder("finalizada"));
+
+        mvc.perform(patch("/work-orders/wo-1").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"finalizada\",\"closingDescription\":\"Listo\",\"completedKm\":1500.7}"))
+                .andExpect(status().isOk());
+
+        // CAM-74: con Long, Jackson lo convertía en 1500 sin avisar y el service no podía rechazarlo.
+        ArgumentCaptor<UpdateWorkOrderRequest> captor = ArgumentCaptor.forClass(UpdateWorkOrderRequest.class);
+        verify(service).update(eq("wo-1"), captor.capture());
+        assertEquals(new BigDecimal("1500.7"), captor.getValue().completedKm());
     }
 
     @Test
