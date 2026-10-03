@@ -251,7 +251,8 @@ class WorkOrderLifecycleServiceTest {
         withPhotos(workOrder, 1);
 
         // Un decimal no se trunca: llega como BigDecimal y se rechaza, en vez de guardarse 60500.
-        for (String km : List.of("-1", "60500.5", "59999")) {
+        // "1e100000" es entero pero fuera de rango: se rechaza sin calcularlo (ver validateCompletedKm).
+        for (String km : List.of("-1", "60500.5", "59999", "1e100000")) {
             WorkOrderValidationException ex = assertThrows(WorkOrderValidationException.class,
                     () -> service.update(workOrder.getId().toString(), finalizeWith("Aceite cambiado", km)));
             assertEquals(List.of("completedKm"), fields(ex));
