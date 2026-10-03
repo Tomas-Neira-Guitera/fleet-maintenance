@@ -91,14 +91,17 @@ crear dos OTs; en la UI el botón se deshabilita mientras envía.
 
 ### 6. `GET /api/users?role=` es de solo lectura
 Existe únicamente para poblar el selector de técnico. Devuelve `id`, `username`, `role`
-(nunca el hash). `role` es obligatorio (422 si falta): como ningún endpoint valida el
-JWT todavía, no se expone el listado completo de usuarios. Rol inexistente → 422.
+(nunca el hash). Rol inexistente → 422.
 
-**No** es gestión de usuarios: alta, registro según rol, invitaciones y edición quedan
-para CAM-23 / el próximo sprint.
+> **Actualizado por CAM-23** (ver `CAM-23-users-contract.md`): `/api/users` ahora exige
+> el JWT de un ADMIN (401/403), `role` pasó a ser opcional (sin él lista todos) y la
+> respuesta suma `active`. El selector solo ofrece técnicos activos, y el backend
+> rechaza asignar uno desactivado (422 `technicianId`). Reenviar el técnico que ya
+> está a cargo sigue funcionando aunque lo hayan desactivado. Un técnico con OTs
+> abiertas no puede cambiar de rol hasta que se las reasignen.
 
 ## Fuera de alcance
-- Autorización por rol: igual que el resto de la API, el backend todavía no valida el
-  JWT en estos endpoints.
+- Autorización por rol en los endpoints de OTs: el backend todavía no valida el JWT ahí
+  (CAM-73). Desde CAM-23 solo `/api/users` lo valida.
 - Restringir que solo el técnico asignado pueda avanzar su OT.
 - La vista del técnico en el frontend.

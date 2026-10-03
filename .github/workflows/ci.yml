@@ -1,0 +1,72 @@
+# CAM-30: integración continua del backend. Cada push y cada PR hacia develop/main compila,
+# corre los tests y verifica el coverage mínimo (85% de líneas, ver build.gradle.kts). Un PR
+# con un test roto o que baja el coverage queda con el check en rojo antes de mergearlo.
+#
+# No necesita Postgres ni secretos: los tests son unitarios y de capa web (@WebMvcTest), y
+# application-local.yml es opcional (application.yml trae valores de desarrollo).
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+# Si se pushea de nuevo a la misma rama o PR, se cancela la corrida anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, tests y coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Gradle (con caché)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # Por default la caché solo se guarda desde la rama default del repo (main), y casi
+          # todo entra por develop: se habilita la escritura también ahí. Las ramas de feature
+          # y los PRs la leen sin pisarla.
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
+
+      - name: Build
+        run: ./gradlew build --no-daemon
+
+      - name: Resumen de coverage
+        if: always()
+        run: |
+          report=build/reports/jacoco/test/jacocoTestReport.xml
+          if [ -f "$report" ]; then
+            # Último contador LINE del XML = total del proyecto.
+            line=$(grep -o '<counter type="LINE" missed="[0-9]*" covered="[0-9]*"/>' "$report" | tail -1)
+            missed=$(echo "$line" | sed -E 's/.*missed="([0-9]+)".*/\1/')
+            covered=$(echo "$line" | sed -E 's/.*covered="([0-9]+)".*/\1/')
+            pct=$(awk -v c="$covered" -v m="$missed" 'BEGIN { printf "%.1f", 100 * c / (c + m) }')
+            echo "### Coverage de líneas: ${pct}% (${covered} de $((covered + missed))) — mínimo 85%" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### No se generó el reporte de coverage (falló antes de los tests)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Reportes de tests y coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reportes-backend
+          path: |
+            build/reports/tests/test/
+            build/reports/jacoco/test/html/
+          retention-days: 14

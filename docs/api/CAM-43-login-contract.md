@@ -10,9 +10,11 @@ CAM-43 en Jira.
 |---|---|---|
 | POST | `/api/auth/login` | Autentica usuario y contraseña, devuelve un JWT + rol |
 
-Alcance: solo autentica y emite el token — no incluye alta ni invitación de usuarios (eso
-es CAM-23, a futuro). Los usuarios de prueba se cargan a mano con `docs/db/seed-users.sql`,
-todavía no hay pantalla de alta.
+Alcance: solo autentica y emite el token — no incluye alta ni invitación de usuarios. El
+alta y la edición son de CAM-23 (`POST`/`PATCH /api/users`, ver
+`CAM-23-users-contract.md`); los usuarios de prueba iniciales se siguen cargando con
+`docs/db/seed-users.sql`. Desde CAM-23 el login también rechaza a los usuarios
+desactivados (403 `USER_INACTIVE`, solo si la contraseña es correcta).
 
 ## Decisiones clave
 
@@ -41,8 +43,8 @@ hasta que el frontend (CAM-45) esté migrado a usar el JWT en el resto de los en
 
 ## Fuera de alcance de este contrato
 
-- Alta / invitación de usuarios (CAM-23).
-- Autorización por rol en el resto de los endpoints (el rol viaja en el token, pero
-  todavía no hay ningún endpoint que lo valide).
+- Alta y edición de usuarios (CAM-23). Invitaciones por email: sin card.
+- Autorización por rol: desde CAM-23 el JWT se valida solo en `/api/users` (exige ADMIN);
+  el resto de los endpoints todavía no lo valida (CAM-73).
 - Reemplazar `X-Driver-Id` por el JWT en los endpoints de CAM-11 (queda para cuando el
   frontend haga esa migración).
