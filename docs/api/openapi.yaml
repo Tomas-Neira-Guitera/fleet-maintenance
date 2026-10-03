@@ -1730,6 +1730,18 @@ components:
 
     ApiError:
       type: object
+      description: >
+        Formato de todo error de la API. Además de los códigos de dominio de cada
+        endpoint, cualquier ruta puede responder (CAM-78): 400 MALFORMED_REQUEST
+        (cuerpo que no es JSON válido o con un tipo de dato equivocado), 400
+        BAD_REQUEST (falta un parámetro o parte obligatoria, o un parámetro tiene
+        un valor inválido), 404 NOT_FOUND (la ruta no existe), 405
+        METHOD_NOT_ALLOWED, 415 UNSUPPORTED_MEDIA_TYPE y 500 INTERNAL_ERROR (error
+        inesperado, sin detalles internos en el mensaje). Un id mal formado en el
+        path responde el mismo 404 de dominio que un id que no existe; en un filtro
+        de listado (vehicleId de /api/defects, /api/work-orders y
+        /api/maintenance-schedule) devuelve una lista vacía, igual que un id que no
+        tiene resultados.
       required: [error, message]
       properties:
         error: { type: string }

@@ -100,9 +100,13 @@ public class VehicleService {
                 .sorted(Comparator.comparingInt((FleetStatusRowDto r) -> severityOf(r.status())).reversed())
                 .toList();
 
+        // page=0 o pageSize=0 darían un índice negativo en subList (500): se toman como mínimo 1.
+        page = Math.max(page, 1);
+        pageSize = Math.max(pageSize, 1);
         long total = rows.size();
-        int fromIndex = Math.min((page - 1) * pageSize, rows.size());
-        int toIndex = Math.min(fromIndex + pageSize, rows.size());
+        // En long: con page enorme, (page - 1) * pageSize desbordaría un int a negativo.
+        int fromIndex = (int) Math.min((long) (page - 1) * pageSize, rows.size());
+        int toIndex = (int) Math.min((long) fromIndex + pageSize, rows.size());
         return new PagedResponse<>(page, pageSize, total, rows.subList(fromIndex, toIndex));
     }
 
@@ -299,7 +303,7 @@ public class VehicleService {
     }
 
     private Vehicle find(String id) {
-        return vehicleRepository.findById(UUID.fromString(id))
+        return Uuids.parse(id).flatMap(vehicleRepository::findById)
                 .orElseThrow(() -> new VehicleNotFoundException(id));
     }
 

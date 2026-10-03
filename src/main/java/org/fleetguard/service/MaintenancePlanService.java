@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 /** Lógica de negocio del catálogo /api/maintenance-plans -- ver CAM-40-maintenance-api-contract.md. */
 @Service
@@ -89,6 +88,12 @@ public class MaintenancePlanService {
             plan.setCategory(request.category());
         }
         IntervalType newIntervalType = request.intervalType() != null ? IntervalType.fromJson(request.intervalType()) : plan.getIntervalType();
+        // Un intervalType que no existe ("semanal") no puede pasar como null: dejaría el plan sin
+        // tipo y rompería al guardar (columna NOT NULL) con un 500.
+        if (newIntervalType == null) {
+            throw new MaintenanceValidationException("Datos inválidos para editar el plan",
+                    List.of(new FieldValidationErrorDetail("intervalType", "Debe ser 'km', 'time' o 'both'")));
+        }
         Integer newIntervalKm = request.intervalKm() != null ? request.intervalKm() : plan.getIntervalKm();
         Integer newIntervalDays = request.intervalDays() != null ? request.intervalDays() : plan.getIntervalDays();
 
@@ -119,7 +124,7 @@ public class MaintenancePlanService {
     }
 
     MaintenancePlan find(String id) {
-        return planRepository.findById(UUID.fromString(id))
+        return Uuids.parse(id).flatMap(planRepository::findById)
                 .orElseThrow(() -> new MaintenancePlanNotFoundException(id));
     }
 

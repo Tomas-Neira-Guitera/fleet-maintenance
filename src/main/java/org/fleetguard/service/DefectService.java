@@ -39,7 +39,7 @@ public class DefectService {
      */
     public List<DefectDto> listDefects(String vehicleIdParam, String statusParam) {
         List<Defect> defects = vehicleIdParam != null && !vehicleIdParam.isBlank()
-                ? defectRepository.findByVehicleIdWithInspection(UUID.fromString(vehicleIdParam))
+                ? Uuids.parse(vehicleIdParam).map(defectRepository::findByVehicleIdWithInspection).orElse(List.of())
                 : defectRepository.findAllWithInspection();
 
         if (statusParam != null) {

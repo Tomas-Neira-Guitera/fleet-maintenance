@@ -26,7 +26,8 @@ public class PhotoService {
         if (file.isEmpty()) {
             throw new UnsupportedPhotoTypeException("El archivo está vacío.");
         }
-        if (!ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
+        // Set.of(...).contains(null) tira NullPointerException: sin tipo de contenido sería un 500.
+        if (file.getContentType() == null || !ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
             throw UnsupportedPhotoTypeException.wrongType(file.getContentType());
         }
 

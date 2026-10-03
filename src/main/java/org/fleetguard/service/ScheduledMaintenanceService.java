@@ -107,7 +107,7 @@ public class ScheduledMaintenanceService {
         String title;
 
         if (sourceType == ScheduleSourceType.ASSIGNMENT) {
-            VehicleMaintenanceAssignment assignment = assignmentRepository.findById(UUID.fromString(request.sourceId()))
+            VehicleMaintenanceAssignment assignment = Uuids.parse(request.sourceId()).flatMap(assignmentRepository::findById)
                     .orElseThrow(() -> new AssignmentNotFoundException(request.sourceId()));
             if (!assignment.isActive()) {
                 throw new MaintenanceConflictException("ASSIGNMENT_INACTIVE",
@@ -117,7 +117,7 @@ public class ScheduledMaintenanceService {
             assignmentId = assignment.getId();
             title = assignment.getMaintenancePlan().getName();
         } else if (sourceType == ScheduleSourceType.DEFECT) {
-            Defect defect = defectRepository.findById(UUID.fromString(request.sourceId()))
+            Defect defect = Uuids.parse(request.sourceId()).flatMap(defectRepository::findById)
                     .orElseThrow(() -> new DefectNotFoundException(request.sourceId()));
             if (!"open".equals(defect.getStatus())) {
                 throw new MaintenanceConflictException("DEFECT_RESOLVED",
@@ -128,7 +128,7 @@ public class ScheduledMaintenanceService {
             title = defect.getDescription();
         } else {
             // Manual: no hay plan ni defecto -- el cliente manda vehicleId y title directo.
-            Vehicle manualVehicle = vehicleRepository.findById(UUID.fromString(request.vehicleId()))
+            Vehicle manualVehicle = Uuids.parse(request.vehicleId()).flatMap(vehicleRepository::findById)
                     .orElseThrow(() -> new VehicleNotFoundException(request.vehicleId()));
             vehicleId = manualVehicle.getId();
             title = request.title().trim();
@@ -161,7 +161,7 @@ public class ScheduledMaintenanceService {
 
     @Transactional
     public ScheduleDto update(String id, UpdateScheduleRequest request) {
-        ScheduledMaintenance schedule = scheduleRepository.findById(UUID.fromString(id))
+        ScheduledMaintenance schedule = Uuids.parse(id).flatMap(scheduleRepository::findById)
                 .orElseThrow(() -> new ScheduleNotFoundException(id));
 
         if (request.status() != null) {
@@ -216,8 +216,11 @@ public class ScheduledMaintenanceService {
 
         List<ScheduledMaintenance> schedules;
         if (vehicleIdParam != null && !vehicleIdParam.isBlank()) {
-            schedules = scheduleRepository.findByVehicleIdAndScheduledAtBetweenAndStatusOrderByScheduledAtAsc(
-                    UUID.fromString(vehicleIdParam), fromInstant, toInstant, status);
+            // Un vehicleId mal formado devuelve lista vacía, no 500 (mismo criterio que el filtro por técnico de las OTs).
+            schedules = Uuids.parse(vehicleIdParam)
+                    .map(id -> scheduleRepository.findByVehicleIdAndScheduledAtBetweenAndStatusOrderByScheduledAtAsc(
+                            id, fromInstant, toInstant, status))
+                    .orElse(List.of());
         } else {
             schedules = scheduleRepository.findByScheduledAtBetweenAndStatusOrderByScheduledAtAsc(fromInstant, toInstant, status);
         }

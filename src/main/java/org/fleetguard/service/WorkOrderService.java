@@ -150,7 +150,7 @@ public class WorkOrderService {
         String title;
 
         if (sourceType == WorkOrderSourceType.SCHEDULED_MAINTENANCE) {
-            ScheduledMaintenance schedule = scheduleRepository.findById(UUID.fromString(request.sourceId()))
+            ScheduledMaintenance schedule = Uuids.parse(request.sourceId()).flatMap(scheduleRepository::findById)
                     .orElseThrow(() -> new ScheduleNotFoundException(request.sourceId()));
             vehicleId = schedule.getVehicleId();
             scheduledMaintenanceId = schedule.getId();
@@ -158,7 +158,7 @@ public class WorkOrderService {
             assignmentId = schedule.getAssignmentId();
             title = schedule.getTitle();
         } else if (sourceType == WorkOrderSourceType.DEFECT) {
-            Defect defect = defectRepository.findById(UUID.fromString(request.sourceId()))
+            Defect defect = Uuids.parse(request.sourceId()).flatMap(defectRepository::findById)
                     .orElseThrow(() -> new DefectNotFoundException(request.sourceId()));
             if (!"open".equals(defect.getStatus())) {
                 throw new WorkOrderConflictException("DEFECT_RESOLVED",
@@ -168,7 +168,7 @@ public class WorkOrderService {
             defectId = defect.getId();
             title = defect.getDescription();
         } else {
-            Vehicle vehicle = vehicleRepository.findById(UUID.fromString(request.vehicleId()))
+            Vehicle vehicle = Uuids.parse(request.vehicleId()).flatMap(vehicleRepository::findById)
                     .orElseThrow(() -> new VehicleNotFoundException(request.vehicleId()));
             vehicleId = vehicle.getId();
             title = request.title().trim();
@@ -221,7 +221,7 @@ public class WorkOrderService {
     public List<WorkOrderDto> list(String vehicleIdParam, String statusParam, String executionTypeParam,
                                    String technicianIdParam) {
         List<WorkOrder> workOrders = vehicleIdParam != null && !vehicleIdParam.isBlank()
-                ? workOrderRepository.findByVehicleIdOrderByCreatedAtDesc(UUID.fromString(vehicleIdParam))
+                ? Uuids.parse(vehicleIdParam).map(workOrderRepository::findByVehicleIdOrderByCreatedAtDesc).orElse(List.of())
                 : workOrderRepository.findAllByOrderByCreatedAtDesc();
 
         if (statusParam != null) {
@@ -425,7 +425,7 @@ public class WorkOrderService {
     public void deleteExpense(String id, String expenseId) {
         WorkOrder workOrder = findWorkOrder(id);
         requireOpen(workOrder, "WORK_ORDER_FINALIZED", "No se pueden borrar gastos de una orden de trabajo finalizada o cancelada");
-        WorkOrderExpense expense = expenseRepository.findById(UUID.fromString(expenseId))
+        WorkOrderExpense expense = Uuids.parse(expenseId).flatMap(expenseRepository::findById)
                 .filter(e -> e.getWorkOrder().getId().equals(workOrder.getId()))
                 .orElseThrow(() -> new WorkOrderNotFoundException(expenseId));
         expenseRepository.delete(expense);
@@ -450,7 +450,7 @@ public class WorkOrderService {
     public void deletePhoto(String id, String photoId) {
         WorkOrder workOrder = findWorkOrder(id);
         requireOpen(workOrder, "WORK_ORDER_CLOSED", "No se pueden borrar fotos de una orden de trabajo finalizada o cancelada");
-        WorkOrderPhoto photo = photoRepository.findById(UUID.fromString(photoId))
+        WorkOrderPhoto photo = Uuids.parse(photoId).flatMap(photoRepository::findById)
                 .filter(p -> p.getWorkOrder().getId().equals(workOrder.getId()))
                 .orElseThrow(() -> new WorkOrderNotFoundException(photoId));
         photoRepository.delete(photo);
@@ -463,7 +463,7 @@ public class WorkOrderService {
     }
 
     private WorkOrder findWorkOrder(String id) {
-        return workOrderRepository.findById(UUID.fromString(id))
+        return Uuids.parse(id).flatMap(workOrderRepository::findById)
                 .orElseThrow(() -> new WorkOrderNotFoundException(id));
     }
 

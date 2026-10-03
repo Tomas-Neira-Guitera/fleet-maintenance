@@ -54,6 +54,10 @@ public class VehicleMaintenanceAssignmentService {
     @Transactional
     public AssignmentDto create(String vehicleId, CreateAssignmentRequest request) {
         Vehicle vehicle = findVehicle(vehicleId);
+        if (request.maintenancePlanId() == null || request.maintenancePlanId().isBlank()) {
+            throw new MaintenanceValidationException("Datos inválidos para asignar el plan",
+                    List.of(new FieldValidationErrorDetail("maintenancePlanId", "Obligatorio")));
+        }
         MaintenancePlan plan = maintenancePlanService.find(request.maintenancePlanId());
 
         List<FieldValidationErrorDetail> details = new ArrayList<>();
@@ -140,12 +144,13 @@ public class VehicleMaintenanceAssignmentService {
     }
 
     VehicleMaintenanceAssignment findAssignment(UUID vehicleId, String assignmentId) {
-        return assignmentRepository.findByIdAndVehicleId(UUID.fromString(assignmentId), vehicleId)
+        return Uuids.parse(assignmentId)
+                .flatMap(id -> assignmentRepository.findByIdAndVehicleId(id, vehicleId))
                 .orElseThrow(() -> new AssignmentNotFoundException(assignmentId));
     }
 
     Vehicle findVehicle(String vehicleId) {
-        return vehicleRepository.findById(UUID.fromString(vehicleId))
+        return Uuids.parse(vehicleId).flatMap(vehicleRepository::findById)
                 .orElseThrow(() -> new VehicleNotFoundException(vehicleId));
     }
 
