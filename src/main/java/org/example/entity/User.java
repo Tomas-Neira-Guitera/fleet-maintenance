@@ -28,6 +28,12 @@ public class User {
     @Column(nullable = false)
     private Role role;
 
+    // CAM-23: un usuario desactivado no puede loguearse, pero se conserva su historial.
+    // Default a nivel columna: ddl-auto: update no puede agregar un NOT NULL sin default
+    // a una tabla que ya tiene filas.
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private boolean active = true;
+
     protected User() {
         // JPA
     }
@@ -50,7 +56,23 @@ public class User {
         return passwordHash;
     }
 
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
     public Role getRole() {
         return role;
+    }
+
+    public void setRole(Role role) {
+        this.role = role;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
     }
 }

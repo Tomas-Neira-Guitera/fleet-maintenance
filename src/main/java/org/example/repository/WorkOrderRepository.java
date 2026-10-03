@@ -29,4 +29,7 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, UUID> {
 
     List<WorkOrder> findByScheduledMaintenanceIdAndStatusIn(UUID scheduledMaintenanceId,
                                                              Collection<WorkOrderStatus> statuses);
+
+    // CAM-23: un técnico con OTs abiertas no puede cambiar de rol hasta que se las reasignen.
+    long countByTechnicianIdAndStatusIn(UUID technicianId, Collection<WorkOrderStatus> statuses);
 }

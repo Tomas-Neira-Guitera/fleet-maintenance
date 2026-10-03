@@ -4,6 +4,7 @@ import org.example.dto.LoginRequestDto;
 import org.example.dto.LoginResponseDto;
 import org.example.entity.User;
 import org.example.exception.InvalidCredentialsException;
+import org.example.exception.UserInactiveException;
 import org.example.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -38,13 +39,20 @@ public class AuthService {
                 || request.password() == null || request.password().isBlank()) {
             throw new InvalidCredentialsException();
         }
-        Optional<User> maybeUser = userRepository.findByUsername(request.username());
+        // CAM-23: los usernames pueden tener espacios y acentos; se busca en la misma forma
+        // canónica con la que se guardaron ("Juan  Pérez " encuentra a "Juan Pérez").
+        Optional<User> maybeUser = userRepository.findByUsername(UserService.normalizeUsername(request.username()));
         String hashToCheck = maybeUser.map(User::getPasswordHash).orElse(DUMMY_HASH);
         boolean passwordMatches = passwordEncoder.matches(request.password(), hashToCheck);
         if (maybeUser.isEmpty() || !passwordMatches) {
             throw new InvalidCredentialsException();
         }
         User user = maybeUser.get();
+        // CAM-23: se avisa recién después de validar la contraseña, para no delatar qué usuarios
+        // existen (ni cuáles están desactivados) a quien no la conoce.
+        if (!user.isActive()) {
+            throw new UserInactiveException();
+        }
         String token = jwtService.generateToken(user);
         return new LoginResponseDto(token, user.getRole().name());
     }

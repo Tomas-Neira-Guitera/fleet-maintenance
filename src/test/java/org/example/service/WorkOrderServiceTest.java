@@ -140,6 +140,31 @@ class WorkOrderServiceTest {
     }
 
     @Test
+    void crearOtConTecnicoDesactivadoDevuelve422() throws Exception {
+        UUID inactiveId = UUID.randomUUID();
+        User inactive = new User("tecnico-viejo", "hash", Role.TECNICO);
+        setId(inactive, inactiveId);
+        inactive.setActive(false);
+        when(userRepository.findById(inactiveId)).thenReturn(Optional.of(inactive));
+
+        WorkOrderValidationException ex = assertThrows(WorkOrderValidationException.class,
+                () -> service.create(manualRequest("interno", null, inactiveId.toString())));
+
+        assertEquals("technicianId", ex.getDetails().get(0).field());
+    }
+
+    @Test
+    void editarUnaOtCuyoTecnicoFueDesactivadoNoFallaSiSeReenviaElMismo() throws Exception {
+        WorkOrder workOrder = existingInternalWithTechnician();
+        userRepository.findById(technicianId).orElseThrow().setActive(false);
+
+        WorkOrderDto result = service.update(workOrder.getId().toString(),
+                updateRequest(technicianId.toString(), null, null));
+
+        assertEquals(technicianId.toString(), result.technicianId());
+    }
+
+    @Test
     void crearOtExternaConTecnicoDevuelve422() {
         WorkOrderValidationException ex = assertThrows(WorkOrderValidationException.class,
                 () -> service.create(manualRequest("externo", "Taller Norte", technicianId.toString())));

@@ -27,7 +27,13 @@ info:
     Y las órdenes de trabajo (CAM-14, CAM-15, CAM-62, CAM-63), con el
     técnico a cargo (CAM-60) y el listado de usuarios de solo lectura que
     alimenta su selector. Ver docs/api/CAM-60-technician-contract.md.
-  version: "1.6"
+
+
+    Y la gestión de usuarios (CAM-23): alta, edición y desactivación. Es el
+    único recurso que hoy valida el JWT (bearerAuth) y exige rol ADMIN; el
+    resto de los endpoints todavía no lo valida aunque el esquema global lo
+    declare (CAM-73). Ver docs/api/CAM-23-users-contract.md.
+  version: "1.7"
 
 servers:
   - url: http://localhost:8080
@@ -457,7 +463,7 @@ paths:
       summary: Autenticar usuario y contraseña, devolver un JWT + rol (CAM-43)
       description: >
         Solo autentica y emite el token -- no incluye alta ni invitación de
-        usuarios (CAM-23, a futuro). Los usuarios de prueba se cargan a mano
+        usuarios (eso es POST /api/users, CAM-23). Los usuarios de prueba iniciales se cargan
         con docs/db/seed-users.sql. Todavía no reemplaza al header temporal
         X-Driver-Id de CAM-11 -- conviven hasta que el frontend (CAM-45) esté
         migrado. Ver docs/api/CAM-43-login-contract.md para el detalle de
@@ -489,6 +495,19 @@ paths:
               example:
                 error: INVALID_CREDENTIALS
                 message: Usuario o contraseña incorrectos.
+        "403":
+          description: >
+            USER_INACTIVE (CAM-23) -- usuario y contraseña correctos, pero el
+            usuario está desactivado. Solo se responde si la contraseña es
+            correcta: con una incorrecta sale el 401 de siempre, así no se
+            revela qué usuarios existen ni cuáles están desactivados.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              example:
+                error: USER_INACTIVE
+                message: Tu usuario está desactivado. Pedile a un administrador que lo reactive.
 
   /api/inspections/{vehicleId}:
     post:
@@ -1269,16 +1288,19 @@ paths:
 
   /api/users:
     get:
-      summary: Listar usuarios (solo lectura, CAM-60)
+      summary: Listar usuarios (CAM-60, CAM-23)
       description: >
-        Existe para poblar el selector de técnico de una orden de trabajo
-        (role=TECNICO). No es gestión de usuarios (alta, invitaciones, roles):
-        eso es CAM-23. Nunca devuelve el hash de la contraseña.
+        Solo ADMIN (CAM-23). Sin role lista todos los usuarios, activos y
+        desactivados; con role=TECNICO alimenta el selector de técnico de una
+        orden de trabajo (CAM-60), que solo ofrece los activos. Nunca devuelve
+        el hash de la contraseña.
+      security:
+        - bearerAuth: []
       parameters:
         - name: role
           in: query
-          required: true
-          description: Obligatorio -- sin JWT que proteja el endpoint, no se lista el total de usuarios.
+          required: false
+          description: Opcional desde CAM-23 (antes era obligatorio porque el endpoint no estaba protegido).
           schema:
             $ref: "#/components/schemas/Role"
       responses:
@@ -1294,6 +1316,96 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/UserSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    post:
+      summary: Dar de alta un usuario (CAM-23)
+      description: >
+        Solo ADMIN. El usuario nace activo. username se guarda sin espacios
+        alrededor y es único sin distinguir mayúsculas ("Admin" choca con
+        "admin"). La contraseña se guarda como hash BCrypt.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: Creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: USERNAME_TAKEN
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/users/{id}:
+    patch:
+      summary: Editar un usuario -- rol, contraseña, activo (CAM-23)
+      description: >
+        Solo ADMIN. Campos parciales: lo que no viene no se toca. El username
+        no se edita. Un admin no puede desactivarse a sí mismo ni quitarse el
+        rol ADMIN (409 CANNOT_MODIFY_SELF); sí puede cambiarse la contraseña.
+        Un TECNICO con OTs abiertas (asignadas o en proceso) no puede pasar a
+        otro rol hasta que se las reasignen (409 TECHNICIAN_HAS_OPEN_WORK_ORDERS);
+        sí se lo puede desactivar. Desactivar no borra nada: el historial del
+        usuario (inspecciones, OTs) se conserva, y su sesión deja de valer en
+        /api/users desde el pedido siguiente aunque su token siga vigente.
+        Resetear la contraseña, en cambio, no invalida los tokens ya emitidos.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: USER_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: CANNOT_MODIFY_SELF | TECHNICIAN_HAS_OPEN_WORK_ORDERS
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
@@ -1306,6 +1418,26 @@ components:
       bearerFormat: JWT
 
   responses:
+    Unauthorized:
+      description: >
+        UNAUTHORIZED (CAM-23) -- falta el header Authorization, el token es
+        inválido o venció, o su usuario ya no existe o está desactivado.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          example:
+            error: UNAUTHORIZED
+            message: Tu sesión no es válida o venció. Volvé a iniciar sesión.
+    Forbidden:
+      description: FORBIDDEN (CAM-23) -- token válido, pero el usuario no es ADMIN.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          example:
+            error: FORBIDDEN
+            message: No tenés permiso para hacer esto.
     PayloadTooLarge:
       description: La foto supera el tamaño máximo permitido (8MB)
       content:
@@ -1972,7 +2104,7 @@ components:
         technicianId:
           type: string
           nullable: true
-          description: "Opcional. Tiene que ser un usuario con rol TECNICO (422 technicianId si no) y la OT tiene que ser interna (422 si es externa)."
+          description: "Opcional. Tiene que ser un usuario activo con rol TECNICO (422 technicianId si no, CAM-23) y la OT tiene que ser interna (422 si es externa)."
 
     UpdateWorkOrderRequest:
       type: object
@@ -1987,7 +2119,9 @@ components:
         technicianId:
           type: string
           description: >
-            Un id asigna (mismas reglas que al crear); "" desasigna. Si la OT
+            Un id asigna (mismas reglas que al crear); "" desasigna. Reenviar el
+            técnico que ya está a cargo no cambia nada y no se valida, aunque lo
+            hayan desactivado después (CAM-23). Si la OT
             pasa a executionType=externo, el técnico se desasigna solo; si pasa
             a interno, se limpian assignee y externalProvider.
         executionType:
@@ -2031,9 +2165,49 @@ components:
 
     UserSummary:
       type: object
-      required: [id, username, role]
+      required: [id, username, role, active]
       properties:
         id: { type: string }
         username: { type: string }
         role:
           $ref: "#/components/schemas/Role"
+        active:
+          type: boolean
+          description: CAM-23 -- false = desactivado, no puede loguearse.
+
+    CreateUserRequest:
+      type: object
+      required: [username, password, role]
+      properties:
+        username:
+          type: string
+          maxLength: 30
+          pattern: "^[\\p{L}\\p{N} ._-]+$"
+          description: >
+            Letras (con acentos y ñ), números, espacios, punto, guion y guion bajo
+            ("Juan Pérez" vale). El servidor recorta los extremos y colapsa los
+            espacios repetidos antes de validar y guardar; el login normaliza igual.
+            Único sin distinguir mayúsculas.
+        password:
+          type: string
+          minLength: 6
+          maxLength: 72
+          description: >
+            Contraseña inicial. El tope real son 72 bytes en UTF-8 (el de BCrypt):
+            una letra con acento ocupa 2, así que puede ser 422 con menos de 72 caracteres.
+        role:
+          $ref: "#/components/schemas/Role"
+
+    UpdateUserRequest:
+      type: object
+      description: Campos parciales -- lo que no viene no se toca.
+      properties:
+        role:
+          $ref: "#/components/schemas/Role"
+        password:
+          type: string
+          minLength: 6
+          maxLength: 72
+          description: Resetea la contraseña. Mismo tope de 72 bytes que en el alta.
+        active:
+          type: boolean

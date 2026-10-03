@@ -1,5 +1,6 @@
 package org.example.service;
 
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.example.entity.User;
@@ -11,6 +12,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class JwtService {
@@ -35,5 +38,23 @@ public class JwtService {
                 .expiration(Date.from(now.plus(expiration)))
                 .signWith(key)
                 .compact();
+    }
+
+    /**
+     * Id del usuario (claim sub) de un token con firma válida y sin vencer (CAM-23). Vacío si el
+     * token está mal formado, adulterado o vencido -- el motivo no se distingue hacia afuera.
+     */
+    public Optional<UUID> parseUserId(String token) {
+        try {
+            String subject = Jwts.parser()
+                    .verifyWith(key)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload()
+                    .getSubject();
+            return Optional.of(UUID.fromString(subject));
+        } catch (JwtException | IllegalArgumentException | NullPointerException e) {
+            return Optional.empty();
+        }
     }
 }

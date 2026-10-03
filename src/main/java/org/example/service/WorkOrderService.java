@@ -58,7 +58,7 @@ import java.util.UUID;
 public class WorkOrderService {
 
     private static final FieldValidationErrorDetail TECHNICIAN_NOT_FOUND =
-            new FieldValidationErrorDetail("technicianId", "No existe un técnico con ese id");
+            new FieldValidationErrorDetail("technicianId", "No existe un técnico activo con ese id");
     private static final FieldValidationErrorDetail TECHNICIAN_ONLY_INTERNAL =
             new FieldValidationErrorDetail("technicianId", "Solo se puede asignar un técnico a una orden de trabajo interna");
 
@@ -296,6 +296,12 @@ public class WorkOrderService {
             if (external) {
                 throw new WorkOrderValidationException("Datos inválidos", List.of(TECHNICIAN_ONLY_INTERNAL));
             }
+            // El formulario de edición reenvía el técnico que ya está a cargo: si después lo
+            // desactivaron (CAM-23), editar otro campo de la OT no tiene que rechazarse por eso.
+            if (workOrder.getTechnicianId() != null
+                    && workOrder.getTechnicianId().toString().equalsIgnoreCase(technicianIdParam.trim())) {
+                return;
+            }
             UUID technicianId = resolveTechnicianId(technicianIdParam);
             if (technicianId == null) {
                 throw new WorkOrderValidationException("Datos inválidos", List.of(TECHNICIAN_NOT_FOUND));
@@ -306,7 +312,10 @@ public class WorkOrderService {
         }
     }
 
-    /** Devuelve el id si es un usuario con rol TECNICO; null si no existe, no es técnico o está malformado. */
+    /**
+     * Devuelve el id si es un usuario activo con rol TECNICO; null si no existe, no es técnico,
+     * está desactivado (CAM-23) o el id está malformado.
+     */
     private UUID resolveTechnicianId(String technicianIdParam) {
         UUID id;
         try {
@@ -314,7 +323,10 @@ public class WorkOrderService {
         } catch (IllegalArgumentException e) {
             return null;
         }
-        return userRepository.findById(id).filter(u -> u.getRole() == Role.TECNICO).map(User::getId).orElse(null);
+        return userRepository.findById(id)
+                .filter(u -> u.getRole() == Role.TECNICO && u.isActive())
+                .map(User::getId)
+                .orElse(null);
     }
 
     private void applyStatusChange(WorkOrder workOrder, UpdateWorkOrderRequest request) {
