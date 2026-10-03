@@ -414,7 +414,9 @@ public class WorkOrderService {
             details.add(new FieldValidationErrorDetail("completedKm", "El kilometraje no puede ser negativo"));
             return null;
         }
-        if (km.remainder(BigDecimal.ONE).signum() != 0) {
+        // stripTrailingZeros y no remainder(ONE): con un exponente enorme ("1e100000", 8 caracteres
+        // que Jackson acepta) remainder arma un número de 10^N dígitos y traba el hilo varios segundos.
+        if (km.stripTrailingZeros().scale() > 0) {
             details.add(new FieldValidationErrorDetail("completedKm",
                     "El kilometraje tiene que ser un número entero, sin decimales"));
             return null;
