@@ -46,6 +46,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -75,6 +76,7 @@ class WorkOrderLifecycleServiceTest {
             mock(UserRepository.class), new WorkOrderMapper(), new DefectMapper());
 
     private final UUID vehicleId = UUID.randomUUID();
+    private final Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
 
     private static void setId(Object entity, UUID id) throws Exception {
         Field field = entity.getClass().getDeclaredField("id");
@@ -84,7 +86,6 @@ class WorkOrderLifecycleServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
         setId(vehicle, vehicleId);
         when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(vehicle));
         when(workOrderRepository.save(any(WorkOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -122,8 +123,9 @@ class WorkOrderLifecycleServiceTest {
         return new UpdateWorkOrderRequest(status, null, null, null, null, null, null, null);
     }
 
-    private static UpdateWorkOrderRequest finalizeWith(String closingDescription, Long completedKm) {
-        return new UpdateWorkOrderRequest("finalizada", closingDescription, completedKm, null, null, null, null, null);
+    private static UpdateWorkOrderRequest finalizeWith(String closingDescription, String completedKm) {
+        return new UpdateWorkOrderRequest("finalizada", closingDescription,
+                completedKm == null ? null : new BigDecimal(completedKm), null, null, null, null, null);
     }
 
     private static List<String> fields(WorkOrderValidationException ex) {
@@ -164,13 +166,33 @@ class WorkOrderLifecycleServiceTest {
         WorkOrder finalized = inProgress(null, null, null);
         finalized.finalizeOrder("Hecho");
 
-        assertThrows(WorkOrderConflictException.class,
-                () -> service.update(cancelled.getId().toString(), status("en_proceso")));
-        assertThrows(WorkOrderConflictException.class,
-                () -> service.update(finalized.getId().toString(), status("cancelada")));
+        assertEquals("WORK_ORDER_CLOSED", assertThrows(WorkOrderConflictException.class,
+                () -> service.update(cancelled.getId().toString(), status("en_proceso"))).getErrorCode());
+        assertEquals("WORK_ORDER_CLOSED", assertThrows(WorkOrderConflictException.class,
+                () -> service.update(finalized.getId().toString(), status("cancelada"))).getErrorCode());
         // Volver a "asignada" no es una transición válida desde ningún estado.
-        assertThrows(WorkOrderConflictException.class,
-                () -> service.update(inProgress(null, null, null).getId().toString(), status("asignada")));
+        assertEquals("INVALID_STATUS_TRANSITION", assertThrows(WorkOrderConflictException.class,
+                () -> service.update(inProgress(null, null, null).getId().toString(), status("asignada"))).getErrorCode());
+    }
+
+    @Test
+    void unaOtFinalizadaOCanceladaNoSeEdita() throws Exception {
+        WorkOrder cancelled = workOrder(null, null, null);
+        cancelled.cancel();
+        WorkOrder finalized = inProgress(null, null, null);
+        finalized.finalizeOrder("Hecho");
+        UpdateWorkOrderRequest edit = new UpdateWorkOrderRequest(null, null, null, null, null,
+                "externo", "Taller Pérez", "Otra descripción");
+
+        for (WorkOrder closed : List.of(cancelled, finalized)) {
+            assertEquals("WORK_ORDER_CLOSED", assertThrows(WorkOrderConflictException.class,
+                    () -> service.update(closed.getId().toString(), edit)).getErrorCode());
+            // Queda como registro histórico: no se toca ningún campo ni se guarda nada.
+            assertNull(closed.getDescription());
+            assertEquals(WorkOrderExecutionType.INTERNO, closed.getExecutionType());
+            assertNull(closed.getExternalProvider());
+        }
+        verify(workOrderRepository, never()).save(any());
     }
 
     @Test
@@ -210,7 +232,7 @@ class WorkOrderLifecycleServiceTest {
         WorkOrder workOrder = inProgress(UUID.randomUUID(), null, assignmentId);
         withPhotos(workOrder, 2);
 
-        service.update(workOrder.getId().toString(), finalizeWith("Aceite y filtro cambiados", 61000L));
+        service.update(workOrder.getId().toString(), finalizeWith("Aceite y filtro cambiados", "61000"));
 
         ArgumentCaptor<CreateCompletionRequest> captor = ArgumentCaptor.forClass(CreateCompletionRequest.class);
         verify(completionService).create(eq(vehicleId.toString()), eq(assignmentId.toString()), captor.capture());
@@ -220,6 +242,36 @@ class WorkOrderLifecycleServiceTest {
         assertEquals(workOrder.getId().toString(), captor.getValue().workOrderId());
         // La programación de un plan la cierra MaintenanceCompletionService, no se cierra dos veces acá.
         verify(scheduledMaintenanceService, never()).update(any(), any());
+    }
+
+    @Test
+    void finalizarRechazaUnKilometrajeNegativoConDecimalesOMenorAlDelVehiculo() throws Exception {
+        vehicle.setOdometerKm(60000);
+        WorkOrder workOrder = inProgress(UUID.randomUUID(), null, UUID.randomUUID());
+        withPhotos(workOrder, 1);
+
+        // Un decimal no se trunca: llega como BigDecimal y se rechaza, en vez de guardarse 60500.
+        for (String km : List.of("-1", "60500.5", "59999")) {
+            WorkOrderValidationException ex = assertThrows(WorkOrderValidationException.class,
+                    () -> service.update(workOrder.getId().toString(), finalizeWith("Aceite cambiado", km)));
+            assertEquals(List.of("completedKm"), fields(ex));
+        }
+        assertEquals(WorkOrderStatus.EN_PROCESO, workOrder.getStatus());
+        verify(completionService, never()).create(any(), any(), any());
+    }
+
+    @Test
+    void finalizarAceptaElMismoKilometrajeQueYaTieneElVehiculo() throws Exception {
+        vehicle.setOdometerKm(60000);
+        UUID assignmentId = UUID.randomUUID();
+        WorkOrder workOrder = inProgress(UUID.randomUUID(), null, assignmentId);
+        withPhotos(workOrder, 1);
+
+        service.update(workOrder.getId().toString(), finalizeWith("Aceite cambiado", "60000"));
+
+        ArgumentCaptor<CreateCompletionRequest> captor = ArgumentCaptor.forClass(CreateCompletionRequest.class);
+        verify(completionService).create(eq(vehicleId.toString()), eq(assignmentId.toString()), captor.capture());
+        assertEquals(60000L, captor.getValue().completedKm());
     }
 
     @Test
