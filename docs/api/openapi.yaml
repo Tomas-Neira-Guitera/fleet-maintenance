@@ -1166,6 +1166,8 @@ paths:
         asignada→en_proceso, en_proceso→finalizada, asignada|en_proceso→cancelada.
         Finalizar exige closingDescription y al menos una foto, y cierra el
         origen (completion de la asignación, programación o defecto).
+        Una OT finalizada o cancelada no se edita más (CAM-75): cualquier PATCH
+        sobre ella, de datos o de estado, responde 409 WORK_ORDER_CLOSED.
       requestBody:
         required: true
         content:
@@ -1182,7 +1184,9 @@ paths:
         "404":
           description: WORK_ORDER_NOT_FOUND
         "409":
-          description: INVALID_STATUS_TRANSITION
+          description: >
+            WORK_ORDER_CLOSED -- la OT está finalizada o cancelada (CAM-75).
+            INVALID_STATUS_TRANSITION -- transición inválida sobre una OT abierta.
           content:
             application/json:
               schema:

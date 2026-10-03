@@ -46,6 +46,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -164,13 +165,33 @@ class WorkOrderLifecycleServiceTest {
         WorkOrder finalized = inProgress(null, null, null);
         finalized.finalizeOrder("Hecho");
 
-        assertThrows(WorkOrderConflictException.class,
-                () -> service.update(cancelled.getId().toString(), status("en_proceso")));
-        assertThrows(WorkOrderConflictException.class,
-                () -> service.update(finalized.getId().toString(), status("cancelada")));
+        assertEquals("WORK_ORDER_CLOSED", assertThrows(WorkOrderConflictException.class,
+                () -> service.update(cancelled.getId().toString(), status("en_proceso"))).getErrorCode());
+        assertEquals("WORK_ORDER_CLOSED", assertThrows(WorkOrderConflictException.class,
+                () -> service.update(finalized.getId().toString(), status("cancelada"))).getErrorCode());
         // Volver a "asignada" no es una transición válida desde ningún estado.
-        assertThrows(WorkOrderConflictException.class,
-                () -> service.update(inProgress(null, null, null).getId().toString(), status("asignada")));
+        assertEquals("INVALID_STATUS_TRANSITION", assertThrows(WorkOrderConflictException.class,
+                () -> service.update(inProgress(null, null, null).getId().toString(), status("asignada"))).getErrorCode());
+    }
+
+    @Test
+    void unaOtFinalizadaOCanceladaNoSeEdita() throws Exception {
+        WorkOrder cancelled = workOrder(null, null, null);
+        cancelled.cancel();
+        WorkOrder finalized = inProgress(null, null, null);
+        finalized.finalizeOrder("Hecho");
+        UpdateWorkOrderRequest edit = new UpdateWorkOrderRequest(null, null, null, null, null,
+                "externo", "Taller Pérez", "Otra descripción");
+
+        for (WorkOrder closed : List.of(cancelled, finalized)) {
+            assertEquals("WORK_ORDER_CLOSED", assertThrows(WorkOrderConflictException.class,
+                    () -> service.update(closed.getId().toString(), edit)).getErrorCode());
+            // Queda como registro histórico: no se toca ningún campo ni se guarda nada.
+            assertNull(closed.getDescription());
+            assertEquals(WorkOrderExecutionType.INTERNO, closed.getExecutionType());
+            assertNull(closed.getExternalProvider());
+        }
+        verify(workOrderRepository, never()).save(any());
     }
 
     @Test

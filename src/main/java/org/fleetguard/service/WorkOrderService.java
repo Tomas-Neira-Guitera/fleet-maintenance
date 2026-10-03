@@ -246,6 +246,9 @@ public class WorkOrderService {
     @Transactional
     public WorkOrderDto update(String id, UpdateWorkOrderRequest request) {
         WorkOrder workOrder = findWorkOrder(id);
+        // CAM-75: una OT finalizada o cancelada queda como registro histórico. Va antes que todo,
+        // así un intento de cambiarle el estado también responde WORK_ORDER_CLOSED.
+        requireOpen(workOrder, "WORK_ORDER_CLOSED", "No se puede editar una orden de trabajo finalizada o cancelada");
 
         if (request.assignee() != null) {
             workOrder.setAssignee(request.assignee());
