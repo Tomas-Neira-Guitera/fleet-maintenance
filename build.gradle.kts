@@ -4,7 +4,7 @@ plugins {
     id("io.spring.dependency-management") version "1.1.6"
 }
 
-group = "org.example"
+group = "org.fleetguard"
 version = "1.0-SNAPSHOT"
 
 java {
@@ -37,7 +37,7 @@ dependencies {
 }
 
 springBoot {
-    mainClass.set("org.example.FleetGuardApplication")
+    mainClass.set("org.fleetguard.FleetGuardApplication")
 }
 
 tasks.withType<JavaCompile> {

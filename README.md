@@ -97,7 +97,7 @@ Organización package-by-layer (capas técnicas), con un par de paquetes propios
 para lo que no encaja en una capa:
 
 ```
-src/main/java/org/example/
+src/main/java/org/fleetguard/
 ├── FleetGuardApplication.java   # entry point Spring Boot
 ├── controller/                  # @RestController: bind/validación HTTP, delegan a service/
 ├── service/                     # lógica de negocio (casos de uso) -- incluye InspectionValidator
