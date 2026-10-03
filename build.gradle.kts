@@ -1,5 +1,7 @@
 plugins {
     java
+    // CAM-30: coverage de tests. Viene con Gradle, no es una dependencia nueva.
+    jacoco
     id("org.springframework.boot") version "3.3.4"
     id("io.spring.dependency-management") version "1.1.6"
 }
@@ -48,4 +50,37 @@ tasks.withType<JavaCompile> {
 
 tasks.test {
     useJUnitPlatform()
+    finalizedBy(tasks.jacocoTestReport)
+}
+
+// CAM-30 / CAM-78: coverage mínimo de líneas. `./gradlew build` (y el CI) falla si baja del
+// 85%. Solo se excluye la clase de arranque (un main de una línea); excluir paquetes para
+// inflar el número le quitaría sentido al piso.
+val coverageExclusions = listOf("org/fleetguard/FleetGuardApplication*")
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
+    classDirectories.setFrom(files(classDirectories.files.map { fileTree(it) { exclude(coverageExclusions) } }))
+}
+
+tasks.jacocoTestCoverageVerification {
+    dependsOn(tasks.test)
+    classDirectories.setFrom(files(classDirectories.files.map { fileTree(it) { exclude(coverageExclusions) } }))
+    violationRules {
+        rule {
+            limit {
+                counter = "LINE"
+                value = "COVEREDRATIO"
+                minimum = "0.85".toBigDecimal()
+            }
+        }
+    }
+}
+
+tasks.check {
+    dependsOn(tasks.jacocoTestCoverageVerification)
 }

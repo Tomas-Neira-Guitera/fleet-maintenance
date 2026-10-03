@@ -1,5 +1,7 @@
 # fleet-maintenance
 
+[![CI](https://github.com/Tomas-Neira-Guitera/fleet-maintenance/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Tomas-Neira-Guitera/fleet-maintenance/actions/workflows/ci.yml)
+
 Backend del proyecto **FleetGuard** — mantenimiento preventivo e inspecciones de flota.
 
 ## Stack
@@ -55,9 +57,32 @@ psql -U postgres -d TIP -f sql/schema.sql
 ## Scripts
 
 - `./gradlew bootRun` — levanta el servidor
-- `./gradlew build` — compila, corre tests y empaqueta
-- `./gradlew test` — corre los tests (los de `InspectionValidatorTest` / `ChecklistCatalogTest` no necesitan Postgres; no hay tests de contexto Spring con DB todavía)
+- `./gradlew build` — compila, corre tests, verifica el coverage mínimo y empaqueta
+- `./gradlew test` — corre los tests y genera el reporte de coverage
 - `./gradlew compileJava` — solo compila
+
+## Tests y CI
+
+Los tests no necesitan Postgres: son unitarios (services, validadores, entidades, con los
+repositorios mockeados) y de capa web con `@WebMvcTest` (controllers + manejo de errores,
+con el service mockeado). Cada test protege una regla concreta y su nombre dice cuál, por
+ejemplo `unPreTripConElViajeYaAbiertoSeRechazaSinGuardarNada`.
+
+| Qué | Dónde | Qué comprueba |
+|---|---|---|
+| Services | `src/test/.../service/` | Reglas de negocio de cada dominio: inspecciones, mantenimiento preventivo, calendario, órdenes de trabajo, flota, usuarios |
+| Controllers | `src/test/.../controller/` | Que la API cumpla `docs/api/openapi.yaml`: rutas, códigos HTTP, forma del JSON y formato de error (`{error, message, details}`) |
+| Modelo | `src/test/.../entity/` | Lógica de las entidades y que los enums viajen con los textos del contrato |
+| Fotos | `src/test/.../storage/` | Guardado en disco (directorio temporal real) y que el id de la URL no salga del directorio |
+
+**Coverage:** JaCoCo, con un mínimo de **85% de líneas** (`build.gradle.kts`). Si baja de
+ahí, `./gradlew build` falla. El reporte queda en `build/reports/jacoco/test/html/index.html`.
+Solo se excluye la clase de arranque (`FleetGuardApplication`).
+
+**CI** (`.github/workflows/ci.yml`): en cada push y cada PR hacia `develop` y `main`, GitHub
+Actions corre `./gradlew build` con JDK 21. Un test roto o un coverage por debajo del mínimo
+dejan el check en rojo. En cada corrida se puede descargar el reporte de tests y de coverage
+("reportes-backend") desde la pestaña Actions.
 
 ## Endpoints
 
