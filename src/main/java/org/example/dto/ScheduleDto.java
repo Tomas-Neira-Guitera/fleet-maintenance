@@ -11,6 +11,8 @@ public record ScheduleDto(
         String title,
         String scheduledAt,
         String status,
-        String notes
+        String notes,
+        // OT abierta (asignada o en proceso) vinculada a la programación, o null.
+        ScheduleWorkOrderDto workOrder
 ) {
 }

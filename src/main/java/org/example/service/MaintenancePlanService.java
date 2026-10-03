@@ -47,6 +47,8 @@ public class MaintenancePlanService {
         List<FieldValidationErrorDetail> details = new ArrayList<>();
         if (request.name() == null || request.name().isBlank()) {
             details.add(new FieldValidationErrorDetail("name", "El nombre es obligatorio"));
+        } else if (TextLimits.exceedsTitle(request.name())) {
+            details.add(new FieldValidationErrorDetail("name", TextLimits.titleTooLongMessage()));
         }
         IntervalType intervalType = IntervalType.fromJson(request.intervalType());
         if (intervalType == null) {
@@ -58,7 +60,7 @@ public class MaintenancePlanService {
             throw new MaintenanceValidationException("Datos inválidos para crear el plan", details);
         }
 
-        MaintenancePlan plan = new MaintenancePlan(request.name(), request.category(), intervalType,
+        MaintenancePlan plan = new MaintenancePlan(request.name().trim(), request.category(), intervalType,
                 request.intervalKm(), request.intervalDays());
         return mapper.toDto(planRepository.save(plan));
     }
@@ -76,7 +78,12 @@ public class MaintenancePlanService {
         }
 
         if (request.name() != null) {
-            plan.setName(request.name());
+            if (request.name().isBlank() || TextLimits.exceedsTitle(request.name())) {
+                throw new MaintenanceValidationException("Datos inválidos para editar el plan",
+                        List.of(new FieldValidationErrorDetail("name", request.name().isBlank()
+                                ? "El nombre es obligatorio" : TextLimits.titleTooLongMessage())));
+            }
+            plan.setName(request.name().trim());
         }
         if (request.category() != null) {
             plan.setCategory(request.category());

@@ -116,6 +116,8 @@ public class WorkOrderService {
         }
         if (manual && (request.title() == null || request.title().isBlank())) {
             details.add(new FieldValidationErrorDetail("title", "Obligatorio para sourceType manual"));
+        } else if (manual && TextLimits.exceedsTitle(request.title())) {
+            details.add(new FieldValidationErrorDetail("title", TextLimits.titleTooLongMessage()));
         }
 
         WorkOrderExecutionType executionType = WorkOrderExecutionType.fromJson(request.executionType());
@@ -169,7 +171,7 @@ public class WorkOrderService {
             Vehicle vehicle = vehicleRepository.findById(UUID.fromString(request.vehicleId()))
                     .orElseThrow(() -> new VehicleNotFoundException(request.vehicleId()));
             vehicleId = vehicle.getId();
-            title = request.title();
+            title = request.title().trim();
         }
 
         // Una sola OT abierta por origen: replanificar desde el calendario (o volver a planificar un
@@ -372,7 +374,7 @@ public class WorkOrderService {
         } else if (workOrder.getScheduledMaintenanceId() != null) {
             scheduleRepository.findById(workOrder.getScheduledMaintenanceId()).ifPresent(schedule -> {
                 if (schedule.getSourceType() != ScheduleSourceType.ASSIGNMENT) {
-                    scheduledMaintenanceService.update(schedule.getId().toString(), new UpdateScheduleRequest(null, "done"));
+                    scheduledMaintenanceService.update(schedule.getId().toString(), new UpdateScheduleRequest(null, "done", null));
                 }
             });
         }

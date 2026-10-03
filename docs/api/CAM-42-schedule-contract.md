@@ -78,6 +78,23 @@ para que armar el rango de una semana desde el frontend sea directo.
   está cerrado.
 - `404 SCHEDULE_NOT_FOUND` en el `PATCH` si el id no existe.
 - `409 USE_COMPLETION_ENDPOINT` -- ver decisión 4.
+- `409 WORK_ORDER_IN_PROGRESS` -- ver decisión 8.
+
+### 8. Cancelar la programación cancela su OT abierta (CAM-77)
+`PATCH /api/maintenance-schedule/{id}` con `{ "status": "cancelled" }` también cancela,
+en la misma transacción, las órdenes de trabajo abiertas vinculadas a esa programación
+(`scheduledMaintenanceId`), para que el técnico no siga viendo un trabajo que ya no hay
+que hacer en "Mis órdenes".
+- OT `asignada` (no empezada): se cancela sin preguntar.
+- OT `en_proceso`: el servidor responde `409 WORK_ORDER_IN_PROGRESS` con un `message`
+  listo para mostrar ("Esta programación tiene una OT en curso asignada a X. ¿Cancelar
+  las dos?") y no cambia nada. Si el admin confirma, el cliente reenvía el mismo `PATCH`
+  con `"cancelWorkOrder": true` y se cancelan las dos. El chequeo vive en el servidor para
+  que ningún cliente cancele por error un trabajo ya empezado.
+- OT `finalizada` o `cancelada`: no se toca.
+- Cancelar la OT así no tiene efectos sobre su origen (mismo criterio que cancelar una OT
+  a mano): el defecto sigue abierto y la asignación sin completion, para volver a
+  planificarlos.
 
 ### 7. Preview de "qué más hay programado ese día" en el modal de Planificar
 El modal de "Planificar" (`SchedulePickerModal`, CAM-50/51/manual) muestra, apenas se
@@ -93,6 +110,18 @@ del jefe de mantenimiento.
 `GET /api/maintenance-schedule` acepta además un `vehicleId` opcional (filtro de uso
 general, pensado por ejemplo para una futura vista de calendario de un solo vehículo) --
 no lo usa este preview.
+
+### 9. Editar desde el detalle del calendario
+Al hacer clic en un mantenimiento del calendario semanal se abre su detalle, con dos acciones: "Editar" y
+"Eliminar".
+- **Editar** usa el mismo `PATCH /api/maintenance-schedule/{id}`, que además de `scheduledAt` acepta `notes`
+  (un string vacío las borra) y `title`. El título solo se puede editar en programaciones `manual`; en
+  `assignment`/`defect` sale del plan o del defecto y el servidor responde `422` con `details[].field =
+  "title"`. También aplica el límite de 30 caracteres de CAM-79.
+- **Eliminar** cancela la programación (`status: cancelled`, baja lógica, queda en el historial), con las
+  mismas reglas de OT de la decisión 8.
+- Cada programación trae `workOrder` (`id`, `status`, `responsible`) con la OT abierta vinculada, o `null`,
+  para mostrarla en el detalle sin pedir el listado de OTs.
 
 ## Fuera de alcance
 

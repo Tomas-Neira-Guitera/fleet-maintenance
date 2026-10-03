@@ -21,14 +21,17 @@ import org.example.mapper.TripMapper;
 import org.example.repository.TripRepository;
 import org.example.entity.TripStatus;
 import org.example.entity.Vehicle;
+import org.example.entity.checklist.ChecklistItemDef;
 import org.example.repository.VehicleRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /** Caso de uso central de CAM-11: POST /api/inspections/{vehicleId}. Ver CAM-11-dvir-contract.md secciones 4 y 5. */
 @Service
@@ -40,16 +43,18 @@ public class InspectionService {
     private final InspectionValidator validator;
     private final InspectionMapper inspectionMapper;
     private final TripMapper tripMapper;
+    private final VehicleChecklistService checklistService;
 
     public InspectionService(VehicleRepository vehicleRepository, TripRepository tripRepository,
                               InspectionRepository inspectionRepository, InspectionMapper inspectionMapper,
-                              TripMapper tripMapper) {
+                              TripMapper tripMapper, VehicleChecklistService checklistService) {
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.inspectionRepository = inspectionRepository;
         this.validator = new InspectionValidator();
         this.inspectionMapper = inspectionMapper;
         this.tripMapper = tripMapper;
+        this.checklistService = checklistService;
     }
 
     @Transactional
@@ -74,7 +79,10 @@ public class InspectionService {
         }
 
         List<ChecklistAnswerDto> answers = submission.answers() == null ? List.of() : submission.answers();
-        InspectionValidator.ValidationOutcome outcome = validator.validate(type, answers);
+        List<ChecklistItemDef> checklist = checklistService.resolve(vehicleId, type);
+        InspectionValidator.ValidationOutcome outcome = validator.validate(type, checklist, answers);
+        Map<String, String> labelById = checklist.stream()
+                .collect(Collectors.toMap(ChecklistItemDef::id, ChecklistItemDef::label));
 
         Instant now = Instant.now();
         Trip trip;
@@ -92,12 +100,16 @@ public class InspectionService {
 
         for (ChecklistAnswerDto answerDto : outcome.recognizedAnswers()) {
             CheckOutcome checkOutcome = CheckOutcome.fromJson(answerDto.outcome());
-            InspectionAnswer answerEntity = new InspectionAnswer(answerDto.itemId(), checkOutcome, answerDto.numberValue());
+            InspectionAnswer answerEntity = new InspectionAnswer(answerDto.itemId(), labelById.get(answerDto.itemId()),
+                    checkOutcome, answerDto.numberValue());
             inspection.addAnswer(answerEntity);
 
             if (checkOutcome == CheckOutcome.DEFECT && answerDto.defect() != null) {
                 DefectSeverity severity = DefectSeverity.fromJson(answerDto.defect().severity());
-                Defect defect = new Defect(severity, answerDto.defect().description(), answerDto.defect().photoUrl(), now);
+                String defectDetails = answerDto.defect().details();
+                Defect defect = new Defect(severity, answerDto.defect().description(),
+                        defectDetails == null || defectDetails.isBlank() ? null : defectDetails.trim(),
+                        answerDto.defect().photoUrl(), now);
                 answerEntity.attachDefect(defect);
             }
         }

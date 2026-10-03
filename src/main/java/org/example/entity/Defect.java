@@ -30,8 +30,13 @@ public class Defect {
     @Column(nullable = false)
     private DefectSeverity severity;
 
+    // Título corto del defecto (hasta 30 caracteres, CAM-79).
     @Column(nullable = false, columnDefinition = "text")
     private String description;
+
+    // CAM-32: descripción larga, opcional; el chofer la puede dictar.
+    @Column(columnDefinition = "text")
+    private String details;
 
     private String photoUrl;
 
@@ -47,10 +52,19 @@ public class Defect {
     }
 
     public Defect(DefectSeverity severity, String description, String photoUrl, Instant createdAt) {
+        this(severity, description, null, photoUrl, createdAt);
+    }
+
+    public Defect(DefectSeverity severity, String description, String details, String photoUrl, Instant createdAt) {
         this.severity = severity;
         this.description = description;
+        this.details = details;
         this.photoUrl = photoUrl;
         this.createdAt = createdAt;
+    }
+
+    public String getDetails() {
+        return details;
     }
 
     public void setInspectionAnswer(InspectionAnswer inspectionAnswer) {

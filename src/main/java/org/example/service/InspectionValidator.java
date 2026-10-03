@@ -30,7 +30,12 @@ public class InspectionValidator {
         List<ChecklistItemDef> catalogItems = type == InspectionType.PRE_TRIP
                 ? ChecklistCatalog.preTripItems()
                 : ChecklistCatalog.postTripItems();
+        return validate(type, catalogItems, answers);
+    }
 
+    /** CAM-31: valida contra el checklist propio del vehículo (base − desactivados + extras). */
+    public ValidationOutcome validate(InspectionType type, List<ChecklistItemDef> catalogItems,
+                                      List<ChecklistAnswerDto> answers) {
         Map<String, ChecklistItemDef> catalogById = new LinkedHashMap<>();
         for (ChecklistItemDef item : catalogItems) {
             catalogById.put(item.id(), item);
@@ -90,6 +95,16 @@ public class InspectionValidator {
                 }
                 if (defect.description() == null || defect.description().isBlank()) {
                     details.add(new ValidationErrorDetail(item.id(), "La descripción del defecto es obligatoria."));
+                    continue;
+                }
+                if (TextLimits.exceedsTitle(defect.description())) {
+                    details.add(new ValidationErrorDetail(item.id(),
+                            "La descripción del defecto no puede superar los " + TextLimits.TITLE_MAX_LENGTH + " caracteres."));
+                    continue;
+                }
+                if (defect.details() != null && defect.details().trim().length() > TextLimits.DESCRIPTION_MAX_LENGTH) {
+                    details.add(new ValidationErrorDetail(item.id(),
+                            "El detalle del defecto no puede superar los " + TextLimits.DESCRIPTION_MAX_LENGTH + " caracteres."));
                     continue;
                 }
                 if (severity == DefectSeverity.BLOCKING && (defect.photoUrl() == null || defect.photoUrl().isBlank())) {

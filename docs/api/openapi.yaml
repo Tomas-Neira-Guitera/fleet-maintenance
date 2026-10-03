@@ -145,6 +145,164 @@ paths:
         "404":
           description: VEHICLE_NOT_FOUND
 
+  /api/vehicles/{vehicleId}/checklist:
+    get:
+      summary: Checklist DVIR efectivo de un vehículo (CAM-31)
+      description: >
+        Lo que el chofer tiene que completar para este vehículo. pre-trip =
+        catálogo base − ítems desactivados + ítems extra del vehículo; post-trip
+        es siempre la lista fija. Ver CAM-31-vehicle-checklist-contract.md.
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pre-trip, post-trip]
+            default: pre-trip
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChecklistItem"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{vehicleId}/checklist-items:
+    get:
+      summary: Configuración del checklist pre-trip de un vehículo (admin, CAM-31)
+      description: >
+        Todos los ítems del catálogo base (con enabled según el vehículo) más los
+        ítems extra vigentes. locked=true son obligatorios y no se pueden quitar.
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/VehicleChecklistItem"
+        "404":
+          description: VEHICLE_NOT_FOUND
+    post:
+      summary: Agregar un ítem extra al checklist pre-trip del vehículo (CAM-31)
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVehicleChecklistItemRequest"
+      responses:
+        "201":
+          description: Creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleChecklistItem"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{vehicleId}/checklist-items/{itemId}:
+    patch:
+      summary: Quitar del checklist o volver a incluir un ítem del vehículo (CAM-31)
+      description: >
+        Sirve para ítems base (se guardan como desactivados para este vehículo) y
+        para ítems extra (siguen cargados en el vehículo con enabled=false). Las
+        inspecciones viejas no cambian.
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVehicleChecklistItemRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleChecklistItem"
+        "404":
+          description: VEHICLE_NOT_FOUND / CHECKLIST_ITEM_NOT_FOUND
+        "409":
+          description: ITEM_LOCKED -- el ítem es obligatorio (kilómetros actuales)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Eliminar del vehículo un ítem extra (CAM-31)
+      description: >
+        Solo para ítems extra (extra-<uuid>). Las inspecciones que ya lo
+        respondieron conservan su nombre (item_label).
+      parameters:
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Eliminado
+        "404":
+          description: VEHICLE_NOT_FOUND / CHECKLIST_ITEM_NOT_FOUND
+        "409":
+          description: BASE_ITEM_NOT_DELETABLE -- los ítems del checklist base solo se quitan, no se eliminan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /api/vehicles/{id}:
     get:
       summary: Detalle de un vehículo (CAM-22)
@@ -839,6 +997,10 @@ paths:
         status=done solo es válido para sourceType=defect -- una programación
         de origen assignment se cierra sola al registrar el completion de esa
         asignación (409 USE_COMPLETION_ENDPOINT si se intenta acá).
+        status=cancelled cancela también las OTs abiertas de la programación
+        (CAM-77): las asignadas sin preguntar; si hay una en_proceso responde
+        409 WORK_ORDER_IN_PROGRESS salvo que venga cancelWorkOrder=true. Las
+        finalizadas no se tocan.
       parameters:
         - name: id
           in: path
@@ -861,7 +1023,10 @@ paths:
         "404":
           description: SCHEDULE_NOT_FOUND
         "409":
-          description: USE_COMPLETION_ENDPOINT
+          description: >
+            USE_COMPLETION_ENDPOINT, o WORK_ORDER_IN_PROGRESS al cancelar una
+            programación con una OT en curso sin cancelWorkOrder=true (el message
+            dice a quién está asignada, listo para mostrar en la confirmación).
           content:
             application/json:
               schema:
@@ -1231,12 +1396,54 @@ components:
         description:
           type: string
           minLength: 1
+          maxLength: 30
+          description: Máximo 30 caracteres (CAM-79) -- se usa como título del defecto en programaciones y OTs.
+        details:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: "Descripción larga del defecto, opcional (CAM-32). El chofer la puede dictar o escribir."
         photoUrl:
           type: string
           format: uri
           description: >
             Requerido por el servidor cuando severity=blocking (ver reglas de
             validación en CAM-11-dvir-contract.md). Viene de POST /api/photos.
+
+    ChecklistItem:
+      type: object
+      required: [id, label, type, section, required]
+      properties:
+        id: { type: string, description: "Id del catálogo base (ej. ext-luces) o extra-<uuid> si es un ítem extra del vehículo." }
+        label: { type: string }
+        type: { type: string, enum: [check, number] }
+        section: { type: string, enum: [exterior, interior, posttrip] }
+        required: { type: boolean }
+
+    VehicleChecklistItem:
+      allOf:
+        - $ref: "#/components/schemas/ChecklistItem"
+        - type: object
+          required: [origin, enabled, locked]
+          properties:
+            origin: { type: string, enum: [base, extra] }
+            enabled: { type: boolean }
+            locked: { type: boolean, description: Obligatorio, no se puede quitar. }
+
+    CreateVehicleChecklistItemRequest:
+      type: object
+      required: [label, section]
+      properties:
+        label: { type: string, minLength: 1, maxLength: 60 }
+        type: { type: string, enum: [check, number], default: check, description: "Opcional. El panel de admin siempre crea ítems check." }
+        section: { type: string, enum: [exterior, interior] }
+        enabled: { type: boolean, default: true, description: "false = el ítem queda cargado en el vehículo pero no entra en el checklist del chofer." }
+
+    UpdateVehicleChecklistItemRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
 
     ChecklistAnswer:
       type: object
@@ -1322,6 +1529,7 @@ components:
         vehiclePlate: { type: string, nullable: true, description: Puede faltar si el vehículo fue eliminado. }
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
         reportedBy: { type: string, nullable: true, description: "Nombre del chofer que reportó el defecto (Inspection.driverName); puede faltar en datos antiguos." }
+        details: { type: string, nullable: true, description: "Descripción larga del defecto (CAM-32). description es el título corto." }
 
     VehicleHistory:
       type: object
@@ -1494,7 +1702,7 @@ components:
         intervalKm/intervalDays son obligatorios o deben venir null según
         intervalType -- ver CAM-40-maintenance-api-contract.md decisión 5.
       properties:
-        name: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1, maxLength: 30 }
         category: { type: string }
         intervalType:
           $ref: "#/components/schemas/IntervalType"
@@ -1505,7 +1713,7 @@ components:
       type: object
       description: Campos ausentes (null) no se modifican.
       properties:
-        name: { type: string }
+        name: { type: string, minLength: 1, maxLength: 30 }
         category: { type: string }
         intervalType:
           $ref: "#/components/schemas/IntervalType"
@@ -1638,6 +1846,14 @@ components:
         status:
           $ref: "#/components/schemas/ScheduleStatus"
         notes: { type: string, nullable: true }
+        workOrder:
+          type: object
+          nullable: true
+          description: OT abierta (asignada o en proceso) vinculada a la programación, si hay una.
+          properties:
+            id: { type: string }
+            status: { type: string, enum: [asignada, en_proceso] }
+            responsible: { type: string, nullable: true, description: "Técnico, proveedor externo o contacto." }
 
     CreateScheduleRequest:
       type: object
@@ -1651,7 +1867,7 @@ components:
           $ref: "#/components/schemas/ScheduleSourceType"
         sourceId: { type: string, description: assignmentId si sourceType=assignment, defectId si sourceType=defect. Ignorado si sourceType=manual. }
         vehicleId: { type: string, description: Obligatorio si sourceType=manual. }
-        title: { type: string, description: Obligatorio si sourceType=manual. }
+        title: { type: string, maxLength: 30, description: "Obligatorio si sourceType=manual. Máximo 30 caracteres (CAM-79)." }
         scheduledAt: { type: string, format: date-time }
         notes: { type: string, nullable: true }
 
@@ -1663,6 +1879,17 @@ components:
         status:
           type: string
           enum: [done, cancelled]
+        cancelWorkOrder:
+          type: boolean
+          nullable: true
+          description: "Solo con status=cancelled (CAM-77): confirma cancelar también la OT en curso de la programación."
+        title:
+          type: string
+          maxLength: 30
+          description: "Solo editable si sourceType=manual (422 title si no). En assignment/defect lo resuelve el servidor."
+        notes:
+          type: string
+          description: "Reemplaza las notas. Un string vacío las borra."
 
     # --- Órdenes de trabajo (CAM-14, CAM-15, CAM-62, CAM-63, CAM-60) ---
 
@@ -1736,7 +1963,7 @@ components:
           $ref: "#/components/schemas/WorkOrderSourceType"
         sourceId: { type: string }
         vehicleId: { type: string }
-        title: { type: string }
+        title: { type: string, maxLength: 30, description: "Obligatorio si sourceType=manual. Máximo 30 caracteres (CAM-79)." }
         description: { type: string, nullable: true }
         executionType:
           $ref: "#/components/schemas/WorkOrderExecutionType"

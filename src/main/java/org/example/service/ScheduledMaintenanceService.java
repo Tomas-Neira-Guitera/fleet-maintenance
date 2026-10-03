@@ -3,13 +3,17 @@ package org.example.service;
 import org.example.dto.CreateScheduleRequest;
 import org.example.dto.FieldValidationErrorDetail;
 import org.example.dto.ScheduleDto;
+import org.example.dto.ScheduleWorkOrderDto;
 import org.example.dto.UpdateScheduleRequest;
 import org.example.entity.Defect;
 import org.example.entity.ScheduleSourceType;
 import org.example.entity.ScheduleStatus;
 import org.example.entity.ScheduledMaintenance;
+import org.example.entity.User;
 import org.example.entity.Vehicle;
 import org.example.entity.VehicleMaintenanceAssignment;
+import org.example.entity.WorkOrder;
+import org.example.entity.WorkOrderStatus;
 import org.example.exception.AssignmentNotFoundException;
 import org.example.exception.DefectNotFoundException;
 import org.example.exception.MaintenanceConflictException;
@@ -18,8 +22,10 @@ import org.example.exception.ScheduleNotFoundException;
 import org.example.exception.VehicleNotFoundException;
 import org.example.repository.DefectRepository;
 import org.example.repository.ScheduledMaintenanceRepository;
+import org.example.repository.UserRepository;
 import org.example.repository.VehicleMaintenanceAssignmentRepository;
 import org.example.repository.VehicleRepository;
+import org.example.repository.WorkOrderRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,15 +53,21 @@ public class ScheduledMaintenanceService {
     private final VehicleMaintenanceAssignmentRepository assignmentRepository;
     private final DefectRepository defectRepository;
     private final VehicleRepository vehicleRepository;
+    private final WorkOrderRepository workOrderRepository;
+    private final UserRepository userRepository;
 
     public ScheduledMaintenanceService(ScheduledMaintenanceRepository scheduleRepository,
                                         VehicleMaintenanceAssignmentRepository assignmentRepository,
                                         DefectRepository defectRepository,
-                                        VehicleRepository vehicleRepository) {
+                                        VehicleRepository vehicleRepository,
+                                        WorkOrderRepository workOrderRepository,
+                                        UserRepository userRepository) {
         this.scheduleRepository = scheduleRepository;
         this.assignmentRepository = assignmentRepository;
         this.defectRepository = defectRepository;
         this.vehicleRepository = vehicleRepository;
+        this.workOrderRepository = workOrderRepository;
+        this.userRepository = userRepository;
     }
 
     public record CreateResult(ScheduleDto dto, boolean created) {
@@ -78,6 +90,8 @@ public class ScheduledMaintenanceService {
         }
         if (manual && (request.title() == null || request.title().isBlank())) {
             details.add(new FieldValidationErrorDetail("title", "Obligatorio para sourceType manual"));
+        } else if (manual && TextLimits.exceedsTitle(request.title())) {
+            details.add(new FieldValidationErrorDetail("title", TextLimits.titleTooLongMessage()));
         }
         Instant scheduledAt = parseInstant(request.scheduledAt(), "scheduledAt", details);
         if (scheduledAt != null && scheduledAt.isBefore(Instant.now())) {
@@ -117,7 +131,7 @@ public class ScheduledMaintenanceService {
             Vehicle manualVehicle = vehicleRepository.findById(UUID.fromString(request.vehicleId()))
                     .orElseThrow(() -> new VehicleNotFoundException(request.vehicleId()));
             vehicleId = manualVehicle.getId();
-            title = request.title();
+            title = request.title().trim();
         }
 
         // Manual nunca deduplica -- no hay un origen único del que solo pueda existir una
@@ -163,6 +177,7 @@ public class ScheduledMaintenanceService {
             if (newStatus == ScheduleStatus.DONE) {
                 schedule.markDone();
             } else if (newStatus == ScheduleStatus.CANCELLED) {
+                cancelOpenWorkOrders(schedule, Boolean.TRUE.equals(request.cancelWorkOrder()));
                 schedule.cancel();
             }
         }
@@ -173,6 +188,12 @@ public class ScheduledMaintenanceService {
                 throw new MaintenanceValidationException("Fecha inválida", details);
             }
             schedule.reschedule(parsed);
+        }
+        if (request.title() != null) {
+            applyTitle(schedule, request.title());
+        }
+        if (request.notes() != null) {
+            schedule.setNotes(request.notes().isBlank() ? null : request.notes().trim());
         }
 
         scheduleRepository.save(schedule);
@@ -209,6 +230,65 @@ public class ScheduledMaintenanceService {
         return schedules.stream().map(s -> toDto(s, plateByVehicleId.get(s.getVehicleId()))).toList();
     }
 
+    /**
+     * CAM-77: cancelar la programación cancela sus OTs abiertas. Una OT asignada se cancela
+     * directo; una en curso exige confirmación (cancelWorkOrder=true). Las finalizadas no se tocan.
+     */
+    private void cancelOpenWorkOrders(ScheduledMaintenance schedule, boolean confirmInProgress) {
+        List<WorkOrder> open = workOrderRepository.findByScheduledMaintenanceIdAndStatusIn(schedule.getId(),
+                List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO));
+        Optional<WorkOrder> inProgress = open.stream()
+                .filter(w -> w.getStatus() == WorkOrderStatus.EN_PROCESO)
+                .findFirst();
+        if (inProgress.isPresent() && !confirmInProgress) {
+            throw new MaintenanceConflictException("WORK_ORDER_IN_PROGRESS",
+                    "Esta programación tiene una OT en curso asignada a " + responsibleOf(inProgress.get())
+                            + ". ¿Cancelar las dos?");
+        }
+        for (WorkOrder workOrder : open) {
+            workOrder.cancel();
+            workOrderRepository.save(workOrder);
+        }
+    }
+
+    // El título de assignment/defect lo resuelve el servidor desde el plan o el defecto: solo se edita en manuales.
+    private void applyTitle(ScheduledMaintenance schedule, String title) {
+        String detail = null;
+        if (schedule.getSourceType() != ScheduleSourceType.MANUAL) {
+            detail = "Solo se puede editar el título de una programación manual";
+        } else if (title.isBlank()) {
+            detail = "Obligatorio";
+        } else if (TextLimits.exceedsTitle(title)) {
+            detail = TextLimits.titleTooLongMessage();
+        }
+        if (detail != null) {
+            throw new MaintenanceValidationException("Título inválido",
+                    List.of(new FieldValidationErrorDetail("title", detail)));
+        }
+        schedule.setTitle(title.trim());
+    }
+
+    private String responsibleOf(WorkOrder workOrder) {
+        String responsible = responsibleNameOf(workOrder);
+        return responsible == null ? "un responsable sin nombre" : responsible;
+    }
+
+    private String responsibleNameOf(WorkOrder workOrder) {
+        if (workOrder.getTechnicianId() != null) {
+            Optional<String> username = userRepository.findById(workOrder.getTechnicianId()).map(User::getUsername);
+            if (username.isPresent()) {
+                return username.get();
+            }
+        }
+        if (workOrder.getExternalProvider() != null && !workOrder.getExternalProvider().isBlank()) {
+            return workOrder.getExternalProvider();
+        }
+        if (workOrder.getAssignee() != null && !workOrder.getAssignee().isBlank()) {
+            return workOrder.getAssignee();
+        }
+        return null;
+    }
+
     /** Cierra automáticamente la programación activa de una asignación al registrar su completion. */
     @Transactional
     public void closeActiveScheduleForAssignment(UUID assignmentId) {
@@ -230,8 +310,16 @@ public class ScheduledMaintenanceService {
                 schedule.getTitle(),
                 schedule.getScheduledAt().toString(),
                 schedule.getStatus().toJson(),
-                schedule.getNotes()
+                schedule.getNotes(),
+                openWorkOrderOf(schedule)
         );
+    }
+
+    private ScheduleWorkOrderDto openWorkOrderOf(ScheduledMaintenance schedule) {
+        return workOrderRepository.findFirstByScheduledMaintenanceIdAndStatusInOrderByCreatedAtAsc(schedule.getId(),
+                        List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO))
+                .map(w -> new ScheduleWorkOrderDto(w.getId().toString(), w.getStatus().toJson(), responsibleNameOf(w)))
+                .orElse(null);
     }
 
     /** Acepta timestamp ISO completo (con hora) o solo fecha (YYYY-MM-DD, se toma como inicio del día UTC). */

@@ -4,6 +4,10 @@ import org.example.entity.InspectionType;
 import org.example.exception.InspectionValidationException;
 import org.example.dto.ChecklistAnswerDto;
 import org.example.dto.DefectDetailDto;
+import org.example.entity.checklist.ChecklistCatalog;
+import org.example.entity.checklist.ChecklistItemDef;
+import org.example.entity.checklist.ChecklistItemType;
+import org.example.entity.checklist.ChecklistSection;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -131,5 +135,61 @@ class InspectionValidatorTest {
 
         assertEquals(12400.0, outcome.odometerKm());
         assertEquals(4, outcome.recognizedAnswers().size());
+    }
+
+    @Test
+    void defectDescriptionLongerThanThirtyCharactersIsRejected() {
+        List<ChecklistAnswerDto> answers = new java.util.ArrayList<>(minimalValidPreTripAnswers().stream()
+                .filter(a -> !a.itemId().equals("ext-luces")).toList());
+        answers.add(new ChecklistAnswerDto("ext-luces", "defect", null,
+                new DefectDetailDto("non-blocking", "Foco trasero tenue del lado izquierdo", null)));
+
+        InspectionValidationException ex = assertThrows(InspectionValidationException.class,
+                () -> validator.validate(InspectionType.PRE_TRIP, answers));
+
+        assertTrue(ex.getDetails().stream().anyMatch(d -> d.itemId().equals("ext-luces")));
+    }
+
+    @Test
+    void extraItemOfTheVehicleChecklistCanReportADefect() {
+        List<ChecklistItemDef> checklist = new java.util.ArrayList<>(ChecklistCatalog.preTripItems());
+        checklist.add(new ChecklistItemDef("extra-faja", "Faja de sujeción", ChecklistItemType.CHECK, ChecklistSection.EXTERIOR));
+        List<ChecklistAnswerDto> answers = new java.util.ArrayList<>(minimalValidPreTripAnswers());
+        answers.add(new ChecklistAnswerDto("extra-faja", "defect", null,
+                new DefectDetailDto("blocking", "Faja cortada", "http://localhost/f.jpg")));
+
+        InspectionValidator.ValidationOutcome outcome = validator.validate(InspectionType.PRE_TRIP, checklist, answers);
+
+        assertTrue(outcome.hasBlockingDefect());
+        assertEquals(8, outcome.recognizedAnswers().size());
+    }
+
+    @Test
+    void disabledBaseItemIsNotRequiredNorRecognized() {
+        List<ChecklistItemDef> checklist = ChecklistCatalog.preTripItems().stream()
+                .filter(i -> !i.id().equals("ext-fugas")).toList();
+
+        InspectionValidator.ValidationOutcome outcome =
+                validator.validate(InspectionType.PRE_TRIP, checklist, minimalValidPreTripAnswers());
+
+        assertEquals(6, outcome.recognizedAnswers().size());
+    }
+
+    @Test
+    void defectDetailsAreOptionalButLimitedInLength() {
+        List<ChecklistAnswerDto> base = minimalValidPreTripAnswers().stream()
+                .filter(a -> !a.itemId().equals("ext-luces")).toList();
+
+        List<ChecklistAnswerDto> withDetails = new java.util.ArrayList<>(base);
+        withDetails.add(new ChecklistAnswerDto("ext-luces", "defect", null, new DefectDetailDto("non-blocking",
+                "Foco trasero tenue", null, "El foco trasero izquierdo alumbra muy poco y parpadea al frenar.")));
+        assertFalse(validator.validate(InspectionType.PRE_TRIP, withDetails).hasBlockingDefect());
+
+        List<ChecklistAnswerDto> tooLong = new java.util.ArrayList<>(base);
+        tooLong.add(new ChecklistAnswerDto("ext-luces", "defect", null,
+                new DefectDetailDto("non-blocking", "Foco trasero tenue", null, "a".repeat(1001))));
+        InspectionValidationException ex = assertThrows(InspectionValidationException.class,
+                () -> validator.validate(InspectionType.PRE_TRIP, tooLong));
+        assertTrue(ex.getDetails().stream().anyMatch(d -> d.itemId().equals("ext-luces")));
     }
 }

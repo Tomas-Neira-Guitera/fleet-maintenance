@@ -30,7 +30,8 @@ public class InspectionMapper {
         DefectDetailDto defectDto = null;
         Defect defect = answer.getDefect();
         if (defect != null) {
-            defectDto = new DefectDetailDto(defect.getSeverity().toJson(), defect.getDescription(), defect.getPhotoUrl());
+            defectDto = new DefectDetailDto(defect.getSeverity().toJson(), defect.getDescription(), defect.getPhotoUrl(),
+                    defect.getDetails());
         }
         return new ChecklistAnswerDto(
                 answer.getItemId(),

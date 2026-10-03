@@ -18,7 +18,8 @@ public class DefectMapper {
                 vehicleId,
                 vehiclePlate,
                 defect.getStatus(),
-                reportedBy
+                reportedBy,
+                defect.getDetails()
         );
     }
 }
