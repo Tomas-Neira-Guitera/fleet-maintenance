@@ -1,4 +1,4 @@
-# CAM-23 — Gestión de usuarios y roles
+# CAM-23 — Gestión de usuarios y roles (con los cambios de CAM-91)
 
 Acompaña a `openapi.yaml` (mismo directorio) con las decisiones que el spec no
 expresa por sí solo.
@@ -31,19 +31,19 @@ reusa el mismo mecanismo (decisión del 2026-09-28).
   `GlobalExceptionHandler`, con el mismo formato `{error, message}` que el resto.
 - Deja pasar los `OPTIONS` (preflight de CORS), que nunca traen el token.
 
-**Para CAM-73:** alcanza con sumar rutas en `WebConfig.addInterceptors`. Si el resto
-de la API admite otros roles además de ADMIN, el interceptor necesita recibir qué
-roles acepta cada ruta (hoy exige ADMIN fijo).
+Desde CAM-85 el interceptor recibe qué roles acepta: `WebConfig` registra uno por grupo
+de rutas (ADMIN para `/users` y `/expenses`, CHOFER para `/inspections`).
+
+**Para CAM-73:** alcanza con sumar rutas, con su rol, en `WebConfig.addInterceptors`.
 
 ### 2. El usuario se busca en la base en cada pedido
 El token solo aporta el id (`sub`); el rol y el estado salen de la base. Así, a un
-usuario desactivado o al que le sacaron ADMIN se le corta el acceso desde el pedido
-siguiente, sin esperar a que venza su token (60 minutos). Cuesta una consulta por
-clave primaria por pedido.
+usuario desactivado se le corta el acceso desde el pedido siguiente, sin esperar a que
+venza su token (12 horas desde CAM-85). Cuesta una consulta por clave primaria por pedido.
 
 - Sin header, token mal formado, adulterado o vencido, o usuario inexistente o
   desactivado → **401 `UNAUTHORIZED`**. No se distingue el motivo.
-- Token válido de un usuario que no es ADMIN → **403 `FORBIDDEN`**.
+- Token válido de un usuario sin el rol que pide la ruta → **403 `FORBIDDEN`**.
 
 El usuario autenticado queda en el atributo del request
 `AuthenticatedUser.REQUEST_ATTRIBUTE`, y el controller lo recibe con
@@ -93,26 +93,38 @@ conserva.
 - `role`: `ADMIN`, `CHOFER` o `TECNICO`.
 - Todos los errores de validación salen juntos en un 422 con `details[].field`.
 
-### 5. Semántica del PATCH
-Campos parciales (`role`, `password`, `active`): lo que no viene no se toca. El
-`username` no se edita.
+### 5. Semántica del PATCH (cambió con CAM-91)
+Campos parciales (`username`, `password`, `active`): lo que no viene no se toca.
 
-Un admin **no puede desactivarse a sí mismo ni quitarse el rol ADMIN** (**409
-`CANNOT_MODIFY_SELF`**). Con eso siempre queda al menos un admin activo: el que hace
-el pedido. Sí puede cambiarse su propia contraseña.
+**El rol no se edita.** Queda el que se eligió en el alta: cambiarle el rol a alguien con
+historial (un técnico con OTs, un chofer con viajes) dejaba datos a nombre de alguien que
+ya no podía verlos. Mandar `role` con un valor distinto del actual es un **422**; mandar
+el mismo no es un error. Si alguien cambia de función, se lo desactiva y se le da de
+alta un usuario nuevo con el otro rol.
+
+**El `username` sí se edita**, con las mismas reglas y la misma normalización que en el
+alta (decisión 4), y **409 `USERNAME_TAKEN`** si ya lo usa otro. Renombrar no corta nada:
+- El token identifica al usuario por id (`sub`), así que su sesión abierta sigue valiendo.
+  Lo único que cambia para esa persona es con qué nombre entra la próxima vez.
+- Inspecciones y viajes guardan el id del usuario desde CAM-85/CAM-87, y el nombre que
+  se muestra se resuelve al momento (`UserNameService`): defectos, historial del vehículo,
+  OTs y gráficos pasan a mostrar el nombre nuevo. El nombre que quedó guardado junto al
+  dato es solo respaldo para lo anterior a CAM-85, que no apuntaba a un usuario.
+
+Un admin **no puede desactivarse a sí mismo** (**409 `CANNOT_MODIFY_SELF`**). Con eso
+siempre queda al menos un admin activo: el que hace el pedido. Sí puede cambiarse su
+propio nombre y su contraseña.
 
 **Resetear la contraseña no invalida los tokens ya emitidos**: el interceptor no compara
 el `iat` del token contra la fecha del cambio. Si hay que cortarle el acceso a alguien ya,
 hay que desactivarlo: eso sí rige desde el pedido siguiente (decisión 2).
 
-### 6. Un técnico con OTs abiertas no cambia de rol
-Las OTs apuntan a su técnico por `technicianId`. Si un TECNICO pasara a CHOFER o ADMIN,
-sus OTs abiertas quedarían a cargo de alguien que ya no puede trabajarlas, y el selector
-de técnico, que solo lista técnicos, las mostraría como "Sin asignar". Por eso, si tiene
-OTs `asignada` o `en_proceso`, el cambio de rol responde **409
-`TECHNICIAN_HAS_OPEN_WORK_ORDERS`** con la cantidad. Primero hay que reasignarlas.
+### 6. Un técnico desactivado conserva sus OTs
+Hasta CAM-91 había una regla para que un técnico con OTs abiertas no cambiara de rol
+(409 `TECHNICIAN_HAS_OPEN_WORK_ORDERS`). Como el rol ya no se edita, esa regla y ese
+código de error dejaron de existir.
 
-Sí se lo puede **desactivar** con OTs abiertas: sigue siendo técnico, y el selector lo
+A un técnico se lo puede **desactivar** con OTs abiertas: sigue siendo técnico, y el selector lo
 muestra como "(desactivado)" en las OTs que ya tiene a cargo. Al revés, el backend no
 deja **asignarle** OTs nuevas a un técnico desactivado (422 `technicianId` en
 `/work-orders`). Reenviar el técnico que ya está a cargo no se valida, para que editar
@@ -127,6 +139,27 @@ El selector de técnico de las OTs (CAM-60) sigue pidiendo `role=TECNICO` y ofre
 los activos, más el que ya está a cargo (ver decisión 6). Como ahora pide el token, si la
 sesión del admin venció muestra el aviso de sesión vencida en vez de una lista vacía.
 
+### 8. Actividad por usuario: `GET /api/users/stats` (CAM-91)
+La sección Usuarios muestra, debajo del listado, qué hizo cada chofer y cada técnico en
+un período. Un solo endpoint devuelve todo ya contado, para no bajar inspecciones y OTs
+enteras al navegador.
+
+- **Choferes**: viajes abiertos, inspecciones hechas y defectos reportados (total y
+  bloqueantes) en el período.
+- **Técnicos**: OTs abiertas hoy (asignadas o en proceso; es la foto actual y no depende
+  del período), OTs finalizadas en el período, promedio de horas entre que se creó y se
+  finalizó cada una, y total de gastos cargados en el período en sus OTs.
+- **Admins**: no aparecen. Hoy no se guarda quién crea o edita cada cosa, así que no
+  hay actividad que contar.
+- Devuelve todos los usuarios de cada rol, también los desactivados y los que no
+  hicieron nada (en cero): el cliente decide cuáles mostrar.
+- Todo se cuenta por id de usuario. Lo anterior a CAM-85 (inspecciones a nombre del
+  chofer fijo, viajes sin chofer) no le suma a nadie.
+- Un pre-viaje con defecto bloqueante (CAM-86) cuenta como inspección, no como viaje:
+  la consulta descarta los viajes que se cerraron en el mismo instante en que se abrieron.
+- `from` / `to` son opcionales y definen el período [from, to), igual que en
+  `GET /api/expenses` (ver `CAM-52-expenses-contract.md`).
+
 ## Fuera de alcance
 Proteger el resto de la API (CAM-73), invitaciones y recuperación de contraseña por
-email, multi-tenant.
+email, multi-tenant, registro de quién hizo cada cambio (auditoría de acciones del admin).

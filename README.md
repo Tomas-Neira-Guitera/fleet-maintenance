@@ -108,9 +108,16 @@ admin) — contrato completo en `docs/api/CAM-40-fleet-status-contract.md`:
   veces que se hizo un mantenimiento.
 - `PATCH /api/vehicles/{id}/odometer` — carga de kilometraje (feature 5.5).
 
-Requieren, además del `Authorization: Bearer <token>` que pide el contrato (todavía no
-hay auth real), un header **temporal** `X-Driver-Id` (y opcionalmente `X-Driver-Name`)
-que hace de stand-in del chofer resuelto por token — ver `auth/DriverResolver`.
+Gastos y usuarios:
+
+- `GET /api/expenses` — gastos de mantenimiento de toda la flota (CAM-52), ver
+  `docs/api/CAM-52-expenses-contract.md`.
+- `GET/POST /api/users`, `PATCH /api/users/{id}`, `GET /api/users/stats` — gestión de
+  usuarios y actividad por usuario (CAM-23, CAM-91), ver `docs/api/CAM-23-users-contract.md`.
+
+Autenticación: `POST /api/auth/login` devuelve un JWT. Hoy lo exigen `/api/users` y
+`/api/expenses` (rol ADMIN) y `POST /api/inspections/{vehicleId}` (rol CHOFER: el chofer
+de la inspección es el del token, CAM-85). El resto de la API todavía no lo valida (CAM-73).
 
 > `GET /api/health` de la implementación anterior (HttpServer plano) no tiene todavía
 > un equivalente en Spring Boot. Ver `docs/STATE.md` — queda pendiente evaluar Spring
@@ -133,7 +140,7 @@ src/main/java/org/fleetguard/
 ├── mapper/                      # entidad <-> DTO
 ├── exception/                   # excepciones de dominio + @RestControllerAdvice uniforme (404/409/422/...)
 ├── storage/                     # PhotoStorage (interfaz) + implementación local -- infraestructura, no repo JPA
-└── auth/                        # DriverResolver (interfaz) + stand-in por header, TEMPORAL hasta que exista auth real -- transversal, no una capa
+└── auth/                        # JwtAuthInterceptor (valida el JWT y el rol por ruta) + AuthenticatedUser -- transversal, no una capa
 ```
 
 Los paths reales de la API (`/api/vehicles`, `/api/photos`, `/api/inspections/{vehicleId}`)
@@ -147,17 +154,17 @@ controller, sino que se centraliza una sola vez en `server.servlet.context-path`
   `fleetguard.photos.storage-dir`) y se sirven por `GET /api/photos/{id}`. No hay storage
   en la nube configurado en este repo; cambiarlo a algo tipo S3 debería ser solo swapear
   la implementación de `storage.PhotoStorage`, sin tocar el resto de la app.
-- **Identidad del chofer**: `auth.HeaderDriverResolver` es un stand-in temporal que lee
-  `X-Driver-Id`/`X-Driver-Name` en vez de resolver el chofer de un token verificado. Se
-  reemplaza por una implementación real de `auth.DriverResolver` cuando exista la
-  historia de login/roles — el resto de la app depende de la interfaz, no del header.
+- **Identidad del chofer**: sale del JWT (CAM-85). `auth.JwtAuthInterceptor` valida el
+  token y el rol en las rutas registradas en `config/WebConfig`, y deja al usuario en el
+  request (`AuthenticatedUser`). Inspecciones y viajes guardan su id; el nombre que se
+  muestra se resuelve al momento (`service/UserNameService`).
 - **Esquema de datos**: `spring.jpa.hibernate.ddl-auto: update` — suficiente para este
   MVP en movimiento rápido. Agregar Flyway/Liquibase es un buen próximo paso, pero
   queda fuera de este alcance.
 
 ## Próximos pasos (fuera de este alcance)
 
-- Login/roles reales (reemplaza `auth.HeaderDriverResolver`).
+- Validar el JWT en el resto de la API (CAM-73).
 - Gestión de defectos/órdenes de trabajo más allá del listado (`GET /api/defects` ya
   está implementado, ver `entity/Defect.java`).
 - Herramienta de migraciones (Flyway/Liquibase) en vez de `ddl-auto: update`.
