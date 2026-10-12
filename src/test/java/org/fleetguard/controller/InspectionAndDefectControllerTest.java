@@ -1,24 +1,27 @@
 package org.fleetguard.controller;
 
-import org.fleetguard.auth.Driver;
-import org.fleetguard.auth.HeaderDriverResolver;
+import org.fleetguard.auth.AuthenticatedUser;
 import org.fleetguard.dto.DefectDto;
 import org.fleetguard.dto.InspectionDto;
 import org.fleetguard.dto.InspectionResultDto;
 import org.fleetguard.dto.TripDto;
+import org.fleetguard.dto.UserRefDto;
 import org.fleetguard.dto.ValidationErrorDetail;
+import org.fleetguard.entity.Role;
 import org.fleetguard.exception.InspectionValidationException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.service.DefectService;
 import org.fleetguard.service.InspectionService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -30,12 +33,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Envío de inspecciones (CAM-11) y listado de defectos (CAM-13). El chofer se resuelve con el
- * HeaderDriverResolver real: hasta que las inspecciones usen el JWT (CAM-73), el header
- * X-Driver-Id es lo único que identifica quién hizo la inspección.
+ * Envío de inspecciones (CAM-11) y listado de defectos (CAM-13). Las inspecciones exigen el JWT
+ * de un CHOFER (CAM-85): el chofer que le llega al servicio es el del token, no un dato del pedido.
  */
 @WebMvcTest({InspectionController.class, DefectController.class})
-@Import(HeaderDriverResolver.class)
 class InspectionAndDefectControllerTest extends WebMvcTestBase {
 
     @MockBean
@@ -47,40 +48,58 @@ class InspectionAndDefectControllerTest extends WebMvcTestBase {
     private static final String PRE_TRIP = "{\"type\":\"pre-trip\",\"answers\":[]}";
 
     private static InspectionResultDto result() {
-        InspectionDto inspection = new InspectionDto("i-1", "t-1", "v-1", "driver-1", "pre-trip", "2026-10-03T12:00:00Z",
+        InspectionDto inspection = new InspectionDto("i-1", "t-1", "v-1", "u-1", "pre-trip", "2026-10-03T12:00:00Z",
                 12345.0, List.of(), null, false);
-        return new InspectionResultDto(inspection, new TripDto("t-1", "v-1", "open", "2026-10-03T12:00:00Z", null));
+        return new InspectionResultDto(inspection, new TripDto("t-1", "v-1", "open", "2026-10-03T12:00:00Z", null,
+                new UserRefDto("u-1", "chofer1"), null));
     }
 
     @Test
-    void enviarUnaInspeccionDevuelve201ConElViajeAbierto() throws Exception {
-        when(inspectionService.submit(eq("v-1"), any(), eq(new Driver("driver-1", "Carlos Gómez")))).thenReturn(result());
-
-        mvc.perform(post("/inspections/v-1").contentType(MediaType.APPLICATION_JSON).content(PRE_TRIP)
-                        .header("X-Driver-Id", "driver-1").header("X-Driver-Name", "Carlos Gómez"))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.inspection.type").value("pre-trip"))
-                .andExpect(jsonPath("$.trip.status").value("open"));
-    }
-
-    @Test
-    void sinNombreDeChoferSeUsaSuIdComoNombre() throws Exception {
+    void enviarUnaInspeccionDevuelve201ConElViajeAbiertoYQuienLoAbrio() throws Exception {
         when(inspectionService.submit(eq("v-1"), any(), any())).thenReturn(result());
 
         mvc.perform(post("/inspections/v-1").contentType(MediaType.APPLICATION_JSON).content(PRE_TRIP)
-                        .header("X-Driver-Id", "driver-1"))
-                .andExpect(status().isCreated());
-
-        // Se verifica qué chofer le llegó al servicio: con un stub condicional, un chofer distinto
-        // devolvería null y el controller igual respondería 201, así que el test no podría fallar.
-        verify(inspectionService).submit(eq("v-1"), any(), eq(new Driver("driver-1", "driver-1")));
+                        .header(HttpHeaders.AUTHORIZATION, loginAs("chofer1", Role.CHOFER)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.inspection.type").value("pre-trip"))
+                .andExpect(jsonPath("$.trip.status").value("open"))
+                .andExpect(jsonPath("$.trip.openedBy.name").value("chofer1"))
+                .andExpect(jsonPath("$.trip.closedBy").doesNotExist());
     }
 
     @Test
-    void sinHeaderDeChoferDevuelve400SinLlegarAlServicio() throws Exception {
+    void elChoferDeLaInspeccionEsElDelToken() throws Exception {
+        when(inspectionService.submit(eq("v-1"), any(), any())).thenReturn(result());
+
+        // Los headers X-Driver-* de antes ya no cuentan: aunque vengan, manda el token.
+        mvc.perform(post("/inspections/v-1").contentType(MediaType.APPLICATION_JSON).content(PRE_TRIP)
+                        .header(HttpHeaders.AUTHORIZATION, loginAs("chofer1", Role.CHOFER))
+                        .header("X-Driver-Id", "otro").header("X-Driver-Name", "Otro Chofer"))
+                .andExpect(status().isCreated());
+
+        ArgumentCaptor<AuthenticatedUser> driver = ArgumentCaptor.forClass(AuthenticatedUser.class);
+        verify(inspectionService).submit(eq("v-1"), any(), driver.capture());
+        assertEquals("chofer1", driver.getValue().username());
+        assertEquals(Role.CHOFER, driver.getValue().role());
+    }
+
+    @Test
+    void sinTokenDevuelve401SinLlegarAlServicio() throws Exception {
         mvc.perform(post("/inspections/v-1").contentType(MediaType.APPLICATION_JSON).content(PRE_TRIP))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("MISSING_DRIVER_HEADER"));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("UNAUTHORIZED"));
+        verify(inspectionService, never()).submit(any(), any(), any());
+    }
+
+    @Test
+    void conTokenDeAdminODeTecnicoDevuelve403() throws Exception {
+        mvc.perform(post("/inspections/v-1").contentType(MediaType.APPLICATION_JSON).content(PRE_TRIP)
+                        .header(HttpHeaders.AUTHORIZATION, loginAs("admin", Role.ADMIN)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+        mvc.perform(post("/inspections/v-1").contentType(MediaType.APPLICATION_JSON).content(PRE_TRIP)
+                        .header(HttpHeaders.AUTHORIZATION, loginAs("tecnico", Role.TECNICO)))
+                .andExpect(status().isForbidden());
         verify(inspectionService, never()).submit(any(), any(), any());
     }
 
@@ -91,7 +110,7 @@ class InspectionAndDefectControllerTest extends WebMvcTestBase {
                 "La inspección tiene errores", List.of(new ValidationErrorDetail("int-km", "Obligatorio"))));
 
         mvc.perform(post("/inspections/v-1").contentType(MediaType.APPLICATION_JSON).content(PRE_TRIP)
-                        .header("X-Driver-Id", "driver-1"))
+                        .header(HttpHeaders.AUTHORIZATION, loginAs("chofer1", Role.CHOFER)))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.details[0].itemId").value("int-km"));
     }
@@ -102,9 +121,20 @@ class InspectionAndDefectControllerTest extends WebMvcTestBase {
                 new VehicleStateConflictException("VEHICLE_ON_TRIP", "El vehículo ya tiene un pre-trip abierto."));
 
         mvc.perform(post("/inspections/v-1").contentType(MediaType.APPLICATION_JSON).content(PRE_TRIP)
-                        .header("X-Driver-Id", "driver-1"))
+                        .header(HttpHeaders.AUTHORIZATION, loginAs("chofer1", Role.CHOFER)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("VEHICLE_ON_TRIP"));
+    }
+
+    @Test
+    void unPreTripSobreUnVehiculoBloqueadoDevuelve409() throws Exception {
+        when(inspectionService.submit(eq("v-1"), any(), any())).thenThrow(
+                new VehicleStateConflictException("VEHICLE_BLOCKED", "El vehículo tiene un defecto bloqueante."));
+
+        mvc.perform(post("/inspections/v-1").contentType(MediaType.APPLICATION_JSON).content(PRE_TRIP)
+                        .header(HttpHeaders.AUTHORIZATION, loginAs("chofer1", Role.CHOFER)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("VEHICLE_BLOCKED"));
     }
 
     @Test

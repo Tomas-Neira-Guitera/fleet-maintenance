@@ -1,6 +1,9 @@
 package org.fleetguard.config;
 
 import org.fleetguard.auth.JwtAuthInterceptor;
+import org.fleetguard.entity.Role;
+import org.fleetguard.repository.UserRepository;
+import org.fleetguard.service.JwtService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -12,12 +15,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebConfig implements WebMvcConfigurer {
 
     private final String[] allowedOrigins;
-    private final JwtAuthInterceptor jwtAuthInterceptor;
+    private final JwtService jwtService;
+    private final UserRepository userRepository;
 
     public WebConfig(@Value("${fleetguard.cors.allowed-origins}") String allowedOrigins,
-                     JwtAuthInterceptor jwtAuthInterceptor) {
+                     JwtService jwtService, UserRepository userRepository) {
         this.allowedOrigins = allowedOrigins.split(",");
-        this.jwtAuthInterceptor = jwtAuthInterceptor;
+        this.jwtService = jwtService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -28,9 +33,15 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedHeaders("*");
     }
 
-    // CAM-23: por ahora solo /users exige JWT de ADMIN. CAM-73 suma el resto de la API acá.
+    // Rutas que ya exigen JWT, cada una con su rol: usuarios (CAM-23), del admin; las
+    // inspecciones (CAM-85), del chofer. CAM-73 suma el resto de la API acá.
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(jwtAuthInterceptor).addPathPatterns("/users", "/users/**");
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/users", "/users/**");
+        registry.addInterceptor(requiring(Role.CHOFER)).addPathPatterns("/inspections/**");
+    }
+
+    private JwtAuthInterceptor requiring(Role role) {
+        return new JwtAuthInterceptor(jwtService, userRepository, role);
     }
 }

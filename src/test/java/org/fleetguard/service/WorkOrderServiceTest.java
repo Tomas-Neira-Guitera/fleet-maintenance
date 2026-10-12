@@ -3,9 +3,15 @@ package org.fleetguard.service;
 import org.fleetguard.dto.CreateWorkOrderRequest;
 import org.fleetguard.dto.UpdateWorkOrderRequest;
 import org.fleetguard.dto.WorkOrderDto;
+import org.fleetguard.entity.CheckOutcome;
 import org.fleetguard.entity.Defect;
+import org.fleetguard.entity.DefectSeverity;
+import org.fleetguard.entity.Inspection;
+import org.fleetguard.entity.InspectionAnswer;
+import org.fleetguard.entity.InspectionType;
 import org.fleetguard.entity.Role;
 import org.fleetguard.entity.ScheduledMaintenance;
+import org.fleetguard.entity.Trip;
 import org.fleetguard.entity.User;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.WorkOrder;
@@ -25,6 +31,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -359,5 +366,32 @@ class WorkOrderServiceTest {
         // No se pisa: el técnico que venía en el body no se aplica sobre la OT existente.
         assertNull(result.dto().technicianId());
         verify(workOrderRepository, never()).save(any());
+    }
+
+    @Test
+    void elDefectoDeLaOtMuestraElNombreActualDeQuienLoReporto() throws Exception {
+        // CAM-85: la inspección guarda el id del chofer; si después lo renombran, la OT muestra el nombre nuevo.
+        Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
+        Inspection inspection = new Inspection(new Trip(vehicle, Instant.now()), vehicleId, choferId.toString(),
+                "nombre.viejo", InspectionType.PRE_TRIP, Instant.now(), 1000.0, null, false);
+        InspectionAnswer answer = new InspectionAnswer("ext-luces", CheckOutcome.DEFECT, null);
+        answer.setInspection(inspection);
+        Defect defect = new Defect(DefectSeverity.NON_BLOCKING, "Foco quemado", null, Instant.now());
+        UUID defectId = UUID.randomUUID();
+        setId(defect, defectId);
+        answer.attachDefect(defect);
+        when(defectRepository.findByIdWithInspection(defectId)).thenReturn(Optional.of(defect));
+        WorkOrder workOrder = new WorkOrder(vehicleId, WorkOrderSourceType.DEFECT, null, defectId, null, "Foco quemado",
+                null, WorkOrderExecutionType.INTERNO, null, null, technicianId);
+        setId(workOrder, UUID.randomUUID());
+        when(workOrderRepository.findById(workOrder.getId())).thenReturn(Optional.of(workOrder));
+
+        assertEquals("chofer", service.get(workOrder.getId().toString()).defect().reportedBy());
+
+        // Una inspección anterior a CAM-85 no apunta a un usuario: queda el nombre con el que se guardó.
+        Inspection legacy = new Inspection(new Trip(vehicle, Instant.now()), vehicleId, "driver-demo-1",
+                "Carlos Gómez", InspectionType.PRE_TRIP, Instant.now(), 1000.0, null, false);
+        answer.setInspection(legacy);
+        assertEquals("Carlos Gómez", service.get(workOrder.getId().toString()).defect().reportedBy());
     }
 }

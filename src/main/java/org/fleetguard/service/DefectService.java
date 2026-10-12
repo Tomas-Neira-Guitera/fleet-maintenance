@@ -20,11 +20,14 @@ public class DefectService {
 
     private final DefectRepository defectRepository;
     private final VehicleRepository vehicleRepository;
+    private final UserNameService userNameService;
     private final DefectMapper defectMapper;
 
-    public DefectService(DefectRepository defectRepository, VehicleRepository vehicleRepository, DefectMapper defectMapper) {
+    public DefectService(DefectRepository defectRepository, VehicleRepository vehicleRepository,
+                         UserNameService userNameService, DefectMapper defectMapper) {
         this.defectRepository = defectRepository;
         this.vehicleRepository = vehicleRepository;
+        this.userNameService = userNameService;
         this.defectMapper = defectMapper;
     }
 
@@ -50,11 +53,14 @@ public class DefectService {
                 .findAllById(defects.stream().map(this::vehicleId).distinct().toList())
                 .stream()
                 .collect(Collectors.toMap(Vehicle::getId, Vehicle::getPlate));
+        Map<String, String> reporterNames = userNameService.currentNames(defects.stream()
+                .map(defect -> defect.getInspectionAnswer().getInspection().getDriverId()).toList());
 
         return defects.stream()
                 .sorted(Comparator.comparing(Defect::getSeverity).reversed()
                         .thenComparing(Defect::getCreatedAt, Comparator.reverseOrder()))
-                .map(defect -> defectMapper.toDto(defect, vehicleId(defect).toString(), plateByVehicleId.get(vehicleId(defect))))
+                .map(defect -> defectMapper.toDto(defect, vehicleId(defect).toString(),
+                        plateByVehicleId.get(vehicleId(defect)), reporterNames))
                 .toList();
     }
 

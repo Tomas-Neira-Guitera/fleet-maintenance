@@ -27,4 +27,15 @@ public interface DefectRepository extends JpaRepository<Defect, UUID> {
     /** Un defecto con su inspección ya cargada (hace falta para reportedBy) -- lo usa el detalle de OT (CAM-60). */
     @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i where d.id = :id")
     Optional<Defect> findByIdWithInspection(@Param("id") UUID id);
+
+    /** CAM-89: un defecto bloqueante sin resolver impide que el vehículo salga. */
+    @Query("select count(d) > 0 from Defect d join d.inspectionAnswer a join a.inspection i "
+            + "where i.vehicleId = :vehicleId and d.status = 'open' "
+            + "and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING")
+    boolean existsOpenBlockingByVehicleId(@Param("vehicleId") UUID vehicleId);
+
+    /** Ids de todos los vehículos bloqueados, para marcar el listado de flota en una sola consulta. */
+    @Query("select distinct i.vehicleId from Defect d join d.inspectionAnswer a join a.inspection i "
+            + "where d.status = 'open' and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING")
+    List<UUID> findVehicleIdsWithOpenBlockingDefect();
 }

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -42,8 +43,12 @@ class DefectMapperTest {
         setId(defect, UUID.randomUUID());
         answer.attachDefect(defect);
 
-        var dto = mapper.toDto(defect, vehicleId.toString(), "AB123CD");
+        var dto = mapper.toDto(defect, vehicleId.toString(), "AB123CD", Map.of());
 
+        // Sin un usuario con ese id (datos anteriores a CAM-85) queda el nombre guardado en la inspección.
         assertEquals("Marcos", dto.reportedBy());
+        // Con el usuario, manda su nombre actual.
+        assertEquals("Marcos Díaz",
+                mapper.toDto(defect, vehicleId.toString(), "AB123CD", Map.of("driver-1", "Marcos Díaz")).reportedBy());
     }
 }

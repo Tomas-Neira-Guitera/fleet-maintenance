@@ -1,5 +1,6 @@
 package org.fleetguard.mapper;
 
+import org.fleetguard.dto.CurrentTripDto;
 import org.fleetguard.dto.VehicleSummaryDto;
 import org.fleetguard.entity.Vehicle;
 import org.springframework.stereotype.Component;
@@ -7,18 +8,21 @@ import org.springframework.stereotype.Component;
 @Component
 public class VehicleMapper {
 
-    public VehicleSummaryDto toSummary(Vehicle vehicle, boolean onTrip) {
+    /** currentTrip: el viaje abierto del vehículo, o null si no tiene. */
+    public VehicleSummaryDto toSummary(Vehicle vehicle, CurrentTripDto currentTrip, boolean blocked) {
         return new VehicleSummaryDto(
                 vehicle.getId().toString(),
                 vehicle.getPlate(),
                 vehicle.getBrand(),
                 vehicle.getModel(),
-                onTrip ? "on-trip" : "available",
+                currentTrip != null ? "on-trip" : "available",
                 vehicle.getVehicleType(),
                 vehicle.getYear(),
                 vehicle.getChassisNumber(),
                 vehicle.getOdometerKm(),
-                vehicle.isActive()
+                vehicle.isActive(),
+                blocked,
+                currentTrip
         );
     }
 }
