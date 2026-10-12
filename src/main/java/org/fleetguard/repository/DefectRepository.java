@@ -1,10 +1,12 @@
 package org.fleetguard.repository;
 
 import org.fleetguard.entity.Defect;
+import org.fleetguard.entity.DefectSeverity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,4 +40,11 @@ public interface DefectRepository extends JpaRepository<Defect, UUID> {
     @Query("select distinct i.vehicleId from Defect d join d.inspectionAnswer a join a.inspection i "
             + "where d.status = 'open' and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING")
     List<UUID> findVehicleIdsWithOpenBlockingDefect();
+
+    /** Defectos de esa gravedad reportados en [from, to), por chofer -- CAM-91. */
+    @Query("select new org.fleetguard.repository.DriverCount(i.driverId, count(d)) from Defect d "
+            + "join d.inspectionAnswer a join a.inspection i "
+            + "where d.severity = :severity and d.createdAt >= :from and d.createdAt < :to group by i.driverId")
+    List<DriverCount> countByDriver(@Param("severity") DefectSeverity severity,
+                                    @Param("from") Instant from, @Param("to") Instant to);
 }

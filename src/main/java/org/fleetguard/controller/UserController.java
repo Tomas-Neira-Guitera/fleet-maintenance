@@ -4,8 +4,10 @@ import org.fleetguard.auth.AuthenticatedUser;
 import org.fleetguard.dto.CreateUserRequest;
 import org.fleetguard.dto.ListResponse;
 import org.fleetguard.dto.UpdateUserRequest;
+import org.fleetguard.dto.UserStatsDto;
 import org.fleetguard.dto.UserSummaryDto;
 import org.fleetguard.service.UserService;
+import org.fleetguard.service.UserStatsService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * /users, servido en /api/users -- gestión de usuarios (CAM-23). Todo el controller exige un
+ * /users, servido en /api/users -- gestión de usuarios (CAM-23, CAM-91). Todo el controller exige un
  * JWT de ADMIN (JwtAuthInterceptor, registrado en WebConfig). Ver docs/api/CAM-23-users-contract.md.
  */
 @RestController
@@ -29,15 +31,24 @@ import java.util.List;
 public class UserController {
 
     private final UserService service;
+    private final UserStatsService statsService;
 
-    public UserController(UserService service) {
+    public UserController(UserService service, UserStatsService statsService) {
         this.service = service;
+        this.statsService = statsService;
     }
 
     @GetMapping
     public ListResponse<UserSummaryDto> list(@RequestParam(required = false) String role) {
         List<UserSummaryDto> users = service.list(role);
         return new ListResponse<>(users);
+    }
+
+    /** CAM-91: actividad de choferes y técnicos en el período (ambos extremos opcionales). */
+    @GetMapping("/stats")
+    public UserStatsDto stats(@RequestParam(required = false) String from,
+                              @RequestParam(required = false) String to) {
+        return statsService.stats(from, to);
     }
 
     @PostMapping
