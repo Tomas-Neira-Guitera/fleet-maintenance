@@ -1,6 +1,6 @@
 package org.fleetguard.service;
 
-import org.fleetguard.auth.Driver;
+import org.fleetguard.auth.AuthenticatedUser;
 import org.fleetguard.dto.ChecklistAnswerDto;
 import org.fleetguard.dto.DefectDetailDto;
 import org.fleetguard.dto.InspectionResultDto;
@@ -11,6 +11,7 @@ import org.fleetguard.entity.DefectSeverity;
 import org.fleetguard.entity.Inspection;
 import org.fleetguard.entity.InspectionAnswer;
 import org.fleetguard.entity.InspectionType;
+import org.fleetguard.entity.Role;
 import org.fleetguard.entity.Trip;
 import org.fleetguard.entity.TripStatus;
 import org.fleetguard.entity.Vehicle;
@@ -20,6 +21,7 @@ import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.mapper.InspectionMapper;
 import org.fleetguard.mapper.TripMapper;
+import org.fleetguard.repository.DefectRepository;
 import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.repository.TripRepository;
 import org.fleetguard.repository.VehicleRepository;
@@ -49,18 +51,21 @@ import static org.mockito.Mockito.when;
 /**
  * Caso de uso central del DVIR (CAM-11): un pre-trip abre el viaje, un post-trip lo cierra, y
  * cada respuesta "defect" genera un defecto. Las reglas de validación de cada respuesta ya las
- * cubre InspectionValidatorTest; acá se prueba lo que hace el servicio con el resultado.
+ * cubre InspectionValidatorTest; acá se prueba lo que hace el servicio con el resultado: quién
+ * queda en el viaje (CAM-85, CAM-87) y cuándo un vehículo no puede salir (CAM-86, CAM-89).
  */
 class InspectionServiceTest {
 
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final InspectionRepository inspectionRepository = mock(InspectionRepository.class);
+    private final DefectRepository defectRepository = mock(DefectRepository.class);
     private final VehicleChecklistService checklistService = mock(VehicleChecklistService.class);
     private final InspectionService service = new InspectionService(vehicleRepository, tripRepository,
-            inspectionRepository, new InspectionMapper(), new TripMapper(), checklistService);
+            inspectionRepository, defectRepository, new InspectionMapper(), new TripMapper(), checklistService);
 
-    private final Driver driver = new Driver("driver-1", "Carlos Gómez");
+    private final AuthenticatedUser driver = new AuthenticatedUser(UUID.randomUUID(), "chofer1", Role.CHOFER);
+    private final AuthenticatedUser otherDriver = new AuthenticatedUser(UUID.randomUUID(), "chofer2", Role.CHOFER);
     private Vehicle vehicle;
 
     private static void setId(Object entity, UUID id) throws Exception {
@@ -96,7 +101,7 @@ class InspectionServiceTest {
     }
 
     private Trip openTrip() throws Exception {
-        Trip trip = new Trip(vehicle, Instant.now().minusSeconds(3600));
+        Trip trip = new Trip(vehicle, Instant.now().minusSeconds(3600), driver.id(), driver.username());
         setId(trip, UUID.randomUUID());
         when(tripRepository.findFirstByVehicle_IdAndStatus(vehicle.getId(), TripStatus.OPEN)).thenReturn(Optional.of(trip));
         return trip;
@@ -145,7 +150,9 @@ class InspectionServiceTest {
         assertNull(result.trip().endedAt());
         Inspection saved = savedInspection();
         assertEquals(InspectionType.PRE_TRIP, saved.getType());
-        assertEquals("driver-1", saved.getDriverId());
+        // CAM-85: el chofer es el del token, con su id de usuario.
+        assertEquals(driver.id().toString(), saved.getDriverId());
+        assertEquals("chofer1", saved.getDriverName());
         assertEquals(12345.0, saved.getOdometerKm());
         assertEquals(7, saved.getAnswers().size());
         assertFalse(saved.isHasBlockingDefect());
@@ -175,6 +182,112 @@ class InspectionServiceTest {
         assertNotNull(trip.getEndedAt());
         assertEquals("closed", result.trip().status());
         assertEquals(12500.0, savedInspection().getOdometerKm());
+    }
+
+    @Test
+    void elViajeRegistraQuienLoAbre() {
+        noOpenTrip();
+
+        InspectionResultDto result = service.submit(vehicle.getId().toString(),
+                new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver);
+
+        assertEquals(driver.id().toString(), result.trip().openedBy().id());
+        assertEquals("chofer1", result.trip().openedBy().name());
+        assertNull(result.trip().closedBy());
+    }
+
+    @Test
+    void siElPostTripLoHaceOtroChoferQuedaAbiertoPorUnoYCerradoPorOtro() throws Exception {
+        Trip trip = openTrip();
+
+        InspectionResultDto result = service.submit(vehicle.getId().toString(),
+                new InspectionSubmissionDto("post-trip", postTripAllOk(), null), otherDriver);
+
+        // CAM-87: hoy cualquier chofer puede cerrar el viaje (CAM-33 lo va a impedir), pero queda registrado.
+        assertEquals(driver.id(), trip.getOpenedById());
+        assertEquals(otherDriver.id(), trip.getClosedById());
+        assertEquals("chofer1", result.trip().openedBy().name());
+        assertEquals("chofer2", result.trip().closedBy().name());
+        assertEquals(otherDriver.id().toString(), savedInspection().getDriverId());
+    }
+
+    @Test
+    void unViajeAnteriorSinChoferSeCierraSinErrores() throws Exception {
+        Trip legacy = new Trip(vehicle, Instant.now().minusSeconds(3600));
+        setId(legacy, UUID.randomUUID());
+        when(tripRepository.findFirstByVehicle_IdAndStatus(vehicle.getId(), TripStatus.OPEN)).thenReturn(Optional.of(legacy));
+
+        InspectionResultDto result = service.submit(vehicle.getId().toString(),
+                new InspectionSubmissionDto("post-trip", postTripAllOk(), null), driver);
+
+        assertNull(result.trip().openedBy());
+        assertEquals("chofer1", result.trip().closedBy().name());
+    }
+
+    @Test
+    void unPreTripSobreUnVehiculoBloqueadoSeRechazaSinAbrirViaje() {
+        noOpenTrip();
+        when(defectRepository.existsOpenBlockingByVehicleId(vehicle.getId())).thenReturn(true);
+
+        VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class,
+                () -> service.submit(vehicle.getId().toString(),
+                        new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver));
+
+        assertEquals("VEHICLE_BLOCKED", ex.getErrorCode());
+        verify(tripRepository, never()).save(any());
+        verify(inspectionRepository, never()).save(any());
+    }
+
+    @Test
+    void unPreTripSobreUnVehiculoDadoDeBajaSeRechaza() {
+        noOpenTrip();
+        vehicle.setActive(false);
+
+        VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class,
+                () -> service.submit(vehicle.getId().toString(),
+                        new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver));
+
+        assertEquals("VEHICLE_INACTIVE", ex.getErrorCode());
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    void unPostTripSeAceptaAunqueElVehiculoEsteBloqueado() throws Exception {
+        Trip trip = openTrip();
+        when(defectRepository.existsOpenBlockingByVehicleId(vehicle.getId())).thenReturn(true);
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("post-trip", postTripAllOk(), null), driver);
+
+        // CAM-89: un viaje abierto se tiene que poder cerrar siempre.
+        assertEquals(TripStatus.CLOSED, trip.getStatus());
+    }
+
+    @Test
+    void unPreTripConDefectoBloqueanteNoDejaElVehiculoEnViaje() {
+        noOpenTrip();
+        List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-neumaticos", "defect", null,
+                new DefectDetailDto("blocking", "Neumático cortado", "http://localhost/foto.jpg")));
+
+        InspectionResultDto result = service.submit(vehicle.getId().toString(),
+                new InspectionSubmissionDto("pre-trip", answers, null), driver);
+
+        // CAM-86: la inspección y el defecto se guardan, pero el viaje nace cerrado (inicio = fin).
+        assertEquals("closed", result.trip().status());
+        assertEquals(result.trip().startedAt(), result.trip().endedAt());
+        assertEquals("chofer1", result.trip().closedBy().name());
+        assertTrue(savedInspection().isHasBlockingDefect());
+    }
+
+    @Test
+    void unPostTripConDefectoBloqueanteCierraElViajeIgualQueSiempre() throws Exception {
+        Trip trip = openTrip();
+        List<ChecklistAnswerDto> answers = withAnswer(postTripAllOk(), new ChecklistAnswerDto("post-fugas", "defect", null,
+                new DefectDetailDto("blocking", "Pérdida de aceite", "http://localhost/foto.jpg")));
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("post-trip", answers, null), driver);
+
+        assertEquals(TripStatus.CLOSED, trip.getStatus());
+        assertTrue(trip.getEndedAt().isAfter(trip.getStartedAt()));
     }
 
     @Test

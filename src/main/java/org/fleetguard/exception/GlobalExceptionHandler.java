@@ -59,12 +59,6 @@ public class GlobalExceptionHandler {
                 .body(new ApiError("INVALID_CREDENTIALS", ex.getMessage()));
     }
 
-    @ExceptionHandler(MissingDriverHeaderException.class)
-    public ResponseEntity<ApiError> handleMissingDriverHeader(MissingDriverHeaderException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(new ApiError("MISSING_DRIVER_HEADER", ex.getMessage()));
-    }
-
     @ExceptionHandler(UnsupportedPhotoTypeException.class)
     public ResponseEntity<ApiError> handleUnsupportedPhotoType(UnsupportedPhotoTypeException ex) {
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)

@@ -1,10 +1,12 @@
 package org.fleetguard.repository;
 
 import org.fleetguard.entity.Defect;
+import org.fleetguard.entity.DefectSeverity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,4 +29,22 @@ public interface DefectRepository extends JpaRepository<Defect, UUID> {
     /** Un defecto con su inspección ya cargada (hace falta para reportedBy) -- lo usa el detalle de OT (CAM-60). */
     @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i where d.id = :id")
     Optional<Defect> findByIdWithInspection(@Param("id") UUID id);
+
+    /** CAM-89: un defecto bloqueante sin resolver impide que el vehículo salga. */
+    @Query("select count(d) > 0 from Defect d join d.inspectionAnswer a join a.inspection i "
+            + "where i.vehicleId = :vehicleId and d.status = 'open' "
+            + "and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING")
+    boolean existsOpenBlockingByVehicleId(@Param("vehicleId") UUID vehicleId);
+
+    /** Ids de todos los vehículos bloqueados, para marcar el listado de flota en una sola consulta. */
+    @Query("select distinct i.vehicleId from Defect d join d.inspectionAnswer a join a.inspection i "
+            + "where d.status = 'open' and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING")
+    List<UUID> findVehicleIdsWithOpenBlockingDefect();
+
+    /** Defectos de esa gravedad reportados en [from, to), por chofer -- CAM-91. */
+    @Query("select new org.fleetguard.repository.DriverCount(i.driverId, count(d)) from Defect d "
+            + "join d.inspectionAnswer a join a.inspection i "
+            + "where d.severity = :severity and d.createdAt >= :from and d.createdAt < :to group by i.driverId")
+    List<DriverCount> countByDriver(@Param("severity") DefectSeverity severity,
+                                    @Param("from") Instant from, @Param("to") Instant to);
 }

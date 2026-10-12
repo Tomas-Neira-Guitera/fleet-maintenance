@@ -3,7 +3,10 @@ package org.fleetguard.repository;
 import org.fleetguard.entity.WorkOrder;
 import org.fleetguard.entity.WorkOrderStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -30,6 +33,14 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, UUID> {
     List<WorkOrder> findByScheduledMaintenanceIdAndStatusIn(UUID scheduledMaintenanceId,
                                                              Collection<WorkOrderStatus> statuses);
 
-    // CAM-23: un técnico con OTs abiertas no puede cambiar de rol hasta que se las reasignen.
-    long countByTechnicianIdAndStatusIn(UUID technicianId, Collection<WorkOrderStatus> statuses);
+    /** OTs en cada estado pedido, por técnico a cargo -- CAM-91. */
+    @Query("select new org.fleetguard.repository.UserCount(w.technicianId, count(w)) from WorkOrder w "
+            + "where w.technicianId is not null and w.status in :statuses group by w.technicianId")
+    List<UserCount> countByTechnician(@Param("statuses") Collection<WorkOrderStatus> statuses);
+
+    /** OTs con técnico finalizadas en [from, to) -- CAM-91. */
+    @Query("select w from WorkOrder w where w.technicianId is not null "
+            + "and w.status = org.fleetguard.entity.WorkOrderStatus.FINALIZADA "
+            + "and w.finalizedAt >= :from and w.finalizedAt < :to")
+    List<WorkOrder> findFinalizedWithTechnician(@Param("from") Instant from, @Param("to") Instant to);
 }

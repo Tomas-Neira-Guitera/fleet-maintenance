@@ -46,6 +46,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -516,8 +517,16 @@ public class WorkOrderService {
                 : userRepository.findById(workOrder.getTechnicianId()).map(User::getUsername).orElse(null);
         DefectDto defect = workOrder.getDefectId() == null ? null
                 : defectRepository.findByIdWithInspection(workOrder.getDefectId())
-                        .map(d -> defectMapper.toDto(d, workOrder.getVehicleId().toString(), plate))
+                        .map(d -> defectMapper.toDto(d, workOrder.getVehicleId().toString(), plate, reporterName(d)))
                         .orElse(null);
         return mapper.toDto(workOrder, plate, technicianUsername, defect, expenses, photos);
+    }
+
+    /** Nombre actual de quien reportó el defecto (CAM-85), en la forma que espera DefectMapper. */
+    private Map<String, String> reporterName(Defect defect) {
+        String driverId = defect.getInspectionAnswer().getInspection().getDriverId();
+        return Uuids.parse(driverId).flatMap(userRepository::findById)
+                .map(user -> Map.of(driverId, user.getUsername()))
+                .orElse(Map.of());
     }
 }

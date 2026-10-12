@@ -44,7 +44,8 @@ fleetguard:
     # password vacío de Postgres arriba). Sobreescribilo en
     # application-local.yml antes de exponer esto fuera de tu máquina.
     secret: HUKfjtGyMHxMPOgQMtZsS5XQD8pMYMAxNTa2ss1fa68R8B29qcfAnxSB7SYQr2JG
-    expiration-minutes: 60
+    # 12 horas (CAM-85): el chofer no tiene que volver a entrar entre el pre-viaje y el post-viaje.
+    expiration-minutes: 720
   photos:
     # Local-filesystem photo storage (see storage/LocalFilesystemPhotoStorage).
     # Swap PhotoStorage's implementation for a cloud-backed one later; nothing

@@ -29,11 +29,19 @@ info:
     alimenta su selector. Ver docs/api/CAM-60-technician-contract.md.
 
 
-    Y la gestión de usuarios (CAM-23): alta, edición y desactivación. Es el
-    único recurso que hoy valida el JWT (bearerAuth) y exige rol ADMIN; el
-    resto de los endpoints todavía no lo valida aunque el esquema global lo
-    declare (CAM-73). Ver docs/api/CAM-23-users-contract.md.
-  version: "1.7"
+    Y la gestión de usuarios (CAM-23, CAM-91): alta, edición, desactivación
+    y actividad por usuario. Ver docs/api/CAM-23-users-contract.md.
+
+
+    Y los gastos de mantenimiento de toda la flota (CAM-52), de solo
+    lectura. Ver docs/api/CAM-52-expenses-contract.md.
+
+
+    Autenticación: hoy validan el JWT (bearerAuth) /api/users y
+    /api/expenses (rol ADMIN) y POST /api/inspections/{vehicleId} (rol
+    CHOFER, CAM-85). El resto de los endpoints todavía no lo valida aunque
+    el esquema global lo declare (CAM-73).
+  version: "1.8"
 
 servers:
   - url: http://localhost:8080
@@ -48,7 +56,9 @@ paths:
       description: >
         Sin `view` (o `view` ausente): devuelve todos los vehículos con su
         estado de viaje actual (disponible / en viaje), para que el chofer
-        elija uno -- CAM-11.
+        elija uno -- CAM-11. Cada vehículo dice además si está bloqueado por
+        un defecto sin resolver (`blocked`, CAM-89) y, si está en viaje, quién
+        lo abrió y desde cuándo (`currentTrip`, CAM-87).
 
 
         Con `view=fleet-status`: vista agregada para el dashboard de admin
@@ -464,9 +474,10 @@ paths:
       description: >
         Solo autentica y emite el token -- no incluye alta ni invitación de
         usuarios (eso es POST /api/users, CAM-23). Los usuarios de prueba iniciales se cargan
-        con docs/db/seed-users.sql. Todavía no reemplaza al header temporal
-        X-Driver-Id de CAM-11 -- conviven hasta que el frontend (CAM-45) esté
-        migrado. Ver docs/api/CAM-43-login-contract.md para el detalle de
+        con docs/db/seed-users.sql. El token vence a las 12 horas
+        (`fleetguard.jwt.expiration-minutes`, CAM-85), para que un chofer no
+        tenga que volver a entrar entre el pre-viaje y el post-viaje. Ver
+        docs/api/CAM-43-login-contract.md para el detalle de
         decisiones (comparación contra hash dummy para evitar timing attacks,
         motivo de emitir HS512, etc).
       security: []
@@ -524,6 +535,22 @@ paths:
         SÍ tiene uno abierto (lo cierra). El chofer y la fecha/hora del envío
         se resuelven server-side (token de auth y reloj del servidor) — nunca
         se confían del body, aunque el cliente los mande.
+
+
+        Exige el JWT de un usuario activo con rol CHOFER (CAM-85): ese
+        usuario queda como chofer de la inspección y como quien abrió o
+        cerró el viaje (CAM-87). Los headers `X-Driver-Id` / `X-Driver-Name`
+        ya no existen.
+
+
+        Un pre-trip se rechaza si el vehículo no puede salir (CAM-89): dado
+        de baja o con un defecto bloqueante sin resolver. Un post-trip no se
+        rechaza por eso: un viaje abierto se tiene que poder cerrar. Si el
+        propio pre-trip reporta un defecto bloqueante (CAM-86), la inspección
+        y el defecto se guardan pero el vehículo no queda en viaje: `trip`
+        vuelve ya cerrado, con `startedAt` igual a `endedAt`.
+      security:
+        - bearerAuth: []
       parameters:
         - name: vehicleId
           in: path
@@ -543,13 +570,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InspectionResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Vehículo inexistente
         "409":
           description: >
             El `type` enviado no es válido para el estado actual del vehículo
             (ej. pre-trip sobre un vehículo que ya está "en viaje", o post-trip
-            sobre uno sin viaje abierto).
+            sobre uno sin viaje abierto), o es un pre-trip sobre un vehículo
+            que no puede salir (bloqueado o dado de baja, CAM-89).
           content:
             application/json:
               schema:
@@ -559,6 +591,10 @@ paths:
                   value: { error: "VEHICLE_ON_TRIP", message: "El vehículo ya tiene un pre-trip abierto." }
                 noOpenTrip:
                   value: { error: "NO_OPEN_TRIP", message: "El vehículo no tiene un viaje abierto para cerrar." }
+                vehicleBlocked:
+                  value: { error: "VEHICLE_BLOCKED", message: "El vehículo tiene un defecto bloqueante sin resolver y no puede salir." }
+                vehicleInactive:
+                  value: { error: "VEHICLE_INACTIVE", message: "El vehículo está dado de baja." }
         "422":
           description: Faltan respuestas obligatorias o un defecto no cumple sus reglas
           content:
@@ -1362,17 +1398,21 @@ paths:
 
   /api/users/{id}:
     patch:
-      summary: Editar un usuario -- rol, contraseña, activo (CAM-23)
+      summary: Editar un usuario -- nombre, contraseña, activo (CAM-23, CAM-91)
       description: >
-        Solo ADMIN. Campos parciales: lo que no viene no se toca. El username
-        no se edita. Un admin no puede desactivarse a sí mismo ni quitarse el
-        rol ADMIN (409 CANNOT_MODIFY_SELF); sí puede cambiarse la contraseña.
-        Un TECNICO con OTs abiertas (asignadas o en proceso) no puede pasar a
-        otro rol hasta que se las reasignen (409 TECHNICIAN_HAS_OPEN_WORK_ORDERS);
-        sí se lo puede desactivar. Desactivar no borra nada: el historial del
-        usuario (inspecciones, OTs) se conserva, y su sesión deja de valer en
-        /api/users desde el pedido siguiente aunque su token siga vigente.
-        Resetear la contraseña, en cambio, no invalida los tokens ya emitidos.
+        Solo ADMIN. Campos parciales: lo que no viene no se toca. El rol no se
+        edita (CAM-91): queda el del alta, y pedir uno distinto es un 422.
+        El username sí se puede cambiar, con las mismas reglas que en el alta
+        (409 USERNAME_TAKEN si ya lo usa otro). Renombrar no corta nada: el
+        token identifica al usuario por id, así que su sesión abierta sigue
+        valiendo, y sus inspecciones, viajes y OTs pasan a mostrar el nombre
+        nuevo; lo único que cambia para esa persona es con qué nombre entra.
+        Un admin no puede desactivarse a sí mismo (409 CANNOT_MODIFY_SELF);
+        sí puede cambiarse el nombre y la contraseña. Desactivar no borra
+        nada: el historial del usuario (inspecciones, OTs) se conserva, y su
+        sesión deja de valer desde el pedido siguiente aunque su token siga
+        vigente. Resetear la contraseña, en cambio, no invalida los tokens ya
+        emitidos.
       security:
         - bearerAuth: []
       parameters:
@@ -1405,11 +1445,82 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "409":
-          description: CANNOT_MODIFY_SELF | TECHNICIAN_HAS_OPEN_WORK_ORDERS
+          description: CANNOT_MODIFY_SELF | USERNAME_TAKEN
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/users/stats:
+    get:
+      summary: Actividad de choferes y técnicos en un período (CAM-91)
+      description: >
+        Solo ADMIN. Alimenta los gráficos de la sección Usuarios. Devuelve
+        todos los choferes y todos los técnicos (también los desactivados),
+        cada uno con su actividad en [from, to). Todo se cuenta por id de
+        usuario: las inspecciones y viajes anteriores a CAM-85, que no
+        guardaban un usuario real, no le suman a nadie. Los pre-viajes con
+        defecto bloqueante (CAM-86) cuentan como inspección, no como viaje.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PeriodFrom"
+        - $ref: "#/components/parameters/PeriodTo"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/expenses:
+    get:
+      summary: Gastos de mantenimiento de toda la flota (CAM-52)
+      description: >
+        Solo ADMIN, solo lectura. Lista los gastos que se cargan dentro de
+        cada orden de trabajo (POST /api/work-orders/{id}/expenses), de todas
+        las OTs sin importar su estado, del más reciente al más antiguo. La
+        fecha de un gasto es la de su carga. No trae totales: el cliente los
+        calcula sobre el listado ya filtrado. Un `vehicleId` o `category` que
+        no existe devuelve una lista vacía, no un error.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: vehicleId
+          in: query
+          schema: { type: string }
+        - name: category
+          in: query
+          schema:
+            $ref: "#/components/schemas/WorkOrderExpenseCategory"
+        - $ref: "#/components/parameters/PeriodFrom"
+        - $ref: "#/components/parameters/PeriodTo"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Expense"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
@@ -1420,6 +1531,25 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  parameters:
+    PeriodFrom:
+      name: from
+      in: query
+      description: >
+        Inicio del período, incluido. Instante ISO-8601 completo
+        ("2026-01-01T03:00:00Z") o fecha sola ("2026-01-01", medianoche UTC).
+        Sin valor, el período no tiene inicio.
+      schema: { type: string }
+    PeriodTo:
+      name: to
+      in: query
+      description: >
+        Fin del período. Con un instante ISO-8601 completo, ese instante no
+        se incluye; con una fecha sola, se incluye ese día entero (UTC). Sin
+        valor, el período no tiene fin. Para un día o un año "local", mandar
+        la medianoche local como instante completo.
+      schema: { type: string }
 
   responses:
     Unauthorized:
@@ -1434,7 +1564,10 @@ components:
             error: UNAUTHORIZED
             message: Tu sesión no es válida o venció. Volvé a iniciar sesión.
     Forbidden:
-      description: FORBIDDEN (CAM-23) -- token válido, pero el usuario no es ADMIN.
+      description: >
+        FORBIDDEN (CAM-23) -- token válido, pero el rol del usuario no es el
+        que pide el endpoint (ADMIN en /api/users y /api/expenses, CHOFER en
+        las inspecciones).
       content:
         application/json:
           schema:
@@ -1485,6 +1618,37 @@ components:
           description: >
             false si el vehículo está dado de baja (CAM-25) -- ver el
             parámetro `active` de GET /api/vehicles.
+        blocked:
+          type: boolean
+          description: >
+            CAM-89 -- true si tiene al menos un defecto bloqueante sin
+            resolver. Un vehículo bloqueado no puede iniciar un viaje (409
+            VEHICLE_BLOCKED en el pre-trip); vuelve a false cuando la orden
+            de trabajo del defecto se finaliza.
+        currentTrip:
+          allOf:
+            - $ref: "#/components/schemas/CurrentTrip"
+          nullable: true
+          description: CAM-87 -- el viaje abierto, si `status` es "on-trip"; null si está disponible.
+
+    UserRef:
+      type: object
+      description: Un usuario, por id y nombre actual.
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+
+    CurrentTrip:
+      type: object
+      required: [startedAt]
+      properties:
+        startedAt: { type: string, format: date-time }
+        openedBy:
+          allOf:
+            - $ref: "#/components/schemas/UserRef"
+          nullable: true
+          description: Chofer que abrió el viaje. null en viajes anteriores a CAM-87, que no lo guardaban.
 
     CreateVehicleRequest:
       type: object
@@ -1625,6 +1789,18 @@ components:
         status: { type: string, enum: [open, closed] }
         startedAt: { type: string, format: date-time }
         endedAt: { type: string, format: date-time, nullable: true }
+        openedBy:
+          allOf:
+            - $ref: "#/components/schemas/UserRef"
+          nullable: true
+          description: CAM-87 -- chofer que hizo el pre-trip. null en viajes anteriores.
+        closedBy:
+          allOf:
+            - $ref: "#/components/schemas/UserRef"
+          nullable: true
+          description: >
+            CAM-87 -- chofer que hizo el post-trip; puede no ser el que lo
+            abrió (CAM-33 lo va a impedir). null si el viaje sigue abierto.
 
     Inspection:
       type: object
@@ -1632,7 +1808,7 @@ components:
         id: { type: string }
         tripId: { type: string }
         vehicleId: { type: string }
-        driverId: { type: string, description: Resuelto del token, no del body. }
+        driverId: { type: string, description: "Id del usuario CHOFER del token (CAM-85), no del body." }
         type: { type: string, enum: [pre-trip, post-trip] }
         timestamp: { type: string, format: date-time, description: Reloj del servidor. }
         odometerKm: { type: number }
@@ -1664,7 +1840,7 @@ components:
         vehicleId: { type: string }
         vehiclePlate: { type: string, nullable: true, description: Puede faltar si el vehículo fue eliminado. }
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
-        reportedBy: { type: string, nullable: true, description: "Nombre del chofer que reportó el defecto (Inspection.driverName); puede faltar en datos antiguos." }
+        reportedBy: { type: string, nullable: true, description: "Nombre actual del chofer que reportó el defecto (CAM-85); en inspecciones anteriores, el nombre con el que se guardaron." }
         details: { type: string, nullable: true, description: "Descripción larga del defecto (CAM-32). description es el título corto." }
 
     VehicleHistory:
@@ -1691,7 +1867,7 @@ components:
         id: { type: string }
         type: { type: string, enum: [pre-trip, post-trip] }
         timestamp: { type: string, format: date-time }
-        driverName: { type: string, nullable: true }
+        driverName: { type: string, nullable: true, description: "Nombre actual del chofer (CAM-85); en inspecciones anteriores, el nombre con el que se guardaron." }
         odometerKm: { type: number, nullable: true }
         notes: { type: string, nullable: true }
         hasBlockingDefect: { type: boolean }
@@ -2163,6 +2339,34 @@ components:
         amount: { type: number }
         createdAt: { type: string, format: date-time }
 
+    Expense:
+      type: object
+      description: Un gasto de GET /api/expenses (CAM-52), con el vehículo y la OT de la que sale.
+      required: [id, date, vehicleId, category, description, amount, workOrderId, workOrderTitle, workOrderStatus, origin, executionType]
+      properties:
+        id: { type: string }
+        date: { type: string, format: date-time, description: Cuándo se cargó el gasto. }
+        vehicleId: { type: string }
+        plate: { type: string, nullable: true }
+        category:
+          $ref: "#/components/schemas/WorkOrderExpenseCategory"
+        description: { type: string }
+        amount: { type: number }
+        workOrderId: { type: string }
+        workOrderTitle: { type: string }
+        workOrderStatus:
+          $ref: "#/components/schemas/WorkOrderStatus"
+        origin:
+          type: string
+          enum: [plan, defect, manual]
+          description: >
+            De dónde nació la OT: de un plan de mantenimiento (gasto
+            preventivo), de un defecto (correctivo) o suelta. No es
+            `sourceType`: una OT creada desde el calendario conserva el plan
+            o el defecto que la originó.
+        executionType:
+          $ref: "#/components/schemas/WorkOrderExecutionType"
+
     CreateWorkOrderExpenseRequest:
       type: object
       required: [category, description, amount]
@@ -2223,10 +2427,14 @@ components:
 
     UpdateUserRequest:
       type: object
-      description: Campos parciales -- lo que no viene no se toca.
+      description: >
+        Campos parciales -- lo que no viene no se toca. El rol no se edita
+        (CAM-91): mandar `role` con un valor distinto del actual es un 422.
       properties:
-        role:
-          $ref: "#/components/schemas/Role"
+        username:
+          type: string
+          maxLength: 30
+          description: Renombra al usuario. Mismas reglas y misma normalización que en el alta.
         password:
           type: string
           minLength: 6
@@ -2234,3 +2442,46 @@ components:
           description: Resetea la contraseña. Mismo tope de 72 bytes que en el alta.
         active:
           type: boolean
+
+    UserStats:
+      type: object
+      description: Respuesta de GET /api/users/stats (CAM-91), separada por rol.
+      required: [drivers, technicians]
+      properties:
+        drivers:
+          type: array
+          items:
+            $ref: "#/components/schemas/DriverStats"
+        technicians:
+          type: array
+          items:
+            $ref: "#/components/schemas/TechnicianStats"
+
+    DriverStats:
+      type: object
+      required: [userId, username, active, trips, inspections, defects, blockingDefects]
+      properties:
+        userId: { type: string }
+        username: { type: string }
+        active: { type: boolean }
+        trips: { type: integer, description: Viajes que abrió en el período. }
+        inspections: { type: integer, description: Inspecciones (pre-trip y post-trip) que hizo en el período. }
+        defects: { type: integer, description: Defectos que reportó en el período, bloqueantes incluidos. }
+        blockingDefects: { type: integer }
+
+    TechnicianStats:
+      type: object
+      required: [userId, username, active, openWorkOrders, finalizedWorkOrders, expensesTotal]
+      properties:
+        userId: { type: string }
+        username: { type: string }
+        active: { type: boolean }
+        openWorkOrders:
+          type: integer
+          description: OTs a su cargo asignadas o en proceso hoy. Es la foto actual, no depende del período.
+        finalizedWorkOrders: { type: integer, description: OTs a su cargo finalizadas en el período. }
+        avgResolutionHours:
+          type: number
+          nullable: true
+          description: Promedio de horas entre que se creó y se finalizó cada una de esas OTs. null si no finalizó ninguna.
+        expensesTotal: { type: number, description: Suma de los gastos cargados en el período en las OTs a su cargo. }
