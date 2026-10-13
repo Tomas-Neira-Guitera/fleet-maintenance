@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
  * de {@code fleetguard.odometer.max-jump-km}: el odómetro no baja (ODOMETER_REGRESSION), así que
  * un error de tipeo (1.500.000 en vez de 150.000) quedaría cargado para siempre. Una lectura que
  * no pasa la regla no es un error: se guarda donde corresponda y el vehículo queda como estaba.
+ * Un vehículo dado de baja no se toca, igual que en "Cargar km" (VEHICLE_INACTIVE, CAM-25 §8).
  */
 @Component
 public class OdometerReadings {
@@ -27,6 +28,10 @@ public class OdometerReadings {
 
     /** Aplica la lectura al vehículo si corresponde; devuelve si cambió. El vehículo tiene que estar gestionado. */
     public boolean apply(Vehicle vehicle, long readingKm) {
+        // Ej.: una OT en proceso que se finaliza después de dar de baja el vehículo.
+        if (!vehicle.isActive()) {
+            return false;
+        }
         long current = vehicle.getOdometerKm();
         if (readingKm <= current) {
             return false;

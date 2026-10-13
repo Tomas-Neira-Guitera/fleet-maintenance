@@ -379,7 +379,9 @@ de `fleetguard.odometer.max-jump-km` (5.000 km por defecto). Si no, la inspecci�
 completion se guardan igual y el kilometraje del vehículo no cambia: no es un error. El tope
 frena errores de tipeo (1.500.000 en vez de 150.000), que no se podrían corregir porque el
 kilometraje no baja. Como en este endpoint, no se toca `nextDueKm`: el estado de cada plan se
-calcula contra el kilometraje nuevo en la consulta siguiente.
+calcula contra el kilometraje nuevo en la consulta siguiente. Un vehículo dado de baja no se
+actualiza (mismo criterio que el `409 VEHICLE_INACTIVE` de este endpoint, CAM-25 §8): por ejemplo,
+una OT en proceso que se finaliza después de la baja guarda su km, pero el vehículo no cambia.
 
 Consecuencias del tope, decididas con Guido (2026-10-12):
 
