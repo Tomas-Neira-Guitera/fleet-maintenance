@@ -40,7 +40,7 @@ class MaintenanceCompletionServiceTest {
     private final VehicleMaintenanceAssignmentService assignmentService = mock(VehicleMaintenanceAssignmentService.class);
     private final ScheduledMaintenanceService scheduledMaintenanceService = mock(ScheduledMaintenanceService.class);
     private final MaintenanceCompletionService service = new MaintenanceCompletionService(completionRepository,
-            assignmentService, new MaintenanceCompletionMapper(), scheduledMaintenanceService);
+            assignmentService, new MaintenanceCompletionMapper(), scheduledMaintenanceService, new OdometerReadings(5000));
 
     private Vehicle vehicle;
     private VehicleMaintenanceAssignment assignment;
@@ -96,6 +96,21 @@ class MaintenanceCompletionServiceTest {
         // Antes estaba vencido (venció a los 50.000 km); con el registro vuelve a estar al día.
         assertEquals("al_dia", result.updatedAssignment().status());
         verify(scheduledMaintenanceService).closeActiveScheduleForAssignment(assignment.getId());
+    }
+
+    @Test
+    void elKmDelMantenimientoHechoAvanzaElDelVehiculo() {
+        // CAM-90: el vehículo tenía 52.000 km; el mantenimiento se hizo a los 52.400.
+        complete(LocalDate.now().toString(), 52400L);
+
+        assertEquals(52400, vehicle.getOdometerKm());
+    }
+
+    @Test
+    void unMantenimientoConMenosKmQueElVehiculoNoLoHaceRetroceder() {
+        complete(LocalDate.now().toString(), 51000L);
+
+        assertEquals(52000, vehicle.getOdometerKm());
     }
 
     @Test

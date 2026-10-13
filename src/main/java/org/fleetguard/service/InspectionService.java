@@ -46,11 +46,12 @@ public class InspectionService {
     private final InspectionMapper inspectionMapper;
     private final TripMapper tripMapper;
     private final VehicleChecklistService checklistService;
+    private final OdometerReadings odometerReadings;
 
     public InspectionService(VehicleRepository vehicleRepository, TripRepository tripRepository,
                               InspectionRepository inspectionRepository, DefectRepository defectRepository,
                               InspectionMapper inspectionMapper, TripMapper tripMapper,
-                              VehicleChecklistService checklistService) {
+                              VehicleChecklistService checklistService, OdometerReadings odometerReadings) {
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.inspectionRepository = inspectionRepository;
@@ -59,6 +60,7 @@ public class InspectionService {
         this.inspectionMapper = inspectionMapper;
         this.tripMapper = tripMapper;
         this.checklistService = checklistService;
+        this.odometerReadings = odometerReadings;
     }
 
     /** driver: el chofer del JWT (CAM-85); queda en la inspección y en el viaje que abre o cierra (CAM-87). */
@@ -124,6 +126,12 @@ public class InspectionService {
         }
 
         inspectionRepository.save(inspection);
+
+        // CAM-90: el km que cargó el chofer avanza el del vehículo (parte entera; la inspección guarda
+        // el valor tal cual). Si no pasa la regla de OdometerReadings, la inspección vale igual.
+        if (outcome.odometerKm() != null) {
+            odometerReadings.apply(vehicle, (long) Math.floor(outcome.odometerKm()));
+        }
 
         return new InspectionResultDto(inspectionMapper.toDto(inspection), tripMapper.toDto(trip));
     }

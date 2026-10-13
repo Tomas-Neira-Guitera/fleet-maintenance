@@ -11,6 +11,7 @@ import org.fleetguard.entity.DefectSeverity;
 import org.fleetguard.entity.Inspection;
 import org.fleetguard.entity.InspectionAnswer;
 import org.fleetguard.entity.InspectionType;
+import org.fleetguard.entity.MaintenanceStatus;
 import org.fleetguard.entity.Role;
 import org.fleetguard.entity.Trip;
 import org.fleetguard.entity.TripStatus;
@@ -31,6 +32,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.lang.reflect.Field;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -62,7 +64,7 @@ class InspectionServiceTest {
     private final DefectRepository defectRepository = mock(DefectRepository.class);
     private final VehicleChecklistService checklistService = mock(VehicleChecklistService.class);
     private final InspectionService service = new InspectionService(vehicleRepository, tripRepository,
-            inspectionRepository, defectRepository, new InspectionMapper(), new TripMapper(), checklistService);
+            inspectionRepository, defectRepository, new InspectionMapper(), new TripMapper(), checklistService, new OdometerReadings(5000));
 
     private final AuthenticatedUser driver = new AuthenticatedUser(UUID.randomUUID(), "chofer1", Role.CHOFER);
     private final AuthenticatedUser otherDriver = new AuthenticatedUser(UUID.randomUUID(), "chofer2", Role.CHOFER);
@@ -386,5 +388,57 @@ class InspectionServiceTest {
                 new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver));
         assertThrows(VehicleNotFoundException.class, () -> service.submit("no-es-un-uuid",
                 new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver));
+    }
+
+    // --- CAM-90: el km de la inspección avanza el del vehículo ---
+
+    @Test
+    void unPostTripConMasKmActualizaElVehiculo() throws Exception {
+        vehicle.setOdometerKm(120000);
+        openTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("post-trip",
+                withAnswer(postTripAllOk(), new ChecklistAnswerDto("post-km", null, 120350.0, null)), null), driver);
+
+        assertEquals(120350, vehicle.getOdometerKm());
+        // El estado de cada plan se calcula contra este km: uno que vencía a los 120.300 pasa a vencido.
+        assertEquals(MaintenanceStatus.VENCIDO,
+                MaintenanceStatusCalculator.computeStatus(120300L, null, vehicle.getOdometerKm(), LocalDate.now()));
+    }
+
+    @Test
+    void unaInspeccionConMenosKmSeGuardaYElVehiculoNoCambia() {
+        vehicle.setOdometerKm(120000);
+        noOpenTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip",
+                withAnswer(preTripAllOk(), new ChecklistAnswerDto("int-km", null, 119000.0, null)), null), driver);
+
+        assertEquals(119000.0, savedInspection().getOdometerKm());
+        assertEquals(120000, vehicle.getOdometerKm());
+    }
+
+    @Test
+    void elKmConDecimalesActualizaConLaParteEntera() {
+        vehicle.setOdometerKm(120000);
+        noOpenTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip",
+                withAnswer(preTripAllOk(), new ChecklistAnswerDto("int-km", null, 120350.9, null)), null), driver);
+
+        assertEquals(120350.9, savedInspection().getOdometerKm());
+        assertEquals(120350, vehicle.getOdometerKm());
+    }
+
+    @Test
+    void unaLecturaPorEncimaDelTopeNoActualizaElVehiculo() {
+        vehicle.setOdometerKm(120000);
+        noOpenTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip",
+                withAnswer(preTripAllOk(), new ChecklistAnswerDto("int-km", null, 1203500.0, null)), null), driver);
+
+        assertEquals(1203500.0, savedInspection().getOdometerKm());
+        assertEquals(120000, vehicle.getOdometerKm());
     }
 }
