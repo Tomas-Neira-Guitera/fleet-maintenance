@@ -47,4 +47,14 @@ class OdometerReadingsTest {
         assertTrue(readings.apply(vehicle, 125000));
         assertEquals(125000, vehicle.getOdometerKm());
     }
+
+    @Test
+    void unVehiculoDadoDeBajaNoCambiaSuKm() {
+        // Mismo criterio que "Cargar km" (VEHICLE_INACTIVE): un vehículo de baja no sigue mutando.
+        Vehicle vehicle = vehicleWith(120000);
+        vehicle.setActive(false);
+
+        assertFalse(readings.apply(vehicle, 120300));
+        assertEquals(120000, vehicle.getOdometerKm());
+    }
 }
