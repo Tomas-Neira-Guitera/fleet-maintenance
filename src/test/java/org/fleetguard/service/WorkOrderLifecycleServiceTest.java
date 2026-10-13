@@ -73,7 +73,7 @@ class WorkOrderLifecycleServiceTest {
     private final MaintenanceCompletionService completionService = mock(MaintenanceCompletionService.class);
     private final WorkOrderService service = new WorkOrderService(workOrderRepository, expenseRepository, photoRepository,
             vehicleRepository, defectRepository, scheduleRepository, scheduledMaintenanceService, completionService,
-            mock(UserRepository.class), new WorkOrderMapper(), new DefectMapper());
+            mock(UserRepository.class), new WorkOrderMapper(), new DefectMapper(), new OdometerReadings(5000));
 
     private final UUID vehicleId = UUID.randomUUID();
     private final Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
@@ -304,6 +304,29 @@ class WorkOrderLifecycleServiceTest {
 
         // Un defecto resuelto deja de bloquear al vehículo (CAM-49).
         assertEquals("resuelto", defect.getStatus());
+    }
+
+    @Test
+    void finalizarUnaOtConKmActualizaElVehiculo() throws Exception {
+        // CAM-90: una OT de defecto o manual no pasa por MaintenanceCompletionService; el km se aplica acá.
+        vehicle.setOdometerKm(120000);
+        WorkOrder workOrder = inProgress(null, null, null);
+        withPhotos(workOrder, 1);
+
+        service.update(workOrder.getId().toString(), finalizeWith("Reparado", "120400"));
+
+        assertEquals(120400, vehicle.getOdometerKm());
+    }
+
+    @Test
+    void finalizarUnaOtSinKmNoTocaElVehiculo() throws Exception {
+        vehicle.setOdometerKm(120000);
+        WorkOrder workOrder = inProgress(null, null, null);
+        withPhotos(workOrder, 1);
+
+        service.update(workOrder.getId().toString(), finalizeWith("Reparado", null));
+
+        assertEquals(120000, vehicle.getOdometerKm());
     }
 
     // --- Gastos y fotos ---

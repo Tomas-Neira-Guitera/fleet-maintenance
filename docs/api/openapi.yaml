@@ -543,6 +543,12 @@ paths:
         ya no existen.
 
 
+        El km de la inspección (parte entera) actualiza el odometerKm del
+        vehículo si es mayor y no lo supera en más del tope fleetguard.odometer.max-jump-km (5.000 km) (CAM-90, ver
+        CAM-40-fleet-status-contract.md); si no, la inspección se guarda igual
+        y el vehículo no cambia.
+
+
         Un pre-trip se rechaza si el vehículo no puede salir (CAM-89): dado
         de baja o con un defecto bloqueante sin resolver. Un post-trip no se
         rechaza por eso: un viaje abierto se tiene que poder cerrar. Si el
@@ -869,7 +875,10 @@ paths:
       description: >
         A diferencia de las inspecciones DVIR, completedAt lo manda el
         cliente (puede estar cargando algo que ya pasó) -- ver
-        CAM-40-maintenance-api-contract.md decisión 2.
+        CAM-40-maintenance-api-contract.md decisión 2. Desde CAM-90,
+        completedKm también actualiza el odometerKm del vehículo si es mayor
+        y no lo supera en más del tope fleetguard.odometer.max-jump-km (5.000 km) (ver CAM-40-fleet-status-contract.md);
+        el estado devuelto ya se calcula con ese kilometraje.
       parameters:
         - name: vehicleId
           in: path
@@ -915,6 +924,9 @@ paths:
       description: >
         No toca nextDueKm de ningún plan (eso solo cambia con un completion) --
         solo actualiza la referencia contra la que se compara al calcular status.
+        Desde CAM-90 queda para correcciones: el kilometraje también avanza solo
+        con el km de inspecciones, OTs finalizadas y completions (ver
+        CAM-40-fleet-status-contract.md).
         Bloqueado con `409 VEHICLE_INACTIVE` si el vehículo está dado de baja
         (ver CAM-25-vehicle-abm-contract.md) -- reactivalo primero.
       parameters:
@@ -2314,6 +2326,8 @@ components:
             Km al finalizar (se usa si la OT viene de una asignación). Entero, no
             negativo y no menor al odometerKm actual del vehículo (CAM-74); si no,
             422 con el detalle en completedKm. Un decimal se rechaza, no se trunca.
+            Desde CAM-90 también actualiza el odometerKm del vehículo, salvo que lo
+            supere en más del tope fleetguard.odometer.max-jump-km (5.000 km) (ver CAM-40-fleet-status-contract.md).
         assignee: { type: string }
         technicianId:
           type: string

@@ -367,6 +367,33 @@ Este endpoint **no** toca `nextDueKm` de ningún plan (eso solo cambia con un co
 **422** `ODOMETER_REGRESSION` si `odometerKm` es menor al valor actual guardado (no tiene
 sentido que el kilometraje baje).
 
+**Actualización automática (CAM-90).** Este endpoint queda para correcciones: el kilometraje
+también avanza solo con el km que ya se carga en otros lados:
+
+- `POST /api/inspections/{vehicleId}`: el km del pre-viaje o post-viaje (parte entera).
+- `PATCH /api/work-orders/{id}` al finalizar: `completedKm`.
+- `POST /api/vehicles/{id}/maintenance-assignments/{assignmentId}/completions`: `completedKm`.
+
+Una lectura actualiza el vehículo solo si es **mayor** al valor actual y no lo supera en más
+de `fleetguard.odometer.max-jump-km` (5.000 km por defecto). Si no, la inspección, la OT o el
+completion se guardan igual y el kilometraje del vehículo no cambia: no es un error. El tope
+frena errores de tipeo (1.500.000 en vez de 150.000), que no se podrían corregir porque el
+kilometraje no baja. Como en este endpoint, no se toca `nextDueKm`: el estado de cada plan se
+calcula contra el kilometraje nuevo en la consulta siguiente.
+
+Consecuencias del tope, decididas con Guido (2026-10-12):
+
+- **Un salto grande real se carga a mano.** Nadie hace más de 5.000 km entre dos lecturas, así
+  que un salto así es un error o una corrección, y va por este endpoint. Por eso un vehículo se
+  tiene que dar de alta con su kilometraje real, no con 0: si no, ninguna lectura lo alcanza.
+- **El vehículo queda sin actualizarse hasta la corrección.** Las lecturas siguientes también
+  superan el tope contra el valor viejo, así que se ignoran hasta que alguien cargue el km a mano.
+  Hoy solo queda un `WARN` en el log del backend (`OdometerReadings`); mostrarlo en la app es CAM-115.
+- **La OT se cierra cuando se repara.** `completedKm` al finalizar sigue sin poder ser menor al
+  kilometraje del vehículo (CAM-74). Como ahora las inspecciones lo mueven, una OT que se cierra
+  tarde (después de que el vehículo volvió a salir) puede rechazar el km del momento de la
+  reparación: el proceso es finalizar la OT al terminar el trabajo, antes de que el vehículo salga.
+
 ## Fuera de alcance de este contrato
 
 - Recalcular en bloque `nextDue*` de asignaciones existentes cuando se edita el intervalo

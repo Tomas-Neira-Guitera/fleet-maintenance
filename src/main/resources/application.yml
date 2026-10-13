@@ -51,3 +51,8 @@ fleetguard:
     # Swap PhotoStorage's implementation for a cloud-backed one later; nothing
     # else in the app should need to change.
     storage-dir: ./uploads/photos
+  odometer:
+    # CAM-90: una lectura de km (inspección, OT, mantenimiento hecho) actualiza el vehículo solo si
+    # no supera al actual en más de esto. Frena errores de tipeo, que no se podrían corregir porque
+    # el odómetro no baja. Ver service/OdometerReadings.
+    max-jump-km: 5000
