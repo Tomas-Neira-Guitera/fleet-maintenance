@@ -34,8 +34,9 @@ public class Vehicle {
     private String vehicleType;
 
     /**
-     * Kilometraje actual del vehículo (feature 5.5, carga semanal manual). No lo toca
-     * ninguna inspección DVIR (CAM-11) -- ver CAM-40-modelo-mantenimiento-preventivo.md.
+     * Kilometraje actual del vehículo. Se carga a mano con "Cargar km" (feature 5.5) y, desde
+     * CAM-90, avanza solo con el km de las inspecciones, de las OTs finalizadas y de los
+     * mantenimientos hechos, si pasa la regla de service/OdometerReadings (nunca baja).
      */
     @Column(name = "odometer_km", columnDefinition = "bigint not null default 0")
     private long odometerKm = 0;

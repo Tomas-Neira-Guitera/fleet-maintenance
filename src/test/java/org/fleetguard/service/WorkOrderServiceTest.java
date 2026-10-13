@@ -61,7 +61,7 @@ class WorkOrderServiceTest {
     private final UserRepository userRepository = mock(UserRepository.class);
     private final WorkOrderService service = new WorkOrderService(workOrderRepository, expenseRepository, photoRepository,
             vehicleRepository, defectRepository, scheduleRepository, mock(ScheduledMaintenanceService.class),
-            mock(MaintenanceCompletionService.class), userRepository, new WorkOrderMapper(), new DefectMapper());
+            mock(MaintenanceCompletionService.class), userRepository, new WorkOrderMapper(), new DefectMapper(), new OdometerReadings(5000));
 
     private final UUID vehicleId = UUID.randomUUID();
     private final UUID technicianId = UUID.randomUUID();

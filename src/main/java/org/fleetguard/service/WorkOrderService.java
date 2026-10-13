@@ -75,13 +75,14 @@ public class WorkOrderService {
     private final UserRepository userRepository;
     private final WorkOrderMapper mapper;
     private final DefectMapper defectMapper;
+    private final OdometerReadings odometerReadings;
 
     public WorkOrderService(WorkOrderRepository workOrderRepository, WorkOrderExpenseRepository expenseRepository,
                              WorkOrderPhotoRepository photoRepository, VehicleRepository vehicleRepository,
                              DefectRepository defectRepository, ScheduledMaintenanceRepository scheduleRepository,
                              ScheduledMaintenanceService scheduledMaintenanceService,
                              MaintenanceCompletionService completionService, UserRepository userRepository,
-                             WorkOrderMapper mapper, DefectMapper defectMapper) {
+                             WorkOrderMapper mapper, DefectMapper defectMapper, OdometerReadings odometerReadings) {
         this.workOrderRepository = workOrderRepository;
         this.expenseRepository = expenseRepository;
         this.photoRepository = photoRepository;
@@ -93,6 +94,7 @@ public class WorkOrderService {
         this.userRepository = userRepository;
         this.mapper = mapper;
         this.defectMapper = defectMapper;
+        this.odometerReadings = odometerReadings;
     }
 
     /** created=false si ya había una OT abierta para el mismo origen y se devolvió esa. */
@@ -399,6 +401,13 @@ public class WorkOrderService {
 
         if (workOrder.getDefectId() != null) {
             defectRepository.findById(workOrder.getDefectId()).ifPresent(Defect::resolve);
+        }
+
+        // CAM-90: el km de cierre avanza el del vehículo. Si la OT venía de un plan, el completion de
+        // arriba ya lo aplicó y esto no cambia nada; acá lo cubren las OTs de defecto y manuales.
+        if (completedKm != null) {
+            vehicleRepository.findById(workOrder.getVehicleId())
+                    .ifPresent(vehicle -> odometerReadings.apply(vehicle, completedKm));
         }
     }
 
