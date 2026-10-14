@@ -34,9 +34,11 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -201,28 +203,29 @@ public class ScheduledMaintenanceService {
         return toDto(schedule, vehicle == null ? null : vehicle.getPlate());
     }
 
-    public List<ScheduleDto> listByRange(String from, String to, String statusParam, String vehicleIdParam) {
+    /**
+     * {@code statusParams} admite varios estados (repetido o separado por comas, CAM-65); sin
+     * ninguno, solo trae los programados, como antes.
+     */
+    public List<ScheduleDto> listByRange(String from, String to, List<String> statusParams, String vehicleIdParam) {
         List<FieldValidationErrorDetail> details = new ArrayList<>();
         Instant fromInstant = parseInstant(from, "from", details);
         Instant toInstant = parseInstant(to, "to", details);
         if (!details.isEmpty()) {
             throw new MaintenanceValidationException("Rango de fechas inválido", details);
         }
-        ScheduleStatus status = statusParam == null ? ScheduleStatus.SCHEDULED : ScheduleStatus.fromJson(statusParam);
-        if (status == null) {
-            throw new MaintenanceValidationException("Estado inválido",
-                    List.of(new FieldValidationErrorDetail("status", "Debe ser 'scheduled', 'done' o 'cancelled'")));
-        }
+        Set<ScheduleStatus> statuses = parseStatuses(statusParams);
 
         List<ScheduledMaintenance> schedules;
         if (vehicleIdParam != null && !vehicleIdParam.isBlank()) {
             // Un vehicleId mal formado devuelve lista vacía, no 500 (mismo criterio que el filtro por técnico de las OTs).
             schedules = Uuids.parse(vehicleIdParam)
-                    .map(id -> scheduleRepository.findByVehicleIdAndScheduledAtBetweenAndStatusOrderByScheduledAtAsc(
-                            id, fromInstant, toInstant, status))
+                    .map(id -> scheduleRepository.findByVehicleIdAndScheduledAtBetweenAndStatusInOrderByScheduledAtAsc(
+                            id, fromInstant, toInstant, statuses))
                     .orElse(List.of());
         } else {
-            schedules = scheduleRepository.findByScheduledAtBetweenAndStatusOrderByScheduledAtAsc(fromInstant, toInstant, status);
+            schedules = scheduleRepository.findByScheduledAtBetweenAndStatusInOrderByScheduledAtAsc(
+                    fromInstant, toInstant, statuses);
         }
 
         Map<UUID, String> plateByVehicleId = vehicleRepository
@@ -341,5 +344,22 @@ public class ScheduledMaintenanceService {
                 return null;
             }
         }
+    }
+
+    /** Sin estados (o todos vacíos) vale "scheduled"; uno desconocido es un 422, aunque vengan otros válidos. */
+    private Set<ScheduleStatus> parseStatuses(List<String> values) {
+        Set<ScheduleStatus> statuses = EnumSet.noneOf(ScheduleStatus.class);
+        for (String value : values == null ? List.<String>of() : values) {
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            ScheduleStatus status = ScheduleStatus.fromJson(value.trim());
+            if (status == null) {
+                throw new MaintenanceValidationException("Estado inválido",
+                        List.of(new FieldValidationErrorDetail("status", "Debe ser 'scheduled', 'done' o 'cancelled'")));
+            }
+            statuses.add(status);
+        }
+        return statuses.isEmpty() ? EnumSet.of(ScheduleStatus.SCHEDULED) : statuses;
     }
 }
