@@ -18,6 +18,10 @@ public interface WorkOrderExpenseRepository extends JpaRepository<WorkOrderExpen
             + "where e.createdAt >= :from and e.createdAt < :to order by e.createdAt desc")
     List<WorkOrderExpense> findInRangeWithWorkOrder(@Param("from") Instant from, @Param("to") Instant to);
 
+    /** Todos los gastos de las OTs de un vehículo, en cualquier estado -- CAM-105. */
+    @Query("select e from WorkOrderExpense e join e.workOrder w where w.vehicleId = :vehicleId")
+    List<WorkOrderExpense> findByVehicleId(@Param("vehicleId") UUID vehicleId);
+
     /** Total cargado en [from, to) en las OTs de cada técnico -- CAM-91. */
     @Query("select new org.fleetguard.repository.UserAmount(w.technicianId, sum(e.amount)) "
             + "from WorkOrderExpense e join e.workOrder w "

@@ -36,12 +36,15 @@ info:
     Y los gastos de mantenimiento de toda la flota (CAM-52), de solo
     lectura. Ver docs/api/CAM-52-expenses-contract.md.
 
+    Y el costo de mantenimiento de un vehículo, con su costo por km
+    (CAM-105). Ver docs/api/CAM-105-vehicle-costs-contract.md.
+
 
     Autenticación: hoy validan el JWT (bearerAuth) /api/users y
-    /api/expenses (rol ADMIN) y POST /api/inspections/{vehicleId} (rol
+    /api/expenses y /api/vehicles/{id}/costs (rol ADMIN) y POST /api/inspections/{vehicleId} (rol
     CHOFER, CAM-85). El resto de los endpoints todavía no lo valida aunque
     el esquema global lo declare (CAM-73).
-  version: "1.8"
+  version: "1.9"
 
 servers:
   - url: http://localhost:8080
@@ -158,6 +161,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VehicleHistory"
+        "404":
+          description: VEHICLE_NOT_FOUND
+
+  /api/vehicles/{id}/costs:
+    get:
+      summary: Costo de mantenimiento de un vehículo (CAM-105)
+      description: >
+        Solo ADMIN, solo lectura. Suma los gastos cargados en todas las OTs del
+        vehículo (los mismos de GET /api/expenses), sin importar el estado de
+        la OT. Funciona también para un vehículo dado de baja. El costo por km
+        divide el total histórico por los km recorridos desde el primer
+        registro de odómetro conocido (el más antiguo de sus inspecciones y de
+        sus mantenimientos hechos); si no hay registros, o el km actual no supera
+        a ese primero, `kmDriven` y `costPerKm` vienen en null en vez de un
+        número engañoso. Ver CAM-105-vehicle-costs-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleCosts"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: VEHICLE_NOT_FOUND
 
@@ -1586,7 +1623,8 @@ components:
     Forbidden:
       description: >
         FORBIDDEN (CAM-23) -- token válido, pero el rol del usuario no es el
-        que pide el endpoint (ADMIN en /api/users y /api/expenses, CHOFER en
+        que pide el endpoint (ADMIN en /api/users, /api/expenses y
+        /api/vehicles/{id}/costs, CHOFER en
         las inspecciones).
       content:
         application/json:
@@ -2388,6 +2426,28 @@ components:
             o el defecto que la originó.
         executionType:
           $ref: "#/components/schemas/WorkOrderExecutionType"
+
+    VehicleCosts:
+      type: object
+      description: Costo de mantenimiento de un vehículo, de GET /api/vehicles/{id}/costs (CAM-105).
+      required: [totalAmount, last12MonthsAmount, expenseCount, currentKm, firstKnownKm, kmDriven, costPerKm]
+      properties:
+        totalAmount: { type: number, description: Total histórico de gastos del vehículo. }
+        last12MonthsAmount: { type: number, description: "Gastos cargados desde la medianoche (hora argentina) del mismo día de hace un año." }
+        expenseCount: { type: integer, description: Cantidad de gastos cargados en total. }
+        currentKm: { type: integer, description: Km actual del vehículo. }
+        firstKnownKm:
+          type: integer
+          nullable: true
+          description: Km del registro más antiguo entre sus inspecciones y mantenimientos hechos; null si no hay ninguno.
+        kmDriven:
+          type: integer
+          nullable: true
+          description: currentKm − firstKnownKm; null si no hay registro o no es mayor a 0.
+        costPerKm:
+          type: number
+          nullable: true
+          description: totalAmount / kmDriven, redondeado a 2 decimales; null cuando kmDriven es null.
 
     CreateWorkOrderExpenseRequest:
       type: object
