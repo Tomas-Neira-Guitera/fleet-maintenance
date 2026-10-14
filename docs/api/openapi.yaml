@@ -44,7 +44,7 @@ info:
     /api/expenses y /api/vehicles/{id}/costs (rol ADMIN) y POST /api/inspections/{vehicleId} (rol
     CHOFER, CAM-85). El resto de los endpoints todavía no lo valida aunque
     el esquema global lo declare (CAM-73).
-  version: "1.9"
+  version: "1.10"
 
 servers:
   - url: http://localhost:8080
@@ -1289,7 +1289,7 @@ paths:
 
   /api/work-orders/{id}/expenses:
     post:
-      summary: Cargar un gasto a una orden de trabajo abierta (CAM-63)
+      summary: Cargar un gasto a una orden de trabajo abierta (CAM-63), con el comprobante opcional, número y foto (CAM-107)
       parameters:
         - name: id
           in: path
@@ -2390,7 +2390,7 @@ components:
 
     WorkOrderExpense:
       type: object
-      required: [id, category, description, amount, createdAt]
+      required: [id, category, description, amount, createdAt, receiptNumber, receiptPhotoUrl]
       properties:
         id: { type: string }
         category:
@@ -2398,11 +2398,19 @@ components:
         description: { type: string }
         amount: { type: number }
         createdAt: { type: string, format: date-time }
+        receiptNumber:
+          type: string
+          nullable: true
+          description: Número de la factura o el ticket (CAM-107); null si no se cargó.
+        receiptPhotoUrl:
+          type: string
+          nullable: true
+          description: Foto de la factura o el ticket (CAM-107); null si no se adjuntó.
 
     Expense:
       type: object
       description: Un gasto de GET /api/expenses (CAM-52), con el vehículo y la OT de la que sale.
-      required: [id, date, vehicleId, category, description, amount, workOrderId, workOrderTitle, workOrderStatus, origin, executionType]
+      required: [id, date, vehicleId, category, description, amount, workOrderId, workOrderTitle, workOrderStatus, origin, executionType, receiptNumber, receiptPhotoUrl]
       properties:
         id: { type: string }
         date: { type: string, format: date-time, description: Cuándo se cargó el gasto. }
@@ -2426,6 +2434,14 @@ components:
             o el defecto que la originó.
         executionType:
           $ref: "#/components/schemas/WorkOrderExecutionType"
+        receiptNumber:
+          type: string
+          nullable: true
+          description: Número de la factura o el ticket (CAM-107); null si no se cargó.
+        receiptPhotoUrl:
+          type: string
+          nullable: true
+          description: Foto de la factura o el ticket (CAM-107); null si no se adjuntó.
 
     VehicleCosts:
       type: object
@@ -2457,6 +2473,25 @@ components:
           $ref: "#/components/schemas/WorkOrderExpenseCategory"
         description: { type: string }
         amount: { type: number, minimum: 0, exclusiveMinimum: true }
+        receiptNumber:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: >
+            Opcional (CAM-107). Número de la factura o el ticket, tal como
+            figura. Se guarda sin los espacios de los costados; vacío o en
+            blanco = sin número; más de 50 caracteres da 422 en
+            `receiptNumber`. Va con o sin foto.
+        receiptPhotoUrl:
+          type: string
+          nullable: true
+          description: >
+            Opcional (CAM-107). La `photoUrl` que devuelve POST /api/photos
+            (paso 1, mismo mecanismo y formatos que las fotos de OT), tal cual:
+            tiene que ser una foto de este mismo servidor
+            (`<origen del pedido>/api/photos/{id}`). Otro host, otro puerto u
+            otra ruta dan 422 en `receiptPhotoUrl`. Vacía o en blanco = sin
+            comprobante. Se adjunta al crear el gasto: los gastos no se editan.
 
     WorkOrderPhoto:
       type: object

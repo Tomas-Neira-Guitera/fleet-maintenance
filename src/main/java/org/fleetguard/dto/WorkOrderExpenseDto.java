@@ -7,6 +7,10 @@ public record WorkOrderExpenseDto(
         String category,
         String description,
         BigDecimal amount,
-        String createdAt
+        String createdAt,
+        /** Número del comprobante (CAM-107); null si no se cargó. */
+        String receiptNumber,
+        /** Foto del comprobante (CAM-107); null si no se adjuntó. */
+        String receiptPhotoUrl
 ) {
 }

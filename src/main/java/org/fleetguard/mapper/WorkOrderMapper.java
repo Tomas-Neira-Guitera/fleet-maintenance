@@ -54,7 +54,9 @@ public class WorkOrderMapper {
                 expense.getCategory().toJson(),
                 expense.getDescription(),
                 expense.getAmount(),
-                expense.getCreatedAt().toString()
+                expense.getCreatedAt().toString(),
+                expense.getReceiptNumber(),
+                expense.getReceiptPhotoUrl()
         );
     }
 
