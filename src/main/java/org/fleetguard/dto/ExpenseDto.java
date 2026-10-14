@@ -18,6 +18,10 @@ public record ExpenseDto(
         String workOrderTitle,
         String workOrderStatus,
         String origin,
-        String executionType
+        String executionType,
+        /** Número del comprobante (CAM-107); null si no se cargó. */
+        String receiptNumber,
+        /** Foto del comprobante (CAM-107); null si no se adjuntó. */
+        String receiptPhotoUrl
 ) {
 }
