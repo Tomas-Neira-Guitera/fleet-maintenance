@@ -968,8 +968,12 @@ paths:
       summary: Mantenimientos programados en un rango de fechas (calendario semanal del Resumen, CAM-42)
       description: >
         Por defecto solo trae status=scheduled (lo que interesa ver "por
-        venir"); el query param status permite pedir también done/cancelled
-        para vistas de historial futuras.
+        venir"); el query param status permite pedir también done/cancelled.
+        Acepta varios estados, separados por comas o repitiendo el parámetro
+        (CAM-65: el calendario pide `status=scheduled,done,cancelled`). Se
+        ignoran los espacios alrededor y los valores vacíos (`status=` vale
+        como sin filtro). Un estado desconocido, aunque venga junto a otros
+        válidos, es un 422 con details[].field = "status".
       parameters:
         - name: from
           in: query
@@ -985,9 +989,13 @@ paths:
             type: string
         - name: status
           in: query
+          style: form
+          explode: false
           schema:
-            $ref: "#/components/schemas/ScheduleStatus"
-            default: scheduled
+            type: array
+            items:
+              $ref: "#/components/schemas/ScheduleStatus"
+            default: [scheduled]
         - name: vehicleId
           in: query
           description: Filtro opcional por vehículo, de uso general (no lo usa el preview de "ya programado", que mira todos los vehículos ese día).
