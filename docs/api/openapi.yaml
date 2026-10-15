@@ -36,12 +36,15 @@ info:
     Y los gastos de mantenimiento de toda la flota (CAM-52), de solo
     lectura. Ver docs/api/CAM-52-expenses-contract.md.
 
+    Y el costo de mantenimiento de un vehículo, con su costo por km
+    (CAM-105). Ver docs/api/CAM-105-vehicle-costs-contract.md.
+
 
     Autenticación: hoy validan el JWT (bearerAuth) /api/users y
-    /api/expenses (rol ADMIN) y POST /api/inspections/{vehicleId} (rol
+    /api/expenses y /api/vehicles/{id}/costs (rol ADMIN) y POST /api/inspections/{vehicleId} (rol
     CHOFER, CAM-85). El resto de los endpoints todavía no lo valida aunque
     el esquema global lo declare (CAM-73).
-  version: "1.8"
+  version: "1.10"
 
 servers:
   - url: http://localhost:8080
@@ -158,6 +161,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VehicleHistory"
+        "404":
+          description: VEHICLE_NOT_FOUND
+
+  /api/vehicles/{id}/costs:
+    get:
+      summary: Costo de mantenimiento de un vehículo (CAM-105)
+      description: >
+        Solo ADMIN, solo lectura. Suma los gastos cargados en todas las OTs del
+        vehículo (los mismos de GET /api/expenses), sin importar el estado de
+        la OT. Funciona también para un vehículo dado de baja. El costo por km
+        divide el total histórico por los km recorridos desde el primer
+        registro de odómetro conocido (el más antiguo de sus inspecciones y de
+        sus mantenimientos hechos); si no hay registros, o el km actual no supera
+        a ese primero, `kmDriven` y `costPerKm` vienen en null en vez de un
+        número engañoso. Ver CAM-105-vehicle-costs-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleCosts"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: VEHICLE_NOT_FOUND
 
@@ -968,8 +1005,12 @@ paths:
       summary: Mantenimientos programados en un rango de fechas (calendario semanal del Resumen, CAM-42)
       description: >
         Por defecto solo trae status=scheduled (lo que interesa ver "por
-        venir"); el query param status permite pedir también done/cancelled
-        para vistas de historial futuras.
+        venir"); el query param status permite pedir también done/cancelled.
+        Acepta varios estados, separados por comas o repitiendo el parámetro
+        (CAM-65: el calendario pide `status=scheduled,done,cancelled`). Se
+        ignoran los espacios alrededor y los valores vacíos (`status=` vale
+        como sin filtro). Un estado desconocido, aunque venga junto a otros
+        válidos, es un 422 con details[].field = "status".
       parameters:
         - name: from
           in: query
@@ -985,9 +1026,13 @@ paths:
             type: string
         - name: status
           in: query
+          style: form
+          explode: false
           schema:
-            $ref: "#/components/schemas/ScheduleStatus"
-            default: scheduled
+            type: array
+            items:
+              $ref: "#/components/schemas/ScheduleStatus"
+            default: [scheduled]
         - name: vehicleId
           in: query
           description: Filtro opcional por vehículo, de uso general (no lo usa el preview de "ya programado", que mira todos los vehículos ese día).
@@ -1244,7 +1289,7 @@ paths:
 
   /api/work-orders/{id}/expenses:
     post:
-      summary: Cargar un gasto a una orden de trabajo abierta (CAM-63)
+      summary: Cargar un gasto a una orden de trabajo abierta (CAM-63), con el comprobante opcional, número y foto (CAM-107)
       parameters:
         - name: id
           in: path
@@ -1578,7 +1623,8 @@ components:
     Forbidden:
       description: >
         FORBIDDEN (CAM-23) -- token válido, pero el rol del usuario no es el
-        que pide el endpoint (ADMIN en /api/users y /api/expenses, CHOFER en
+        que pide el endpoint (ADMIN en /api/users, /api/expenses y
+        /api/vehicles/{id}/costs, CHOFER en
         las inspecciones).
       content:
         application/json:
@@ -2344,7 +2390,7 @@ components:
 
     WorkOrderExpense:
       type: object
-      required: [id, category, description, amount, createdAt]
+      required: [id, category, description, amount, createdAt, receiptNumber, receiptPhotoUrl]
       properties:
         id: { type: string }
         category:
@@ -2352,11 +2398,19 @@ components:
         description: { type: string }
         amount: { type: number }
         createdAt: { type: string, format: date-time }
+        receiptNumber:
+          type: string
+          nullable: true
+          description: Número de la factura o el ticket (CAM-107); null si no se cargó.
+        receiptPhotoUrl:
+          type: string
+          nullable: true
+          description: Foto de la factura o el ticket (CAM-107); null si no se adjuntó.
 
     Expense:
       type: object
       description: Un gasto de GET /api/expenses (CAM-52), con el vehículo y la OT de la que sale.
-      required: [id, date, vehicleId, category, description, amount, workOrderId, workOrderTitle, workOrderStatus, origin, executionType]
+      required: [id, date, vehicleId, category, description, amount, workOrderId, workOrderTitle, workOrderStatus, origin, executionType, receiptNumber, receiptPhotoUrl]
       properties:
         id: { type: string }
         date: { type: string, format: date-time, description: Cuándo se cargó el gasto. }
@@ -2380,6 +2434,36 @@ components:
             o el defecto que la originó.
         executionType:
           $ref: "#/components/schemas/WorkOrderExecutionType"
+        receiptNumber:
+          type: string
+          nullable: true
+          description: Número de la factura o el ticket (CAM-107); null si no se cargó.
+        receiptPhotoUrl:
+          type: string
+          nullable: true
+          description: Foto de la factura o el ticket (CAM-107); null si no se adjuntó.
+
+    VehicleCosts:
+      type: object
+      description: Costo de mantenimiento de un vehículo, de GET /api/vehicles/{id}/costs (CAM-105).
+      required: [totalAmount, last12MonthsAmount, expenseCount, currentKm, firstKnownKm, kmDriven, costPerKm]
+      properties:
+        totalAmount: { type: number, description: Total histórico de gastos del vehículo. }
+        last12MonthsAmount: { type: number, description: "Gastos cargados desde la medianoche (hora argentina) del mismo día de hace un año." }
+        expenseCount: { type: integer, description: Cantidad de gastos cargados en total. }
+        currentKm: { type: integer, description: Km actual del vehículo. }
+        firstKnownKm:
+          type: integer
+          nullable: true
+          description: Km del registro más antiguo entre sus inspecciones y mantenimientos hechos; null si no hay ninguno.
+        kmDriven:
+          type: integer
+          nullable: true
+          description: currentKm − firstKnownKm; null si no hay registro o no es mayor a 0.
+        costPerKm:
+          type: number
+          nullable: true
+          description: totalAmount / kmDriven, redondeado a 2 decimales; null cuando kmDriven es null.
 
     CreateWorkOrderExpenseRequest:
       type: object
@@ -2389,6 +2473,25 @@ components:
           $ref: "#/components/schemas/WorkOrderExpenseCategory"
         description: { type: string }
         amount: { type: number, minimum: 0, exclusiveMinimum: true }
+        receiptNumber:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: >
+            Opcional (CAM-107). Número de la factura o el ticket, tal como
+            figura. Se guarda sin los espacios de los costados; vacío o en
+            blanco = sin número; más de 50 caracteres da 422 en
+            `receiptNumber`. Va con o sin foto.
+        receiptPhotoUrl:
+          type: string
+          nullable: true
+          description: >
+            Opcional (CAM-107). La `photoUrl` que devuelve POST /api/photos
+            (paso 1, mismo mecanismo y formatos que las fotos de OT), tal cual:
+            tiene que ser una foto de este mismo servidor
+            (`<origen del pedido>/api/photos/{id}`). Otro host, otro puerto u
+            otra ruta dan 422 en `receiptPhotoUrl`. Vacía o en blanco = sin
+            comprobante. Se adjunta al crear el gasto: los gastos no se editan.
 
     WorkOrderPhoto:
       type: object

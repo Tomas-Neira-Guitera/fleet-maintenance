@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -113,6 +114,19 @@ class ExpenseServiceTest {
         assertEquals("plan", result.get(2).origin());
         assertEquals("finalizada", result.get(2).workOrderStatus());
         assertEquals("AB123CD", result.get(2).plate());
+    }
+
+    @Test
+    void cadaGastoTraeSuComprobanteSiLoTiene() throws Exception {
+        setField(aceite, "receiptNumber", "0001-00012345");
+        setField(aceite, "receiptPhotoUrl", "http://localhost:8080/api/photos/ticket-1");
+
+        List<ExpenseDto> result = service.list(null, null, null, null);
+
+        assertNull(result.get(0).receiptNumber());
+        assertNull(result.get(0).receiptPhotoUrl());
+        assertEquals("0001-00012345", result.get(2).receiptNumber());
+        assertEquals("http://localhost:8080/api/photos/ticket-1", result.get(2).receiptPhotoUrl());
     }
 
     @Test
