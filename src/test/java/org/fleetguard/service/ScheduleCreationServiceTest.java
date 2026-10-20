@@ -37,6 +37,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -253,8 +254,8 @@ class ScheduleCreationServiceTest {
         setId(s, UUID.randomUUID());
         Instant from = Instant.parse("2026-10-05T00:00:00Z");
         Instant to = Instant.parse("2026-10-11T23:59:59Z");
-        when(scheduleRepository.findByVehicleIdAndScheduledAtBetweenAndStatusOrderByScheduledAtAsc(
-                vehicle.getId(), from, to, ScheduleStatus.SCHEDULED)).thenReturn(List.of(s));
+        when(scheduleRepository.findByVehicleIdAndScheduledAtBetweenAndStatusInOrderByScheduledAtAsc(
+                vehicle.getId(), from, to, Set.of(ScheduleStatus.SCHEDULED))).thenReturn(List.of(s));
         when(vehicleRepository.findAllById(any())).thenReturn(List.of(vehicle));
 
         List<ScheduleDto> week = service.listByRange(from.toString(), to.toString(), null, vehicle.getId().toString());
@@ -263,6 +264,12 @@ class ScheduleCreationServiceTest {
         assertEquals("AB123CD", week.get(0).plate());
         // Un vehicleId mal formado en el filtro devuelve lista vacía, no 500.
         assertEquals(0, service.listByRange(from.toString(), to.toString(), null, "no-es-un-uuid").size());
+
+        // Con vehículo también se pueden pedir varios estados juntos (CAM-65).
+        when(scheduleRepository.findByVehicleIdAndScheduledAtBetweenAndStatusInOrderByScheduledAtAsc(
+                vehicle.getId(), from, to, Set.of(ScheduleStatus.DONE, ScheduleStatus.CANCELLED))).thenReturn(List.of(s));
+        assertEquals(1, service.listByRange(from.toString(), to.toString(), List.of("done", "cancelled"),
+                vehicle.getId().toString()).size());
     }
 
     @Test
@@ -270,7 +277,26 @@ class ScheduleCreationServiceTest {
         assertEquals(List.of("from", "to"), fields(assertThrows(MaintenanceValidationException.class,
                 () -> service.listByRange(null, "ayer", null, null))));
         assertEquals(List.of("status"), fields(assertThrows(MaintenanceValidationException.class,
-                () -> service.listByRange("2026-10-05", "2026-10-11", "pendiente", null))));
+                () -> service.listByRange("2026-10-05", "2026-10-11", List.of("pendiente"), null))));
+        // Uno desconocido entre otros válidos también es un 422, no se ignora.
+        assertEquals(List.of("status"), fields(assertThrows(MaintenanceValidationException.class,
+                () -> service.listByRange("2026-10-05", "2026-10-11", List.of("done", "pendiente"), null))));
+    }
+
+    @Test
+    void elCalendarioPideVariosEstadosJuntosYSinEstadoSoloLosProgramados() {
+        Instant from = Instant.parse("2026-10-05T00:00:00Z");
+        Instant to = Instant.parse("2026-10-12T00:00:00Z");
+        when(scheduleRepository.findByScheduledAtBetweenAndStatusInOrderByScheduledAtAsc(any(), any(), any()))
+                .thenReturn(List.of());
+
+        service.listByRange(from.toString(), to.toString(), List.of("scheduled", " done ", "cancelled", "done"), null);
+        verify(scheduleRepository).findByScheduledAtBetweenAndStatusInOrderByScheduledAtAsc(from, to,
+                Set.of(ScheduleStatus.SCHEDULED, ScheduleStatus.DONE, ScheduleStatus.CANCELLED));
+
+        service.listByRange(from.toString(), to.toString(), List.of(""), null);
+        verify(scheduleRepository).findByScheduledAtBetweenAndStatusInOrderByScheduledAtAsc(from, to,
+                Set.of(ScheduleStatus.SCHEDULED));
     }
 
     @Test

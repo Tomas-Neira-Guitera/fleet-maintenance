@@ -30,7 +30,7 @@ class ExpenseControllerTest extends WebMvcTestBase {
     void elAdminVeLosGastosConLosFiltrosQuePidio() throws Exception {
         when(service.list("v-1", "repuesto", "2026-01-01", "2026-12-31")).thenReturn(List.of(new ExpenseDto("e-1",
                 "2026-03-10T13:00:00Z", "v-1", "AB123CD", "repuesto", "Aceite 10W40", new BigDecimal("120000.50"),
-                "wo-1", "Cambio de aceite", "finalizada", "plan", "interno")));
+                "wo-1", "Cambio de aceite", "finalizada", "plan", "interno", null, null)));
 
         mvc.perform(get("/expenses").param("vehicleId", "v-1").param("category", "repuesto")
                         .param("from", "2026-01-01").param("to", "2026-12-31")

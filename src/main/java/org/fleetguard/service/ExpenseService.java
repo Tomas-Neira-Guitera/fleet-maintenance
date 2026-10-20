@@ -75,7 +75,9 @@ public class ExpenseService {
                 workOrder.getTitle(),
                 workOrder.getStatus().toJson(),
                 originOf(workOrder),
-                workOrder.getExecutionType().toJson()
+                workOrder.getExecutionType().toJson(),
+                expense.getReceiptNumber(),
+                expense.getReceiptPhotoUrl()
         );
     }
 

@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * Endpoint genérico para programar mantenimientos, alimenta el calendario semanal del
  * Resumen (CAM-42) y los botones de "planificar" de CAM-50/CAM-51. No cuelga de
@@ -45,7 +47,7 @@ public class ScheduledMaintenanceController {
     @GetMapping
     public ListResponse<ScheduleDto> list(@RequestParam String from,
                                            @RequestParam String to,
-                                           @RequestParam(required = false) String status,
+                                           @RequestParam(required = false) List<String> status,
                                            @RequestParam(required = false) String vehicleId) {
         return new ListResponse<>(service.listByRange(from, to, status, vehicleId));
     }

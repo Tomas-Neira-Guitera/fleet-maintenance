@@ -188,6 +188,18 @@ class MaintenanceControllersTest extends WebMvcTestBase {
         mvc.perform(get("/maintenance-schedule").param("from", "2026-10-05").param("to", "2026-10-11").param("vehicleId", "v-1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].plate").value("AB123CD"));
+        // Varios estados separados por comas llegan como lista (CAM-65).
+        when(scheduleService.listByRange("2026-10-05", "2026-10-11", List.of("scheduled", "done"), null))
+                .thenReturn(List.of(scheduleDto()));
+        mvc.perform(get("/maintenance-schedule").param("from", "2026-10-05").param("to", "2026-10-11")
+                        .param("status", "scheduled,done"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].plate").value("AB123CD"));
+        // Repetir el parámetro es lo mismo que separarlo por comas.
+        mvc.perform(get("/maintenance-schedule").param("from", "2026-10-05").param("to", "2026-10-11")
+                        .param("status", "scheduled").param("status", "done"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].plate").value("AB123CD"));
         // Sin "to": 400 que nombra el parámetro, no un 500.
         mvc.perform(get("/maintenance-schedule").param("from", "2026-10-05"))
                 .andExpect(status().isBadRequest())

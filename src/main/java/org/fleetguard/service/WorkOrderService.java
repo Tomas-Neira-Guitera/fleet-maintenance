@@ -40,6 +40,7 @@ import org.fleetguard.repository.WorkOrderExpenseRepository;
 import org.fleetguard.repository.WorkOrderPhotoRepository;
 import org.fleetguard.repository.WorkOrderRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -49,6 +50,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * Órdenes de trabajo (CAM-14/CAM-15/CAM-62/CAM-63): genera y hace seguimiento de los
@@ -100,6 +102,12 @@ public class WorkOrderService {
     /** created=false si ya había una OT abierta para el mismo origen y se devolvió esa. */
     public record CreateResult(WorkOrderDto dto, boolean created) {
     }
+
+    /** Largo máximo del número de comprobante (CAM-107): alcanza para "0001-00012345" con margen. */
+    static final int RECEIPT_NUMBER_MAX_LENGTH = 50;
+
+    /** Id de una foto de GET /api/photos/{id}: los mismos caracteres que acepta el almacenamiento. */
+    private static final Pattern PHOTO_ID = Pattern.compile("[A-Za-z0-9_-]+");
 
     private static final List<WorkOrderStatus> OPEN_STATUSES = List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO);
 
@@ -463,11 +471,26 @@ public class WorkOrderService {
         if (request.description() == null || request.description().isBlank()) {
             details.add(new FieldValidationErrorDetail("description", "Obligatoria"));
         }
+        String receiptNumber = request.receiptNumber() == null || request.receiptNumber().isBlank()
+                ? null
+                : request.receiptNumber().trim();
+        if (receiptNumber != null && receiptNumber.length() > RECEIPT_NUMBER_MAX_LENGTH) {
+            details.add(new FieldValidationErrorDetail("receiptNumber",
+                    "Hasta " + RECEIPT_NUMBER_MAX_LENGTH + " caracteres"));
+        }
+        String receiptPhotoUrl = request.receiptPhotoUrl() == null || request.receiptPhotoUrl().isBlank()
+                ? null
+                : request.receiptPhotoUrl().trim();
+        if (receiptPhotoUrl != null && !isUploadedPhotoUrl(receiptPhotoUrl)) {
+            details.add(new FieldValidationErrorDetail("receiptPhotoUrl",
+                    "Tiene que ser una foto subida con POST /api/photos"));
+        }
         if (!details.isEmpty()) {
             throw new WorkOrderValidationException("Datos inválidos para el gasto", details);
         }
 
-        WorkOrderExpense expense = new WorkOrderExpense(workOrder, category, request.description(), request.amount());
+        WorkOrderExpense expense = new WorkOrderExpense(workOrder, category, request.description(), request.amount(),
+                receiptNumber, receiptPhotoUrl);
         expenseRepository.save(expense);
         return mapper.toExpenseDto(expense);
     }
@@ -505,6 +528,24 @@ public class WorkOrderService {
                 .filter(p -> p.getWorkOrder().getId().equals(workOrder.getId()))
                 .orElseThrow(() -> new WorkOrderNotFoundException(photoId));
         photoRepository.delete(photo);
+    }
+
+    /**
+     * CAM-107: el comprobante es respaldo contable, así que tiene que ser una foto subida a este
+     * mismo servidor: la URL exacta que arma POST /api/photos ({@code <origen>/api/photos/{id}}),
+     * comparada contra el origen del pedido actual. Así no depende del entorno (8080, 8081, demo)
+     * y no se puede apuntar a otro host, ni con userinfo ({@code http://otro@localhost/...}).
+     * Límite conocido: el origen sale del header Host del pedido, que el navegador no deja falsificar
+     * pero un pedido armado a mano (curl) sí. Y una foto subida por "localhost" no vale si el gasto se
+     * crea por "127.0.0.1"; el front no lo hace, porque usa la misma VITE_API_BASE_URL para las dos.
+     */
+    private static boolean isUploadedPhotoUrl(String url) {
+        return isUploadedPhotoUrl(url, ServletUriComponentsBuilder.fromCurrentContextPath().path("/photos/").toUriString());
+    }
+
+    /** photosBase: {@code <origen><context-path>/photos/}, lo mismo con que PhotoService arma la URL. */
+    static boolean isUploadedPhotoUrl(String url, String photosBase) {
+        return url.startsWith(photosBase) && PHOTO_ID.matcher(url.substring(photosBase.length())).matches();
     }
 
     private void requireOpen(WorkOrder workOrder, String errorCode, String message) {
