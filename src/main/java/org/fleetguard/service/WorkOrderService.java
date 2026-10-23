@@ -24,6 +24,8 @@ import org.fleetguard.entity.WorkOrderExpenseCategory;
 import org.fleetguard.entity.WorkOrderPhoto;
 import org.fleetguard.entity.WorkOrderSourceType;
 import org.fleetguard.entity.WorkOrderStatus;
+import org.fleetguard.event.WorkOrderCancelledEvent;
+import org.fleetguard.event.WorkOrderTechnicianChangedEvent;
 import org.fleetguard.exception.DefectNotFoundException;
 import org.fleetguard.exception.ScheduleNotFoundException;
 import org.fleetguard.exception.VehicleNotFoundException;
@@ -39,6 +41,7 @@ import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderExpenseRepository;
 import org.fleetguard.repository.WorkOrderPhotoRepository;
 import org.fleetguard.repository.WorkOrderRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +51,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -78,13 +82,15 @@ public class WorkOrderService {
     private final WorkOrderMapper mapper;
     private final DefectMapper defectMapper;
     private final OdometerReadings odometerReadings;
+    private final ApplicationEventPublisher eventPublisher;
 
     public WorkOrderService(WorkOrderRepository workOrderRepository, WorkOrderExpenseRepository expenseRepository,
                              WorkOrderPhotoRepository photoRepository, VehicleRepository vehicleRepository,
                              DefectRepository defectRepository, ScheduledMaintenanceRepository scheduleRepository,
                              ScheduledMaintenanceService scheduledMaintenanceService,
                              MaintenanceCompletionService completionService, UserRepository userRepository,
-                             WorkOrderMapper mapper, DefectMapper defectMapper, OdometerReadings odometerReadings) {
+                             WorkOrderMapper mapper, DefectMapper defectMapper, OdometerReadings odometerReadings,
+                             ApplicationEventPublisher eventPublisher) {
         this.workOrderRepository = workOrderRepository;
         this.expenseRepository = expenseRepository;
         this.photoRepository = photoRepository;
@@ -97,6 +103,7 @@ public class WorkOrderService {
         this.mapper = mapper;
         this.defectMapper = defectMapper;
         this.odometerReadings = odometerReadings;
+        this.eventPublisher = eventPublisher;
     }
 
     /** created=false si ya había una OT abierta para el mismo origen y se devolvió esa. */
@@ -203,6 +210,9 @@ public class WorkOrderService {
         WorkOrder workOrder = new WorkOrder(vehicleId, sourceType, scheduledMaintenanceId, defectId, assignmentId,
                 title, request.description(), executionType, request.externalProvider(), request.assignee(), technicianId);
         workOrderRepository.save(workOrder);
+        if (technicianId != null) {
+            eventPublisher.publishEvent(new WorkOrderTechnicianChangedEvent(workOrder.getId(), null, technicianId));
+        }
 
         return new CreateResult(toDto(workOrder), true);
     }
@@ -261,6 +271,7 @@ public class WorkOrderService {
         // CAM-75: una OT finalizada o cancelada queda como registro histórico. Va antes que todo,
         // así un intento de cambiarle el estado también responde WORK_ORDER_CLOSED.
         requireOpen(workOrder, "WORK_ORDER_CLOSED", "No se puede editar una orden de trabajo finalizada o cancelada");
+        UUID previousTechnicianId = workOrder.getTechnicianId();
 
         if (request.assignee() != null) {
             workOrder.setAssignee(request.assignee());
@@ -298,7 +309,26 @@ public class WorkOrderService {
         }
 
         workOrderRepository.save(workOrder);
+        publishTechnicianEvents(workOrder, previousTechnicianId);
         return toDto(workOrder);
+    }
+
+    /**
+     * CAM-99/CAM-100: lo que el técnico se tiene que enterar de este cambio. Los avisos salen recién
+     * después del commit (WorkOrderNotificationListener). Si en el mismo pedido se cambió el técnico y se
+     * canceló, solo cuenta la cancelación, y se le avisa al que la tenía antes: al nuevo no le sirve
+     * enterarse de una OT que nunca llegó a tener. Si se finalizó, no hay nada que avisar.
+     */
+    private void publishTechnicianEvents(WorkOrder workOrder, UUID previousTechnicianId) {
+        if (workOrder.getStatus() == WorkOrderStatus.CANCELADA) {
+            if (previousTechnicianId != null) {
+                eventPublisher.publishEvent(new WorkOrderCancelledEvent(workOrder.getId(), previousTechnicianId));
+            }
+        } else if (workOrder.getStatus() != WorkOrderStatus.FINALIZADA
+                && !Objects.equals(previousTechnicianId, workOrder.getTechnicianId())) {
+            eventPublisher.publishEvent(new WorkOrderTechnicianChangedEvent(workOrder.getId(), previousTechnicianId,
+                    workOrder.getTechnicianId()));
+        }
     }
 
     /**
