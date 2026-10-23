@@ -39,9 +39,11 @@ responde 404.
    pide cada 60 segundos por cada usuario conectado.
 2. **`NotificationRepository`**.
 3. **Una implementación de `NotificationService` que guarde en la base**, y
-   borrar `LoggingNotificationService` (si quedan las dos, Spring no sabe cuál
-   inyectar y la app no levanta). `notifyAllAdmins` crea un aviso por cada
-   usuario ADMIN activo.
+   borrar `LoggingNotificationService`. `notifyAllAdmins` crea un aviso por
+   cada usuario ADMIN activo. No lleva `@Primary`: la que reciben los avisos es
+   `PushingNotificationService` (CAM-119), que llama a esta y además manda la
+   push. Si quedara también `LoggingNotificationService`, cada aviso se
+   escribiría en el log además de guardarse.
 4. **`NotificationController`** con los cuatro endpoints del contrato, con el
    usuario del `AuthenticatedUser` (nunca un id que venga en el pedido).
 5. **Registrar `/notifications`, `/notifications/**` en `WebConfig`** con los
@@ -102,5 +104,6 @@ viejos no se borran todavía.
 
 ## Fuera de alcance
 
-Email (CAM-19), push (CAM-119), preferencias por usuario (CAM-24), WebSockets
-(la campanita refresca cada 60 segundos).
+Email (CAM-19), preferencias por usuario (CAM-24), WebSockets (la campanita
+refresca cada 60 segundos). La push al navegador está hecha aparte, en CAM-119
+(`CAM-119-push-contract.md`), y no depende de esta card.

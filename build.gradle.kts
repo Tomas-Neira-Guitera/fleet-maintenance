@@ -32,6 +32,11 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
 
+    // Push al navegador (CAM-119): firma VAPID y cifrado del mensaje (RFC 8291) con Bouncy Castle.
+    // Decidido con Guido el 2026-10-23: hacerlo a mano no tiene sentido.
+    implementation("nl.martijndwars:web-push:5.1.1")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")

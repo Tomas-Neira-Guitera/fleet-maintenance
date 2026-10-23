@@ -44,12 +44,16 @@ info:
     header. Ver docs/api/CAM-96-notifications-contract.md.
 
 
+    Y las push al navegador (CAM-119): los mismos avisos llegan aunque la
+    app esté cerrada. Ver docs/api/CAM-119-push-contract.md.
+
+
     Autenticación: hoy validan el JWT (bearerAuth) /api/users y
     /api/expenses y /api/vehicles/{id}/costs (rol ADMIN) y POST /api/inspections/{vehicleId} (rol
-    CHOFER, CAM-85), y /api/notifications (cualquier rol, CAM-96). El resto
-    de los endpoints todavía no lo valida aunque el esquema global lo
-    declare (CAM-73).
-  version: "1.11"
+    CHOFER, CAM-85), y /api/notifications y /api/push (cualquier rol,
+    CAM-96 y CAM-119). El resto de los endpoints todavía no lo valida aunque
+    el esquema global lo declare (CAM-73).
+  version: "1.12"
 
 servers:
   - url: http://localhost:8080
@@ -1682,6 +1686,94 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/push/public-key:
+    get:
+      summary: Clave VAPID pública para suscribirse a las push (CAM-119)
+      description: >
+        Cualquier rol. El front la pasa como `applicationServerKey` a
+        `PushManager.subscribe()`. `publicKey` es null si el servidor no
+        tiene las push configuradas: en ese caso el front no ofrece activarlas.
+        Ver docs/api/CAM-119-push-contract.md.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [publicKey]
+                properties:
+                  publicKey: { type: string, nullable: true, description: Base64url, punto EC sin comprimir (65 bytes). }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/push/subscriptions:
+    post:
+      summary: Activar las push en este navegador (CAM-119)
+      description: >
+        Cualquier rol. El body es lo que devuelve `PushSubscription.toJSON()`
+        en el navegador, tal cual. Si ese navegador ya estaba suscripto (por
+        este usuario o por otro que usó la misma compu antes), pasa a ser del
+        usuario del token.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushSubscriptionRequest"
+      responses:
+        "204":
+          description: Suscripción guardada
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Desactivar las push en este navegador (CAM-119)
+      description: >
+        Cualquier rol. Idempotente: un endpoint que no existe, o que es de
+        otro usuario, responde 204 igual y no borra nada. El front lo llama al
+        desactivar y al cerrar sesión.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: endpoint
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Suscripción borrada (o no había)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/push/test:
+    post:
+      summary: Mandarme una push de prueba (CAM-119)
+      description: >
+        Cualquier rol. Manda "Las notificaciones de este dispositivo
+        funcionan." a todos los navegadores del usuario y responde cuántos
+        servicios de push la aceptaron. Es sincrónico, a diferencia de las
+        push de los avisos.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [delivered]
+                properties:
+                  delivered: { type: integer, minimum: 0 }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
 
 components:
   securitySchemes:
@@ -2732,3 +2824,16 @@ components:
           format: date-time
           nullable: true
           description: Cuándo se marcó como leído. null mientras no se leyó.
+
+    PushSubscriptionRequest:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint: { type: string, description: URL https del servicio de push del navegador. Hasta 1000 caracteres. }
+        expirationTime: { type: number, nullable: true, description: Se ignora. }
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh: { type: string }
+            auth: { type: string }

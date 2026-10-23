@@ -61,3 +61,12 @@ fleetguard:
     # cuánto se revisa (cron de Spring: segundo minuto hora día mes día-de-semana; acá, cada hora).
     reminder-after-hours: 12
     reminder-cron: "0 0 * * * *"
+  push:
+    # CAM-119: claves VAPID con las que el servidor firma las push al navegador. Igual que el secreto
+    # del JWT, este par es SOLO para desarrollo local y se commitea a propósito, para que el proyecto
+    # ande sin configurar nada. Para un deploy, generar otro y pisarlo en application-local.yml
+    # (cambiarlo invalida las suscripciones ya hechas). Vacías, la push se apaga sin romper nada.
+    public-key: BKxlwImnwTE3lIxq80BPqCK_OXHCr99VaymbSmhSWg_oiAdaZpNE9xDxYWnAILceWOQV8P3gd1ZyGdFq5wjZYfk
+    private-key: 9M6iS3GP2Kf691Lx1pzJLaoslLYgCAETR2hq9dnzQ8g
+    # Contacto que el servicio de push del navegador puede usar si hay un problema con los envíos.
+    subject: "mailto:fleetguard@example.com"
