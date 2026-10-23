@@ -12,9 +12,9 @@ import java.util.UUID;
  * existe la tabla de avisos. La implementación real la guarda en la base y la reemplaza; ver
  * docs/api/CAM-96-notifications-contract.md.
  *
- * Los avisos que nacen de un evento se piden desde un {@code @TransactionalEventListener}
- * (AFTER_COMMIT), así que la implementación no puede contar con la transacción del pedido que
- * originó el aviso: esa ya se confirmó. Los listeners abren la suya (REQUIRES_NEW).
+ * Quien avisa no llama a esto directo sino a través de {@link NotificationDispatcher}, que le da a
+ * cada aviso su propia transacción y hace que un error al guardarlo no rompa lo que lo originó. La
+ * implementación puede llevar {@code @Transactional} común y tirar excepciones normalmente.
  */
 public interface NotificationService {
 

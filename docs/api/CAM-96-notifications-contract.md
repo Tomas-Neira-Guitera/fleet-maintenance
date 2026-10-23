@@ -64,18 +64,23 @@ pasó.
 La excepción es CAM-101: el recordatorio no nace de un cambio sino del paso del
 tiempo, así que lo pide una tarea programada (`@Scheduled`) directo.
 
-### 2. Los listeners abren su propia transacción
+### 2. Cada aviso va en su propia transacción
 En AFTER_COMMIT la transacción del pedido ya se confirmó. Si la implementación
 de `NotificationService` se sumara a ella (`@Transactional` por defecto, REQUIRED),
-el `save` del aviso no se escribiría nunca, sin ningún error. Por eso los
-listeners llevan `@Transactional(propagation = REQUIRES_NEW)`. La
+el `save` del aviso no se escribiría nunca, sin ningún error. Por eso nadie
+llama a `NotificationService` directo: se pasa por `NotificationDispatcher`,
+que corre cada envío en una transacción nueva (REQUIRES_NEW). La
 implementación real puede llevar `@Transactional` común.
 
 ### 3. Un aviso que falla no rompe la operación
 En AFTER_COMMIT una excepción del listener le llega al pedido como un 500,
-aunque el cambio ya esté guardado. Los listeners atrapan cualquier error, lo
-dejan en el log y siguen: perder un aviso es mejor que hacerle creer al admin
-que no se asignó una OT que sí se asignó.
+aunque el cambio ya esté guardado. `NotificationDispatcher` atrapa cualquier
+error, lo deja en el log y sigue: perder un aviso es mejor que hacerle creer
+al admin que no se asignó una OT que sí se asignó. Lo atrapa **afuera** de la
+transacción del aviso (por eso es un `TransactionTemplate` y no
+`@Transactional` en el listener): adentro, la excepción ya la dejó marcada para
+rollback y el commit tiraría igual. En una tarea que manda varios avisos
+(CAM-101), uno que falla no se lleva puestos a los demás.
 
 ### 4. El texto lo arma el backend
 `title` y `message` llegan listos para mostrar. El front no interpreta `type`
