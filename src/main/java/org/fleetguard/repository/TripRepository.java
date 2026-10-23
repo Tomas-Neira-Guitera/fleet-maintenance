@@ -29,12 +29,14 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
     List<Trip> findOpenTripsToRemind(@Param("startedBefore") Instant startedBefore);
 
     /**
-     * Marca que ya se mandó el recordatorio (CAM-101). Un update de esa sola columna y no un save del
-     * viaje: si el chofer lo cerró mientras tanto, un save del viaje leído antes lo volvería a abrir.
+     * Marca que se manda el recordatorio (CAM-101), solo si el viaje sigue abierto y sin recordatorio.
+     * Devuelve 1 si lo marcó y 0 si no: el chofer lo cerró desde que se leyó, u otra corrida ya lo
+     * marcó. Es un update de esa sola columna y no un save del viaje leído antes, que lo volvería a abrir.
      */
     @Modifying
-    @Query("update Trip t set t.reminderSentAt = :sentAt where t.id = :id")
-    void markReminderSent(@Param("id") UUID id, @Param("sentAt") Instant sentAt);
+    @Query("update Trip t set t.reminderSentAt = :sentAt where t.id = :id "
+            + "and t.status = org.fleetguard.entity.TripStatus.OPEN and t.reminderSentAt is null")
+    int markReminderSent(@Param("id") UUID id, @Param("sentAt") Instant sentAt);
 
     /**
      * Viajes iniciados en el período, por chofer que los abrió (CAM-91). No cuenta los que se

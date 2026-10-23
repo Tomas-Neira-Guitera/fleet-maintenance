@@ -47,14 +47,18 @@ public class TripReminderService {
         Instant now = clock.instant();
         int sent = 0;
         for (Trip trip : tripRepository.findOpenTripsToRemind(now.minus(remindAfter))) {
-            // El aviso y la marca van juntos en la transacción del envío: si el aviso falla, el viaje
-            // queda sin marcar y se vuelve a intentar en la corrida siguiente, sin frenar a los demás.
-            boolean delivered = dispatcher.dispatch("recordatorio del viaje " + trip.getId(), () -> {
-                notificationService.notify(trip.getOpenedById(), NotificationType.TRIP_OPEN_REMINDER,
-                        "Acordate de cerrar el viaje", message(trip), "/");
-                tripRepository.markReminderSent(trip.getId(), now);
+            // La marca y el aviso van juntos en la transacción del envío. Primero la marca: si el chofer
+            // cerró el viaje desde que se leyó (u otra corrida ya lo marcó), no se avisa. Si el aviso
+            // falla, la marca se deshace y se vuelve a intentar en la corrida siguiente.
+            boolean[] marked = {false};
+            boolean committed = dispatcher.dispatch("recordatorio del viaje " + trip.getId(), () -> {
+                marked[0] = tripRepository.markReminderSent(trip.getId(), now) == 1;
+                if (marked[0]) {
+                    notificationService.notify(trip.getOpenedById(), NotificationType.TRIP_OPEN_REMINDER,
+                            "Acordate de cerrar el viaje", message(trip), "/");
+                }
             });
-            if (delivered) {
+            if (committed && marked[0]) {
                 sent++;
             }
         }

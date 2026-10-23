@@ -32,8 +32,9 @@ class TripReminderServiceTest {
 
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final NotificationService notificationService = mock(NotificationService.class);
+    private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final TripReminderService service = new TripReminderService(tripRepository, notificationService,
-            new NotificationDispatcher(mock(PlatformTransactionManager.class)), Clock.fixed(NOW, ZoneOffset.UTC), 12);
+            new NotificationDispatcher(transactionManager), Clock.fixed(NOW, ZoneOffset.UTC), 12);
 
     private final Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
 
@@ -49,6 +50,7 @@ class TripReminderServiceTest {
     @BeforeEach
     void setUp() {
         when(tripRepository.findOpenTripsToRemind(any())).thenReturn(List.of());
+        when(tripRepository.markReminderSent(any(), any())).thenReturn(1);
     }
 
     @Test
@@ -77,7 +79,19 @@ class TripReminderServiceTest {
     }
 
     @Test
-    void unAvisoQueFallaNoFrenaLosDemasYQuedaSinMarcarParaReintentar() throws Exception {
+    void siElChoferCerroElViajeDesdeQueSeLeyoNoLeAvisa() throws Exception {
+        Trip trip = trip(vehicle, "2026-10-22T10:00:00Z", UUID.randomUUID());
+        when(tripRepository.findOpenTripsToRemind(any())).thenReturn(List.of(trip));
+        // El update solo marca viajes abiertos y sin recordatorio: 0 filas.
+        when(tripRepository.markReminderSent(trip.getId(), NOW)).thenReturn(0);
+
+        assertEquals(0, service.sendReminders());
+
+        verify(notificationService, never()).notify(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void unAvisoQueFallaDeshaceSuMarcaYNoFrenaLosDemas() throws Exception {
         UUID choferQueFalla = UUID.randomUUID();
         Trip falla = trip(vehicle, "2026-10-22T10:00:00Z", choferQueFalla);
         Trip anda = trip(vehicle, "2026-10-22T11:00:00Z", UUID.randomUUID());
@@ -87,7 +101,9 @@ class TripReminderServiceTest {
 
         assertEquals(1, service.sendReminders());
 
-        verify(tripRepository, never()).markReminderSent(eq(falla.getId()), any());
-        verify(tripRepository).markReminderSent(anda.getId(), NOW);
+        // La marca del que falló va en la misma transacción que el aviso: se deshace y la corrida
+        // siguiente lo vuelve a intentar.
+        verify(transactionManager).rollback(any());
+        verify(notificationService).notify(eq(anda.getOpenedById()), any(), anyString(), anyString(), any());
     }
 }
