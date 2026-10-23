@@ -28,7 +28,7 @@ class EmailNotificationServiceTest {
     private EmailNotificationService service(boolean enabled, JavaMailSender sender) {
         ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
         when(provider.getIfAvailable()).thenReturn(sender);
-        return new EmailNotificationService(provider, enabled, "FleetGuard <avisos@fleetguard.local>", "http://localhost:5173/");
+        return new EmailNotificationService(provider, enabled, "FleetMaintenance <avisos@fleetguard.local>", "http://localhost:5173/");
     }
 
     @Test
@@ -40,14 +40,14 @@ class EmailNotificationServiceTest {
         verify(mailSender, times(2)).send(mails.capture());
         SimpleMailMessage first = mails.getAllValues().get(0);
         assertArrayEquals(new String[]{"a@x.com"}, first.getTo());
-        assertEquals("FleetGuard: Orden de trabajo finalizada", first.getSubject());
-        assertEquals("Frenos (AB123CD).\n\nVer en FleetGuard: http://localhost:5173/ordenes-trabajo/1"
-                + "\n\n--\nEste aviso se configura en FleetGuard, en Notificaciones.", first.getText());
+        assertEquals("FleetMaintenance: Orden de trabajo finalizada", first.getSubject());
+        assertEquals("Frenos (AB123CD).\n\nVer en FleetMaintenance: http://localhost:5173/ordenes-trabajo/1"
+                + "\n\n--\nEste aviso se configura en FleetMaintenance, en Notificaciones.", first.getText());
     }
 
     @Test
     void sinLinkNoAgregaLaLinea() {
-        assertEquals("Hola\n\n--\nEste aviso se configura en FleetGuard, en Notificaciones.",
+        assertEquals("Hola\n\n--\nEste aviso se configura en FleetMaintenance, en Notificaciones.",
                 service(true, mailSender).body("Hola", null));
     }
 

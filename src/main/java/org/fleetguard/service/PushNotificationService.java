@@ -153,7 +153,7 @@ public class PushNotificationService {
      * aceptaron.
      */
     public int sendTest(UUID userId) {
-        return deliver(subscriptionRepository.findByUserId(userId), "FleetGuard",
+        return deliver(subscriptionRepository.findByUserId(userId), "FleetMaintenance",
                 "Las notificaciones de este dispositivo funcionan.", "/");
     }
 

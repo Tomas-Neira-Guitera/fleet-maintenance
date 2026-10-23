@@ -28,7 +28,7 @@ public class EmailNotificationService {
 
     public EmailNotificationService(ObjectProvider<JavaMailSender> mailSender,
                                     @Value("${fleetguard.mail.enabled:false}") boolean enabled,
-                                    @Value("${fleetguard.mail.from:FleetGuard <avisos@fleetguard.local>}") String from,
+                                    @Value("${fleetguard.mail.from:FleetMaintenance <avisos@fleetguard.local>}") String from,
                                     @Value("${fleetguard.frontend-url:http://localhost:5173}") String frontendUrl) {
         this.mailSender = mailSender;
         this.enabled = enabled;
@@ -48,7 +48,7 @@ public class EmailNotificationService {
             SimpleMailMessage mail = new SimpleMailMessage();
             mail.setFrom(from);
             mail.setTo(address);
-            mail.setSubject("FleetGuard: " + subject);
+            mail.setSubject("FleetMaintenance: " + subject);
             mail.setText(body(message, link));
             try {
                 sender.send(mail);
@@ -63,8 +63,8 @@ public class EmailNotificationService {
     String body(String message, String link) {
         String text = message;
         if (link != null && !link.isBlank()) {
-            text += "\n\nVer en FleetGuard: " + frontendUrl + (link.startsWith("/") ? link : "/" + link);
+            text += "\n\nVer en FleetMaintenance: " + frontendUrl + (link.startsWith("/") ? link : "/" + link);
         }
-        return text + "\n\n--\nEste aviso se configura en FleetGuard, en Notificaciones.";
+        return text + "\n\n--\nEste aviso se configura en FleetMaintenance, en Notificaciones.";
     }
 }

@@ -78,7 +78,7 @@ fleetguard:
   mail:
     # CAM-117: false apaga el envío de emails (quedan en el log); el resto de los avisos sigue igual.
     enabled: true
-    from: "FleetGuard <avisos@fleetguard.local>"
+    from: "FleetMaintenance <avisos@fleetguard.local>"
   # Base de los links de los emails (el link de un aviso es una ruta del front).
   frontend-url: http://localhost:5173
   maintenance-alerts:
