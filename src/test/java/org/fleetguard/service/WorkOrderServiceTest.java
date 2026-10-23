@@ -490,6 +490,18 @@ class WorkOrderServiceTest {
     }
 
     @Test
+    void finalizarYCambiarDeTecnicoEnElMismoPedidoNoPublicaNada() throws Exception {
+        WorkOrder workOrder = existingInternalWithTechnician();
+        workOrder.start();
+        when(photoRepository.countByWorkOrder_Id(workOrder.getId())).thenReturn(1L);
+
+        service.update(workOrder.getId().toString(),
+                new UpdateWorkOrderRequest("finalizada", "Pastillas cambiadas", null, null, "", null, null, null));
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
     void cancelarUnaOtSinTecnicoNoPublicaNada() throws Exception {
         WorkOrder workOrder = new WorkOrder(vehicleId, WorkOrderSourceType.MANUAL, null, null, null, "Luces", null,
                 WorkOrderExecutionType.INTERNO, null, null, null);

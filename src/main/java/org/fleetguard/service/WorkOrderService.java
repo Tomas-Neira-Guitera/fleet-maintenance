@@ -317,14 +317,15 @@ public class WorkOrderService {
      * CAM-99/CAM-100: lo que el técnico se tiene que enterar de este cambio. Los avisos salen recién
      * después del commit (WorkOrderNotificationListener). Si en el mismo pedido se cambió el técnico y se
      * canceló, solo cuenta la cancelación, y se le avisa al que la tenía antes: al nuevo no le sirve
-     * enterarse de una OT que nunca llegó a tener.
+     * enterarse de una OT que nunca llegó a tener. Si se finalizó, no hay nada que avisar.
      */
     private void publishTechnicianEvents(WorkOrder workOrder, UUID previousTechnicianId) {
         if (workOrder.getStatus() == WorkOrderStatus.CANCELADA) {
             if (previousTechnicianId != null) {
                 eventPublisher.publishEvent(new WorkOrderCancelledEvent(workOrder.getId(), previousTechnicianId));
             }
-        } else if (!Objects.equals(previousTechnicianId, workOrder.getTechnicianId())) {
+        } else if (workOrder.getStatus() != WorkOrderStatus.FINALIZADA
+                && !Objects.equals(previousTechnicianId, workOrder.getTechnicianId())) {
             eventPublisher.publishEvent(new WorkOrderTechnicianChangedEvent(workOrder.getId(), previousTechnicianId,
                     workOrder.getTechnicianId()));
         }

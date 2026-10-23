@@ -31,6 +31,7 @@ import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Field;
 import java.time.Instant;
@@ -64,7 +65,7 @@ class ScheduleCreationServiceTest {
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final ScheduledMaintenanceService service = new ScheduledMaintenanceService(scheduleRepository,
             assignmentRepository, defectRepository, vehicleRepository, mock(WorkOrderRepository.class),
-            mock(UserRepository.class));
+            mock(UserRepository.class), mock(ApplicationEventPublisher.class));
 
     private Vehicle vehicle;
     private final String tomorrow = Instant.now().plus(1, ChronoUnit.DAYS).toString();
