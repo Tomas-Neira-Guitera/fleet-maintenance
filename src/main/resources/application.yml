@@ -56,3 +56,8 @@ fleetguard:
     # no supera al actual en más de esto. Frena errores de tipeo, que no se podrían corregir porque
     # el odómetro no baja. Ver service/OdometerReadings.
     max-jump-km: 5000
+  trips:
+    # CAM-101: a las cuántas horas de abierto se le recuerda al chofer que cierre el viaje, y cada
+    # cuánto se revisa (cron de Spring: segundo minuto hora día mes día-de-semana; acá, cada hora).
+    reminder-after-hours: 12
+    reminder-cron: "0 0 * * * *"
