@@ -143,6 +143,12 @@ public class GlobalExceptionHandler {
                 .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
     }
 
+    @ExceptionHandler(PushValidationException.class)
+    public ResponseEntity<ValidationError<FieldValidationErrorDetail>> handlePushValidation(PushValidationException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
+    }
+
     @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<ApiError> handleUserNotFound(UserNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
