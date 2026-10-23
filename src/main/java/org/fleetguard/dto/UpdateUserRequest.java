@@ -8,6 +8,8 @@ public record UpdateUserRequest(
         String username,
         String password,
         Boolean active,
-        String role
+        String role,
+        // CAM-117: null no lo toca, "" lo borra.
+        String email
 ) {
 }

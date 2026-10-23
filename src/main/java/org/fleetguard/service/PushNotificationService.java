@@ -6,7 +6,6 @@ import org.fleetguard.dto.FieldValidationErrorDetail;
 import org.fleetguard.dto.PushConfigDto;
 import org.fleetguard.dto.PushSubscriptionRequest;
 import org.fleetguard.entity.PushSubscription;
-import org.fleetguard.entity.Role;
 import org.fleetguard.entity.User;
 import org.fleetguard.exception.PushValidationException;
 import org.fleetguard.repository.PushSubscriptionRepository;
@@ -136,23 +135,15 @@ public class PushNotificationService {
                 .ifPresent(subscriptionRepository::delete);
     }
 
+    /** Los destinatarios de un aviso (CAM-117); los desactivados no reciben nada. */
     @Async
-    public void sendToUser(UUID userId, String title, String message, String link) {
-        // Un usuario desactivado (CAM-23) no recibe nada, igual que en sendToAdmins.
-        if (userRepository.findById(userId).filter(User::isActive).isEmpty()) {
-            return;
-        }
-        deliver(subscriptionRepository.findByUserId(userId), title, message, link);
-    }
-
-    @Async
-    public void sendToAdmins(String title, String message, String link) {
-        List<UUID> adminIds = userRepository.findByRoleOrderByUsernameAsc(Role.ADMIN).stream()
+    public void sendToUsers(List<UUID> userIds, String title, String message, String link) {
+        List<UUID> activeIds = userRepository.findAllById(userIds).stream()
                 .filter(User::isActive)
                 .map(User::getId)
                 .toList();
-        if (!adminIds.isEmpty()) {
-            deliver(subscriptionRepository.findByUserIdIn(adminIds), title, message, link);
+        if (!activeIds.isEmpty()) {
+            deliver(subscriptionRepository.findByUserIdIn(activeIds), title, message, link);
         }
     }
 

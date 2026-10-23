@@ -1,6 +1,8 @@
 package org.fleetguard.service;
 
 import org.fleetguard.dto.CreateVehicleRequest;
+import org.fleetguard.event.OdometerChangedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.fleetguard.dto.CurrentTripDto;
 import org.fleetguard.dto.FieldValidationErrorDetail;
 import org.fleetguard.dto.FleetStatusRowDto;
@@ -52,16 +54,19 @@ public class VehicleService {
 
     private static final int MIN_YEAR = 1980;
 
+    private final ApplicationEventPublisher eventPublisher;
+
     public VehicleService(VehicleRepository vehicleRepository, TripRepository tripRepository,
                            VehicleMaintenanceAssignmentRepository assignmentRepository,
                            DefectRepository defectRepository, UserNameService userNameService,
-                           VehicleMapper vehicleMapper) {
+                           VehicleMapper vehicleMapper, ApplicationEventPublisher eventPublisher) {
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.assignmentRepository = assignmentRepository;
         this.defectRepository = defectRepository;
         this.userNameService = userNameService;
         this.vehicleMapper = vehicleMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     /** CAM-15: orden alfabético por patente, no el orden de inserción en la base. */
@@ -238,6 +243,7 @@ public class VehicleService {
         }
         vehicle.setOdometerKm(odometerKm);
         vehicleRepository.save(vehicle);
+        eventPublisher.publishEvent(new OdometerChangedEvent(vehicle.getId()));
         return new OdometerResultDto(vehicle.getId().toString(), vehicle.getOdometerKm(), Instant.now().toString());
     }
 

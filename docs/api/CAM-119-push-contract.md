@@ -27,20 +27,20 @@ Cualquier rol, con su JWT. Cada usuario maneja solo sus suscripciones.
 2. En el panel de la campanita, "Activar en este dispositivo" pide el permiso
    del navegador, se suscribe con la clave pública y manda la suscripción al
    backend.
-3. Cada aviso que pasa por `NotificationService` (CAM-99, CAM-100, CAM-101 y los
-   que vengan) sale además como push a todos los navegadores del usuario.
+3. Cada aviso que tiene la push entre sus canales (por defecto, todos; se elige
+   por tipo en la configuración de CAM-117) sale como push a todos los
+   navegadores de sus destinatarios.
 4. El service worker la muestra; tocarla abre la app (o la trae al frente) en el
    `link` del aviso.
 
 ## Decisiones
 
-### 1. La push no depende de CAM-96
-`PushingNotificationService` es la `NotificationService` que reciben los avisos
-(`@Primary`): deja el aviso en la "bandeja" —la otra implementación, hoy
-`LoggingNotificationService` y después la que lo guarda en la base— y además lo
-manda como push. Quien implemente la bandeja de CAM-96 **solo tiene que
-reemplazar `LoggingNotificationService`**: no tiene que acordarse de llamar a la
-push.
+### 1. La push es un canal más
+Desde CAM-117 la push es uno de los tres canales de entrega (`PushNotificationSender`,
+junto a la campanita y el email). `DefaultNotificationService` decide, según la
+configuración de cada tipo, a quién y por qué canales sale cada aviso; los
+avisos concretos no saben nada de la push. Reemplaza al decorador
+`PushingNotificationService` de la primera versión, que la mandaba siempre.
 
 ### 2. La push sale después del commit, y en segundo plano
 Se manda recién cuando se confirma la transacción del aviso: si se deshace, no

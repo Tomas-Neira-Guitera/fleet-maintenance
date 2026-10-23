@@ -27,7 +27,9 @@ import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.repository.TripRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.fleetguard.event.BlockingDefectReportedEvent;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.ArgumentCaptor;
 
 import java.lang.reflect.Field;
@@ -63,8 +65,9 @@ class InspectionServiceTest {
     private final InspectionRepository inspectionRepository = mock(InspectionRepository.class);
     private final DefectRepository defectRepository = mock(DefectRepository.class);
     private final VehicleChecklistService checklistService = mock(VehicleChecklistService.class);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final InspectionService service = new InspectionService(vehicleRepository, tripRepository,
-            inspectionRepository, defectRepository, new InspectionMapper(), new TripMapper(), checklistService, new OdometerReadings(5000));
+            inspectionRepository, defectRepository, new InspectionMapper(), new TripMapper(), checklistService, new OdometerReadings(5000), eventPublisher);
 
     private final AuthenticatedUser driver = new AuthenticatedUser(UUID.randomUUID(), "chofer1", Role.CHOFER);
     private final AuthenticatedUser otherDriver = new AuthenticatedUser(UUID.randomUUID(), "chofer2", Role.CHOFER);
@@ -278,6 +281,34 @@ class InspectionServiceTest {
         assertEquals(result.trip().startedAt(), result.trip().endedAt());
         assertEquals("chofer1", result.trip().closedBy().name());
         assertTrue(savedInspection().isHasBlockingDefect());
+    }
+
+    @Test
+    void unDefectoBloqueantePublicaElEventoDelAvisoAlAdmin() {
+        noOpenTrip();
+        List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-neumaticos", "defect", null,
+                new DefectDetailDto("blocking", "Neumático cortado", "http://localhost/foto.jpg")));
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", answers, null), driver);
+
+        // CAM-97: un evento por inspección, con todo lo que dice el aviso.
+        ArgumentCaptor<BlockingDefectReportedEvent> event = ArgumentCaptor.forClass(BlockingDefectReportedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertEquals(vehicle.getId(), event.getValue().vehicleId());
+        assertEquals(InspectionType.PRE_TRIP, event.getValue().inspectionType());
+        assertEquals(List.of("Neumático cortado"), event.getValue().defectTitles());
+        assertEquals("chofer1", event.getValue().driverName());
+    }
+
+    @Test
+    void unDefectoNoBloqueanteNoPublicaElEvento() {
+        noOpenTrip();
+        List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-neumaticos", "defect", null,
+                new DefectDetailDto("non-blocking", "Foco trasero tenue", null)));
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", answers, null), driver);
+
+        verify(eventPublisher, never()).publishEvent(any(BlockingDefectReportedEvent.class));
     }
 
     @Test

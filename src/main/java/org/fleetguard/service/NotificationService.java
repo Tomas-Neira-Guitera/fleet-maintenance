@@ -1,31 +1,24 @@
 package org.fleetguard.service;
 
+import org.fleetguard.entity.NotificationChannel;
 import org.fleetguard.entity.NotificationType;
 
+import java.util.Set;
 import java.util.UUID;
 
 /**
- * Deja un aviso in-app para un usuario (CAM-96). Es lo único que conocen los avisos concretos
- * (CAM-97 a CAM-103): deciden cuándo y a quién avisar, y no saben cómo se guarda ni cómo se muestra.
- *
- * Hoy la implementa {@link LoggingNotificationService}, que solo escribe en el log, porque todavía no
- * existe la tabla de avisos. La implementación real la guarda en la base y la reemplaza; ver
- * docs/api/CAM-96-notifications-contract.md.
- *
- * Quien avisa no llama a esto directo sino a través de {@link NotificationDispatcher}, que le da a
- * cada aviso su propia transacción y hace que un error al guardarlo no rompa lo que lo originó. La
- * implementación puede llevar {@code @Transactional} común y tirar excepciones normalmente.
+ * Lo único que conocen los avisos concretos (CAM-97 a CAM-103, CAM-118): qué pasó y el texto. A quién y
+ * por qué canales sale lo decide la configuración (CAM-117). Se llama siempre por NotificationDispatcher.
  */
 public interface NotificationService {
 
-    /**
-     * @param recipientId usuario que recibe el aviso
-     * @param title       una línea, por ejemplo "Te asignaron una orden de trabajo"
-     * @param message     el detalle, ya armado
-     * @param link        ruta del front a la que lleva tocar el aviso, o null si no lleva a ningún lado
-     */
+    /** Aviso para la persona involucrada (el técnico de la OT, el chofer del viaje). */
     void notify(UUID recipientId, NotificationType type, String title, String message, String link);
 
-    /** Un aviso igual para cada usuario ADMIN activo (CAM-97, CAM-98). */
-    void notifyAllAdmins(NotificationType type, String title, String message, String link);
+    /** Aviso para los destinatarios elegidos en la configuración del tipo (por defecto, los admins). */
+    void notifyConfiguredRecipients(NotificationType type, String title, String message, String link);
+
+    /** Igual, pero con los canales de un plan con configuración propia (CAM-118), aunque el tipo esté apagado. */
+    void notifyConfiguredRecipients(NotificationType type, String title, String message, String link,
+                                    Set<NotificationChannel> channels);
 }

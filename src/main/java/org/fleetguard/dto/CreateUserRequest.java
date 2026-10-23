@@ -4,6 +4,8 @@ package org.fleetguard.dto;
 public record CreateUserRequest(
         String username,
         String password,
-        String role
+        String role,
+        // CAM-117: opcional, para los avisos por email.
+        String email
 ) {
 }

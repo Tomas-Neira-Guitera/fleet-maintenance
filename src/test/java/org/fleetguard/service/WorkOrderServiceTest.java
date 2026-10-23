@@ -28,6 +28,7 @@ import org.fleetguard.repository.WorkOrderExpenseRepository;
 import org.fleetguard.repository.WorkOrderPhotoRepository;
 import org.fleetguard.repository.WorkOrderRepository;
 import org.fleetguard.event.WorkOrderCancelledEvent;
+import org.fleetguard.event.WorkOrderFinalizedEvent;
 import org.fleetguard.event.WorkOrderTechnicianChangedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -490,7 +491,7 @@ class WorkOrderServiceTest {
     }
 
     @Test
-    void finalizarYCambiarDeTecnicoEnElMismoPedidoNoPublicaNada() throws Exception {
+    void finalizarYCambiarDeTecnicoEnElMismoPedidoSoloAvisaQueSeFinalizo() throws Exception {
         WorkOrder workOrder = existingInternalWithTechnician();
         workOrder.start();
         when(photoRepository.countByWorkOrder_Id(workOrder.getId())).thenReturn(1L);
@@ -498,7 +499,20 @@ class WorkOrderServiceTest {
         service.update(workOrder.getId().toString(),
                 new UpdateWorkOrderRequest("finalizada", "Pastillas cambiadas", null, null, "", null, null, null));
 
-        verify(eventPublisher, never()).publishEvent(any());
+        // CAM-98: al admin se le avisa que se finalizó; al técnico, nada.
+        verify(eventPublisher).publishEvent(new WorkOrderFinalizedEvent(workOrder.getId()));
+        verify(eventPublisher, never()).publishEvent(any(WorkOrderTechnicianChangedEvent.class));
+        verify(eventPublisher, never()).publishEvent(any(WorkOrderCancelledEvent.class));
+    }
+
+    @Test
+    void pasarAEnProcesoNoAvisaQueSeFinalizo() throws Exception {
+        WorkOrder workOrder = existingInternalWithTechnician();
+
+        service.update(workOrder.getId().toString(),
+                new UpdateWorkOrderRequest("en_proceso", null, null, null, null, null, null, null));
+
+        verify(eventPublisher, never()).publishEvent(any(WorkOrderFinalizedEvent.class));
     }
 
     @Test

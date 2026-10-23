@@ -147,4 +147,36 @@ class WorkOrderNotificationListenerTest {
 
         verify(notificationService, never()).notify(any(), any(), any(), any(), any());
     }
+
+    @Test
+    void alFinalizarLeAvisaALosDestinatariosConQuienLaHizo() {
+        workOrder.setTechnicianId(newId);
+
+        listener.onFinalized(new WorkOrderFinalizedEvent(workOrder.getId()));
+
+        verify(notificationService).notifyConfiguredRecipients(NotificationType.WORK_ORDER_FINALIZED,
+                "Orden de trabajo finalizada", "Cambio de pastillas (AB123CD), hecha por juan.perez.",
+                "/ordenes-trabajo/" + workOrder.getId());
+    }
+
+    @Test
+    void unaOtExternaFinalizadaNombraAlTaller() throws Exception {
+        WorkOrder external = manualWorkOrder(null);
+        external.setExecutionType(WorkOrderExecutionType.EXTERNO);
+        external.setExternalProvider("Taller Norte");
+
+        listener.onFinalized(new WorkOrderFinalizedEvent(external.getId()));
+
+        verify(notificationService).notifyConfiguredRecipients(NotificationType.WORK_ORDER_FINALIZED,
+                "Orden de trabajo finalizada", "Cambio de pastillas (AB123CD), hecha por Taller Norte (externo).",
+                "/ordenes-trabajo/" + external.getId());
+    }
+
+    @Test
+    void unaOtSinTecnicoFinalizadaNoNombraANadie() {
+        listener.onFinalized(new WorkOrderFinalizedEvent(workOrder.getId()));
+
+        verify(notificationService).notifyConfiguredRecipients(NotificationType.WORK_ORDER_FINALIZED,
+                "Orden de trabajo finalizada", "Cambio de pastillas (AB123CD).", "/ordenes-trabajo/" + workOrder.getId());
+    }
 }

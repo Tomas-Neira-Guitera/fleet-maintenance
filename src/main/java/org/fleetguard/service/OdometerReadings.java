@@ -1,9 +1,12 @@
 package org.fleetguard.service;
 
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.event.OdometerChangedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 /**
@@ -21,9 +24,18 @@ public class OdometerReadings {
     private static final Logger log = LoggerFactory.getLogger(OdometerReadings.class);
 
     private final long maxJumpKm;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public OdometerReadings(@Value("${fleetguard.odometer.max-jump-km:5000}") long maxJumpKm) {
+    @Autowired
+    public OdometerReadings(@Value("${fleetguard.odometer.max-jump-km:5000}") long maxJumpKm,
+                            ApplicationEventPublisher eventPublisher) {
         this.maxJumpKm = maxJumpKm;
+        this.eventPublisher = eventPublisher;
+    }
+
+    /** Para tests que no miran los avisos de vencimiento (CAM-118). */
+    public OdometerReadings(long maxJumpKm) {
+        this(maxJumpKm, event -> { });
     }
 
     /** Aplica la lectura al vehículo si corresponde; devuelve si cambió. El vehículo tiene que estar gestionado. */
@@ -42,6 +54,7 @@ public class OdometerReadings {
             return false;
         }
         vehicle.setOdometerKm(readingKm);
+        eventPublisher.publishEvent(new OdometerChangedEvent(vehicle.getId()));
         return true;
     }
 }

@@ -5,6 +5,7 @@ import org.fleetguard.entity.ScheduledMaintenance;
 import org.fleetguard.entity.User;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.WorkOrder;
+import org.fleetguard.entity.WorkOrderExecutionType;
 import org.fleetguard.repository.ScheduledMaintenanceRepository;
 import org.fleetguard.repository.UserRepository;
 import org.fleetguard.repository.VehicleRepository;
@@ -76,6 +77,30 @@ public class WorkOrderNotificationListener {
                         notificationService.notify(event.technicianId(), NotificationType.WORK_ORDER_CANCELLED,
                                 "Se canceló una orden de trabajo",
                                 subject(workOrder) + ". Ya no tenés que hacerla.", LINK)));
+    }
+
+    /** CAM-98: al admin (o a quien diga la configuración); lleva al detalle de la OT. */
+    @TransactionalEventListener
+    public void onFinalized(WorkOrderFinalizedEvent event) {
+        dispatcher.dispatch("OT " + event.workOrderId() + " finalizada", () ->
+                workOrderRepository.findById(event.workOrderId()).ifPresent(workOrder ->
+                        notificationService.notifyConfiguredRecipients(NotificationType.WORK_ORDER_FINALIZED,
+                                "Orden de trabajo finalizada", subject(workOrder) + doneBy(workOrder) + ".",
+                                "/ordenes-trabajo/" + workOrder.getId())));
+    }
+
+    /** ", hecha por javier.romero" o ", hecha por Taller Norte (externo)". */
+    private String doneBy(WorkOrder workOrder) {
+        if (workOrder.getExecutionType() == WorkOrderExecutionType.EXTERNO) {
+            String provider = workOrder.getExternalProvider();
+            return provider == null || provider.isBlank() ? ", hecha por un taller externo" : ", hecha por " + provider + " (externo)";
+        }
+        if (workOrder.getTechnicianId() == null) {
+            return "";
+        }
+        return userRepository.findById(workOrder.getTechnicianId())
+                .map(user -> ", hecha por " + user.getUsername())
+                .orElse("");
     }
 
     /** "Cambio de pastillas (AB123CD)". */

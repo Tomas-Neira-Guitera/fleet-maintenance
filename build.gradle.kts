@@ -32,6 +32,9 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
 
+    // Avisos por email (CAM-117): SMTP de spring.mail; en local, Mailpit.
+    implementation("org.springframework.boot:spring-boot-starter-mail")
+
     // Push al navegador (CAM-119): firma VAPID y cifrado del mensaje (RFC 8291) con Bouncy Castle.
     // Decidido con Guido el 2026-10-23: hacerlo a mano no tiene sentido.
     // Sin async-http-client (trae Netty entero) ni jcommander (su CLI): PushService no usa ninguno.

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "FleetGuard — CAM-11 DVIR API",
-    "description": "Colección para probar el contrato de inspecciones (CAM-11): GET /api/vehicles, POST /api/photos, POST /api/inspections/{vehicleId}; más gastos (CAM-52) y usuarios (CAM-23, CAM-91). Corresponde a docs/api/openapi.yaml del repo fleet-maintenance.\n\n## Antes de arrancar\n1. Levantá el backend: `./gradlew bootRun` (o `./gradlew run` según quede el script) — por defecto en `http://localhost:8080`.\n2. Todavía no hay endpoint para crear vehículos (fuera de alcance de CAM-11), así que necesitás al menos una fila en la tabla `vehicle` para poder probar. Ejemplo de insert directo en Postgres (ajustá según tus nombres de columna reales):\n   ```sql\n   insert into vehicle (id, plate, brand, model)\n   values (gen_random_uuid(), 'AB123CD', 'Mercedes-Benz', 'Sprinter');\n   ```\n3. Importá también el archivo de entorno `FleetGuard-Local.postman_environment.json` y seleccionalo arriba a la derecha en Postman.\n\n## Orden recomendado (carpeta \"Flujo feliz\")\n1. **Auth → Login — chofer** y **Login — admin** — guardan `choferToken` y `adminToken`. Las inspecciones exigen el token de un chofer (CAM-85); gastos y usuarios, el de un admin.\n2. **Vehicles → Listar vehículos** — guarda en `vehicleId`/`vehiclePlate` el primer vehículo disponible y sin bloqueo.\n3. **Photos → Subir foto de defecto** — adjuntá cualquier imagen; guarda `photoUrl`/`photoId`.\n4. **Inspections → Pre-trip — sin defectos** — abre un viaje para `vehicleId`, a nombre del chofer del token.\n5. **Inspections → Post-trip — cierra el viaje** — cierra ese viaje.\n\n**Pre-trip — con defecto bloqueante** no abre un viaje (CAM-86): guarda la inspección y deja el vehículo bloqueado, así que después hay que volver a correr **Listar vehículos** para tomar otro.\n\nLas carpetas \"Casos de error\" tienen ejemplos de 401, 409 y 422 para verificar las reglas del contrato.\n\n## Auth (CAM-43)\nCorré antes `docs/db/seed-users.sql` contra tu Postgres local (crea `admin`/`admin123` y `chofer`/`chofer123`), o los datos demo de `docs/db/seed-demo.sql`. El token dura 12 horas. Hoy lo validan las inspecciones (rol CHOFER), `/api/expenses` y `/api/users` (rol ADMIN); el resto de los endpoints todavía no (CAM-73).",
+    "description": "Colección para probar el contrato de inspecciones (CAM-11): GET /api/vehicles, POST /api/photos, POST /api/inspections/{vehicleId}; más gastos (CAM-52), usuarios (CAM-23, CAM-91) y notificaciones (CAM-96, CAM-117, CAM-118). Corresponde a docs/api/openapi.yaml del repo fleet-maintenance.\n\n## Antes de arrancar\n1. Levantá el backend: `./gradlew bootRun` (o `./gradlew run` según quede el script) — por defecto en `http://localhost:8080`.\n2. Todavía no hay endpoint para crear vehículos (fuera de alcance de CAM-11), así que necesitás al menos una fila en la tabla `vehicle` para poder probar. Ejemplo de insert directo en Postgres (ajustá según tus nombres de columna reales):\n   ```sql\n   insert into vehicle (id, plate, brand, model)\n   values (gen_random_uuid(), 'AB123CD', 'Mercedes-Benz', 'Sprinter');\n   ```\n3. Importá también el archivo de entorno `FleetGuard-Local.postman_environment.json` y seleccionalo arriba a la derecha en Postman.\n\n## Orden recomendado (carpeta \"Flujo feliz\")\n1. **Auth → Login — chofer** y **Login — admin** — guardan `choferToken` y `adminToken`. Las inspecciones exigen el token de un chofer (CAM-85); gastos y usuarios, el de un admin.\n2. **Vehicles → Listar vehículos** — guarda en `vehicleId`/`vehiclePlate` el primer vehículo disponible y sin bloqueo.\n3. **Photos → Subir foto de defecto** — adjuntá cualquier imagen; guarda `photoUrl`/`photoId`.\n4. **Inspections → Pre-trip — sin defectos** — abre un viaje para `vehicleId`, a nombre del chofer del token.\n5. **Inspections → Post-trip — cierra el viaje** — cierra ese viaje.\n\n**Pre-trip — con defecto bloqueante** no abre un viaje (CAM-86): guarda la inspección y deja el vehículo bloqueado, así que después hay que volver a correr **Listar vehículos** para tomar otro.\n\nLas carpetas \"Casos de error\" tienen ejemplos de 401, 409 y 422 para verificar las reglas del contrato.\n\n## Auth (CAM-43)\nCorré antes `docs/db/seed-users.sql` contra tu Postgres local (crea `admin`/`admin123` y `chofer`/`chofer123`), o los datos demo de `docs/db/seed-demo.sql`. El token dura 12 horas. Hoy lo validan las inspecciones (rol CHOFER), `/api/expenses` y `/api/users` (rol ADMIN); el resto de los endpoints todavía no (CAM-73).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -1045,6 +1045,470 @@
                 "exec": [
                   "pm.test('422 Unprocessable Entity', () => pm.response.to.have.status(422));",
                   "pm.test('el detalle es del campo role', () => pm.response.json().details[0].field === 'role');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Notificaciones (CAM-96, CAM-117, CAM-118)",
+      "item": [
+        {
+          "name": "Mis avisos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications?limit=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "GET /api/notifications (CAM-96) — los últimos avisos sin descartar del usuario del token. Guarda en notificationId el primero."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const items = pm.response.json().items;",
+                  "if (items.length) pm.environment.set('notificationId', items[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cantidad sin leer",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/unread-count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "unread-count"
+              ]
+            },
+            "description": "GET /api/notifications/unread-count — el numerito de la campanita."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('trae count', () => typeof pm.response.json().count === 'number');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Marcar aviso como leído",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/{{notificationId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "{{notificationId}}",
+                "read"
+              ]
+            },
+            "description": "PATCH /api/notifications/{id}/read — idempotente."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Descartar aviso",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/{{notificationId}}/dismiss",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "{{notificationId}}",
+                "dismiss"
+              ]
+            },
+            "description": "PATCH /api/notifications/{id}/dismiss (CAM-96) — la X del panel: lo saca de la campanita sin borrarlo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Marcar todos como leídos",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "read-all"
+              ]
+            },
+            "description": "PATCH /api/notifications/read-all"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Configuración de avisos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notification-settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notification-settings"
+              ]
+            },
+            "description": "GET /api/notification-settings (CAM-117) — un item por tipo de aviso. Solo ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('8 tipos', () => pm.expect(pm.response.json().items.length).to.eql(8));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Configurar 'OT finalizada' por email",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notification-settings/work_order_finalized",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notification-settings",
+                "work_order_finalized"
+              ]
+            },
+            "description": "PUT /api/notification-settings/{type} (CAM-117) — reemplaza la configuración del tipo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"channels\": [\n    \"in_app\",\n    \"email\"\n  ],\n  \"recipientRoles\": [\n    \"ADMIN\"\n  ],\n  \"recipientUserIds\": []\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('guardada', () => pm.expect(pm.response.json().customized).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Configuración inválida (422)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notification-settings/work_order_assigned",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notification-settings",
+                "work_order_assigned"
+              ]
+            },
+            "description": "Un aviso 'owner' (le llega al técnico de la OT) no acepta destinatarios.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"channels\": [\n    \"in_app\"\n  ],\n  \"recipientRoles\": [\n    \"ADMIN\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Volver al default",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notification-settings/work_order_finalized",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notification-settings",
+                "work_order_finalized"
+              ]
+            },
+            "description": "DELETE /api/notification-settings/{type} — vuelve a la configuración por defecto."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('default', () => pm.expect(pm.response.json().customized).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Avisos de un plan",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans/{{planId}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "maintenance-plans",
+                "{{planId}}",
+                "notifications"
+              ]
+            },
+            "description": "GET /api/maintenance-plans/{id}/notifications (CAM-118). planId: un plan de GET /api/maintenance-plans."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Anticipación propia del plan",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans/{{planId}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "maintenance-plans",
+                "{{planId}}",
+                "notifications"
+              ]
+            },
+            "description": "PUT /api/maintenance-plans/{id}/notifications (CAM-118) — leadDays solo en planes por tiempo, leadKm solo en planes por km; ajustar al tipo del plan.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"channels\": [\n    \"in_app\",\n    \"email\"\n  ],\n  \"leadDays\": 15\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK o 422 según el tipo del plan', () => pm.expect([200, 422]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "El plan vuelve a lo general",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans/{{planId}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "maintenance-plans",
+                "{{planId}}",
+                "notifications"
+              ]
+            },
+            "description": "DELETE /api/maintenance-plans/{id}/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
                 ]
               }
             }

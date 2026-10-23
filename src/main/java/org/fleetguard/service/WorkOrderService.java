@@ -25,6 +25,7 @@ import org.fleetguard.entity.WorkOrderPhoto;
 import org.fleetguard.entity.WorkOrderSourceType;
 import org.fleetguard.entity.WorkOrderStatus;
 import org.fleetguard.event.WorkOrderCancelledEvent;
+import org.fleetguard.event.WorkOrderFinalizedEvent;
 import org.fleetguard.event.WorkOrderTechnicianChangedEvent;
 import org.fleetguard.exception.DefectNotFoundException;
 import org.fleetguard.exception.ScheduleNotFoundException;
@@ -310,6 +311,10 @@ public class WorkOrderService {
 
         workOrderRepository.save(workOrder);
         publishTechnicianEvents(workOrder, previousTechnicianId);
+        // CAM-98: una OT cerrada no se edita (WORK_ORDER_CLOSED), así que si quedó finalizada fue en este pedido.
+        if (workOrder.getStatus() == WorkOrderStatus.FINALIZADA) {
+            eventPublisher.publishEvent(new WorkOrderFinalizedEvent(workOrder.getId()));
+        }
         return toDto(workOrder);
     }
 

@@ -140,12 +140,12 @@ class PushNotificationServiceTest {
     void mandaElAvisoATodosLosNavegadoresDelUsuario() throws Exception {
         PushSubscription laptop = new PushSubscription(userId, ENDPOINT, "p", "a");
         PushSubscription phone = new PushSubscription(userId, "https://updates.push.services.mozilla.com/x", "p", "a");
-        when(repository.findByUserId(userId)).thenReturn(List.of(laptop, phone));
-        when(gateway.send(any(), anyString())).thenReturn(201);
         User technician = user(Role.TECNICO, true);
-        when(userRepository.findById(userId)).thenReturn(Optional.of(technician));
+        when(userRepository.findAllById(List.of(userId))).thenReturn(List.of(technician));
+        when(repository.findByUserIdIn(List.of(technician.getId()))).thenReturn(List.of(laptop, phone));
+        when(gateway.send(any(), anyString())).thenReturn(201);
 
-        service.sendToUser(userId, "Te asignaron una orden de trabajo", "Frenos (AB123CD).", "/");
+        service.sendToUsers(List.of(userId), "Te asignaron una orden de trabajo", "Frenos (AB123CD).", "/");
 
         String payload = "{\"title\":\"Te asignaron una orden de trabajo\",\"body\":\"Frenos (AB123CD).\",\"link\":\"/\"}";
         verify(gateway).send(laptop, payload);
@@ -154,13 +154,13 @@ class PushNotificationServiceTest {
 
     @Test
     void aUnUsuarioDesactivadoONoEncontradoNoLeMandaNada() throws Exception {
-        when(userRepository.findById(userId)).thenReturn(Optional.of(user(Role.TECNICO, false)));
-        service.sendToUser(userId, "Título", "Mensaje", "/");
+        when(userRepository.findAllById(List.of(userId))).thenReturn(List.of(user(Role.TECNICO, false)));
+        service.sendToUsers(List.of(userId), "Título", "Mensaje", "/");
 
-        when(userRepository.findById(userId)).thenReturn(Optional.empty());
-        service.sendToUser(userId, "Título", "Mensaje", "/");
+        when(userRepository.findAllById(List.of(userId))).thenReturn(List.of());
+        service.sendToUsers(List.of(userId), "Título", "Mensaje", "/");
 
-        verify(repository, never()).findByUserId(any());
+        verify(repository, never()).findByUserIdIn(any());
         verify(gateway, never()).send(any(), any());
     }
 
@@ -197,26 +197,18 @@ class PushNotificationServiceTest {
     }
 
     @Test
-    void aLosAdminsSoloLesLlegaALosActivos() throws Exception {
+    void aVariosDestinatariosSoloLesLlegaALosActivos() throws Exception {
         User active = user(Role.ADMIN, true);
         User inactive = user(Role.ADMIN, false);
-        when(userRepository.findByRoleOrderByUsernameAsc(Role.ADMIN)).thenReturn(List.of(active, inactive));
+        List<UUID> ids = List.of(active.getId(), inactive.getId());
+        when(userRepository.findAllById(ids)).thenReturn(List.of(active, inactive));
         PushSubscription subscription = new PushSubscription(active.getId(), ENDPOINT, "p", "a");
         when(repository.findByUserIdIn(List.of(active.getId()))).thenReturn(List.of(subscription));
         when(gateway.send(any(), anyString())).thenReturn(201);
 
-        service.sendToAdmins("Defecto bloqueante", "AB123CD", "/vehiculos/1");
+        service.sendToUsers(ids, "Defecto bloqueante", "AB123CD", "/vehiculos/1");
 
         verify(gateway).send(eq(subscription), anyString());
-    }
-
-    @Test
-    void sinAdminsActivosNoBuscaSuscripciones() {
-        when(userRepository.findByRoleOrderByUsernameAsc(Role.ADMIN)).thenReturn(List.of(user(Role.ADMIN, false)));
-
-        service.sendToAdmins("Defecto bloqueante", "AB123CD", "/vehiculos/1");
-
-        verify(repository, never()).findByUserIdIn(any());
     }
 
     private static User user(Role role, boolean active) {
