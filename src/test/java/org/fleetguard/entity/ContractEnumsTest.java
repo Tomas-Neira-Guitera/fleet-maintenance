@@ -81,6 +81,15 @@ class ContractEnumsTest {
     }
 
     @Test
+    void avisos() {
+        assertContract(NotificationType.class, NotificationType::toJson, NotificationType::fromJson,
+                Map.of(NotificationType.WORK_ORDER_ASSIGNED, "work_order_assigned",
+                        NotificationType.WORK_ORDER_UNASSIGNED, "work_order_unassigned",
+                        NotificationType.WORK_ORDER_CANCELLED, "work_order_cancelled",
+                        NotificationType.TRIP_OPEN_REMINDER, "trip_open_reminder"));
+    }
+
+    @Test
     void elEstadoDeMantenimientoSeOrdenaPorGravedad() {
         assertEquals(Map.of(MaintenanceStatus.AL_DIA, "al_dia", MaintenanceStatus.POR_VENCER, "por_vencer",
                         MaintenanceStatus.VENCIDO, "vencido"),
