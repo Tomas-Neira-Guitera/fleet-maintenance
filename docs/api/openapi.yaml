@@ -1728,6 +1728,12 @@ paths:
       responses:
         "204":
           description: Suscripción guardada
+        "400":
+          description: JSON mal formado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "422":
@@ -1748,6 +1754,12 @@ paths:
       responses:
         "204":
           description: Suscripción borrada (o no había)
+        "400":
+          description: Falta el parámetro endpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -2829,11 +2841,17 @@ components:
       type: object
       required: [endpoint, keys]
       properties:
-        endpoint: { type: string, description: URL https del servicio de push del navegador. Hasta 1000 caracteres. }
+        endpoint:
+          type: string
+          description: >
+            URL https del servicio de push del navegador, hasta 1000 caracteres.
+            Solo se aceptan los de Google (fcm.googleapis.com), Mozilla
+            (push.services.mozilla.com), Microsoft (notify.windows.com) y Apple
+            (push.apple.com), o subdominios, en el puerto 443.
         expirationTime: { type: number, nullable: true, description: Se ignora. }
         keys:
           type: object
           required: [p256dh, auth]
           properties:
-            p256dh: { type: string }
-            auth: { type: string }
+            p256dh: { type: string, description: Clave P-256 sin comprimir (65 bytes) en base64url. }
+            auth: { type: string, description: Secreto de 16 bytes en base64url. }

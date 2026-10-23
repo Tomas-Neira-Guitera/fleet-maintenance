@@ -34,7 +34,11 @@ dependencies {
 
     // Push al navegador (CAM-119): firma VAPID y cifrado del mensaje (RFC 8291) con Bouncy Castle.
     // Decidido con Guido el 2026-10-23: hacerlo a mano no tiene sentido.
-    implementation("nl.martijndwars:web-push:5.1.1")
+    // Sin async-http-client (trae Netty entero) ni jcommander (su CLI): PushService no usa ninguno.
+    implementation("nl.martijndwars:web-push:5.1.1") {
+        exclude(group = "org.asynchttpclient")
+        exclude(group = "com.beust")
+    }
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")

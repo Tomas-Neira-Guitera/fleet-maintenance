@@ -10,8 +10,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import org.apache.http.HttpResponse;
+
 import java.security.GeneralSecurityException;
 import java.security.Security;
+import java.time.Duration;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * PushGateway con la librería web-push (CAM-119): firma con las claves VAPID de
@@ -22,6 +28,8 @@ import java.security.Security;
 public class WebPushGateway implements PushGateway {
 
     private static final Logger log = LoggerFactory.getLogger(WebPushGateway.class);
+
+    private static final Duration SEND_TIMEOUT = Duration.ofSeconds(10);
 
     private final String publicKey;
     private final PushService pushService;
@@ -66,6 +74,14 @@ public class WebPushGateway implements PushGateway {
         }
         Notification notification = new Notification(subscription.getEndpoint(), subscription.getP256dh(),
                 subscription.getAuth(), payload);
-        return pushService.send(notification, Encoding.AES128GCM).getStatusLine().getStatusCode();
+        // send() de la librería espera la respuesta sin límite: un servicio que no contesta colgaría el hilo
+        // (y en la prueba, un hilo de Tomcat). Se espera SEND_TIMEOUT; cancelar cierra el cliente HTTP.
+        Future<HttpResponse> response = pushService.sendAsync(notification, Encoding.AES128GCM);
+        try {
+            return response.get(SEND_TIMEOUT.toSeconds(), TimeUnit.SECONDS).getStatusLine().getStatusCode();
+        } catch (TimeoutException e) {
+            response.cancel(true);
+            throw e;
+        }
     }
 }

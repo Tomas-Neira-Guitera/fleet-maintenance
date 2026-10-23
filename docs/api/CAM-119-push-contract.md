@@ -54,9 +54,22 @@ navegador venció la suscripción), se borra. Cualquier otro error queda en el l
 y no frena a los demás navegadores.
 
 ### 4. Un navegador es de un solo usuario
-Si en la misma compu entra otro usuario y activa las push, la suscripción pasa a
-ser suya. Además, el front la da de baja al cerrar sesión, así el siguiente que
-use la compu no recibe avisos del anterior.
+Si en la misma compu entra otro usuario y abre la campanita, la suscripción pasa
+a ser suya. Además, el front la da de baja al cerrar sesión, así el siguiente que
+use la compu no recibe avisos del anterior. Solo al cerrar sesión con el token
+vigente: si la sesión venció (el JWT dura 12 h), las push siguen, porque el
+chofer que abre la app al día siguiente sigue siendo el mismo y no tiene por qué
+perderlas.
+
+### 4b. Solo los servicios de push conocidos, y con límite de tiempo
+El backend le hace un POST al `endpoint` de cada suscripción, así que aceptar
+cualquier URL https serviría para hacerle pedidos a hosts internos (SSRF). Solo
+se aceptan los dominios de Google, Mozilla, Microsoft y Apple (ver
+`openapi.yaml`), en el puerto 443 y sin usuario en la URL. Las claves se validan
+al suscribir (P-256 de 65 bytes y secreto de 16), para no guardar una suscripción
+que falle en cada envío. Cada envío espera la respuesta como mucho 10 segundos:
+la librería no pone límite, y un servicio que no contesta colgaría el hilo.
+Solo un 2xx cuenta como entregado.
 
 ### 5. Claves VAPID de desarrollo commiteadas
 Igual que el secreto del JWT: el par de `application.yml` es solo para

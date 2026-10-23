@@ -18,6 +18,10 @@ import java.util.stream.Stream;
  * Así la push no depende de CAM-96: quien implemente la bandeja no tiene que acordarse de llamarla,
  * le alcanza con reemplazar LoggingNotificationService. La push sale recién cuando se confirma la
  * transacción del aviso: si se deshace, no se avisa nada que después no esté en la campanita.
+ *
+ * Se llama siempre a través de NotificationDispatcher. Desde un listener AFTER_COMMIT sin el
+ * dispatcher, la sincronización de la transacción ya confirmada sigue activa pero nadie la corre, y
+ * la push se perdería sin error.
  */
 @Primary
 @Service
@@ -44,9 +48,13 @@ public class PushingNotificationService implements NotificationService {
         afterCommit(() -> push.sendToAdmins(title, message, link));
     }
 
-    /** Todas las NotificationService menos esta: la bandeja. Se busca en cada aviso, no al crearla. */
+    /**
+     * Todas las NotificationService menos esta: la bandeja. Se busca en cada aviso, no al crearla. Por
+     * tipo y no por "!= this": si esta clase llegara a tener un proxy, el stream daría el proxy y se
+     * llamaría a sí misma sin fin.
+     */
     private Stream<NotificationService> inboxes() {
-        return notificationServices.orderedStream().filter(service -> service != this);
+        return notificationServices.orderedStream().filter(service -> !(service instanceof PushingNotificationService));
     }
 
     private static void afterCommit(Runnable action) {

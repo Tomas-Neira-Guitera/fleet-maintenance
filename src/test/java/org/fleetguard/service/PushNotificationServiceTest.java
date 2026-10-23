@@ -18,7 +18,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -32,6 +34,10 @@ import static org.mockito.Mockito.when;
 class PushNotificationServiceTest {
 
     private static final String ENDPOINT = "https://fcm.googleapis.com/fcm/send/abc";
+    // Una clave P-256 y un secreto de 16 bytes reales, como los que da el navegador.
+    private static final String P256DH =
+            "BNHx2hoGn4YMkkYurf__YgP0pLciSwI4t5gXoedDT6y0WiTulkEXVrBuzfjUNkOsVIRZ-VqE2fuYUISpncchR00";
+    private static final String AUTH = "WeWhPchfgEPGpzPcxjoH-Q";
 
     private final PushSubscriptionRepository repository = mock(PushSubscriptionRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
@@ -62,14 +68,14 @@ class PushNotificationServiceTest {
 
     @Test
     void suscribirGuardaUnNavegadorNuevo() {
-        service.subscribe(userId, request(ENDPOINT, "p256", "auth"));
+        service.subscribe(userId, request(ENDPOINT, P256DH, AUTH));
 
         ArgumentCaptor<PushSubscription> saved = ArgumentCaptor.forClass(PushSubscription.class);
         verify(repository).save(saved.capture());
         assertEquals(userId, saved.getValue().getUserId());
         assertEquals(ENDPOINT, saved.getValue().getEndpoint());
-        assertEquals("p256", saved.getValue().getP256dh());
-        assertEquals("auth", saved.getValue().getAuth());
+        assertEquals(P256DH, saved.getValue().getP256dh());
+        assertEquals(AUTH, saved.getValue().getAuth());
     }
 
     @Test
@@ -77,22 +83,44 @@ class PushNotificationServiceTest {
         PushSubscription existing = new PushSubscription(UUID.randomUUID(), ENDPOINT, "vieja", "vieja");
         when(repository.findByEndpoint(ENDPOINT)).thenReturn(Optional.of(existing));
 
-        service.subscribe(userId, request(ENDPOINT, "nueva", "nueva"));
+        service.subscribe(userId, request(ENDPOINT, P256DH, AUTH));
 
         assertEquals(userId, existing.getUserId());
-        assertEquals("nueva", existing.getP256dh());
+        assertEquals(P256DH, existing.getP256dh());
         verify(repository, never()).save(any());
     }
 
     @Test
-    void unaSuscripcionSinEndpointHttpsOSinClavesDevuelve422() {
+    void unaSuscripcionSinEndpointConocidoOConClavesMalFormadasDevuelve422() {
         PushValidationException ex = assertThrows(PushValidationException.class,
                 () -> service.subscribe(userId, new PushSubscriptionRequest("http://otro", null)));
-
         assertEquals(List.of("endpoint", "keys.p256dh", "keys.auth"),
                 ex.getDetails().stream().map(d -> d.field()).toList());
+
+        PushValidationException badKeys = assertThrows(PushValidationException.class,
+                () -> service.subscribe(userId, request(ENDPOINT, AUTH, "no es base64url!")));
+        assertEquals(List.of("keys.p256dh", "keys.auth"), badKeys.getDetails().stream().map(d -> d.field()).toList());
+
         assertThrows(PushValidationException.class,
-                () -> service.subscribe(userId, request("https://" + "x".repeat(1000), "p", "a")));
+                () -> service.subscribe(userId, request("https://fcm.googleapis.com/" + "x".repeat(1000), P256DH, AUTH)));
+    }
+
+    @Test
+    void soloSeAceptanLosServiciosDePushDeLosNavegadores() {
+        assertTrue(PushNotificationService.isKnownPushService("https://fcm.googleapis.com/fcm/send/abc"));
+        assertTrue(PushNotificationService.isKnownPushService("https://updates.push.services.mozilla.com/wpush/v2/x"));
+        assertTrue(PushNotificationService.isKnownPushService("https://wns2-bn3p.notify.windows.com/w/?token=x"));
+        assertTrue(PushNotificationService.isKnownPushService("https://web.push.apple.com/abc"));
+        assertTrue(PushNotificationService.isKnownPushService("https://fcm.googleapis.com:443/fcm/send/abc"));
+
+        // Hosts internos, otro protocolo u otro puerto, usuario en la URL o un dominio parecido: no.
+        assertFalse(PushNotificationService.isKnownPushService("https://10.0.0.5:8443/loquesea"));
+        assertFalse(PushNotificationService.isKnownPushService("http://fcm.googleapis.com/fcm/send/abc"));
+        assertFalse(PushNotificationService.isKnownPushService("https://fcm.googleapis.com:8443/x"));
+        assertFalse(PushNotificationService.isKnownPushService("https://fcm.googleapis.com@10.0.0.5/x"));
+        assertFalse(PushNotificationService.isKnownPushService("https://evilfcm.googleapis.com.attacker.com/x"));
+        assertFalse(PushNotificationService.isKnownPushService("https://notfcm.googleapis.com.evil/x"));
+        assertFalse(PushNotificationService.isKnownPushService("no es una url"));
     }
 
     @Test
@@ -114,6 +142,8 @@ class PushNotificationServiceTest {
         PushSubscription phone = new PushSubscription(userId, "https://updates.push.services.mozilla.com/x", "p", "a");
         when(repository.findByUserId(userId)).thenReturn(List.of(laptop, phone));
         when(gateway.send(any(), anyString())).thenReturn(201);
+        User technician = user(Role.TECNICO, true);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(technician));
 
         service.sendToUser(userId, "Te asignaron una orden de trabajo", "Frenos (AB123CD).", "/");
 
@@ -123,17 +153,32 @@ class PushNotificationServiceTest {
     }
 
     @Test
+    void aUnUsuarioDesactivadoONoEncontradoNoLeMandaNada() throws Exception {
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user(Role.TECNICO, false)));
+        service.sendToUser(userId, "Título", "Mensaje", "/");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+        service.sendToUser(userId, "Título", "Mensaje", "/");
+
+        verify(repository, never()).findByUserId(any());
+        verify(gateway, never()).send(any(), any());
+    }
+
+    @Test
     void unaSuscripcionVencidaSeBorraYUnErrorNoFrenaALasDemas() throws Exception {
         PushSubscription gone = new PushSubscription(userId, "https://gone", "p", "a");
         PushSubscription broken = new PushSubscription(userId, "https://broken", "p", "a");
         PushSubscription ok = new PushSubscription(userId, ENDPOINT, "p", "a");
         PushSubscription rejected = new PushSubscription(userId, "https://rejected", "p", "a");
+        PushSubscription redirected = new PushSubscription(userId, "https://redirected", "p", "a");
         when(gateway.send(eq(gone), anyString())).thenReturn(410);
         when(gateway.send(eq(broken), anyString())).thenThrow(new java.io.IOException("sin red"));
         when(gateway.send(eq(ok), anyString())).thenReturn(201);
         when(gateway.send(eq(rejected), anyString())).thenReturn(400);
-        when(repository.findByUserId(userId)).thenReturn(List.of(gone, broken, ok, rejected));
+        when(gateway.send(eq(redirected), anyString())).thenReturn(302);
+        when(repository.findByUserId(userId)).thenReturn(List.of(gone, broken, ok, rejected, redirected));
 
+        // Solo cuenta un 2xx: una redirección no es "entregada".
         assertEquals(1, service.sendTest(userId));
 
         verify(repository).delete(gone);
@@ -153,8 +198,8 @@ class PushNotificationServiceTest {
 
     @Test
     void aLosAdminsSoloLesLlegaALosActivos() throws Exception {
-        User active = admin(true);
-        User inactive = admin(false);
+        User active = user(Role.ADMIN, true);
+        User inactive = user(Role.ADMIN, false);
         when(userRepository.findByRoleOrderByUsernameAsc(Role.ADMIN)).thenReturn(List.of(active, inactive));
         PushSubscription subscription = new PushSubscription(active.getId(), ENDPOINT, "p", "a");
         when(repository.findByUserIdIn(List.of(active.getId()))).thenReturn(List.of(subscription));
@@ -167,15 +212,15 @@ class PushNotificationServiceTest {
 
     @Test
     void sinAdminsActivosNoBuscaSuscripciones() {
-        when(userRepository.findByRoleOrderByUsernameAsc(Role.ADMIN)).thenReturn(List.of(admin(false)));
+        when(userRepository.findByRoleOrderByUsernameAsc(Role.ADMIN)).thenReturn(List.of(user(Role.ADMIN, false)));
 
         service.sendToAdmins("Defecto bloqueante", "AB123CD", "/vehiculos/1");
 
         verify(repository, never()).findByUserIdIn(any());
     }
 
-    private static User admin(boolean active) {
-        User user = new User("admin-" + active, "hash", Role.ADMIN);
+    private static User user(Role role, boolean active) {
+        User user = new User(role + "-" + active, "hash", role);
         try {
             Field id = User.class.getDeclaredField("id");
             id.setAccessible(true);

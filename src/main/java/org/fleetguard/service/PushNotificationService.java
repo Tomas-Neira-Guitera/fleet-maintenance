@@ -17,7 +17,11 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +36,13 @@ import java.util.UUID;
 public class PushNotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(PushNotificationService.class);
+
+    /**
+     * Servicios de push de los navegadores: Chrome y Edge sobre Android (FCM), Firefox (Mozilla), Edge en
+     * Windows (WNS) y Safari (Apple). Un endpoint tiene que ser de uno de estos dominios o un subdominio.
+     */
+    private static final List<String> PUSH_SERVICE_DOMAINS = List.of(
+            "fcm.googleapis.com", "push.services.mozilla.com", "notify.windows.com", "push.apple.com");
 
     private final PushSubscriptionRepository subscriptionRepository;
     private final UserRepository userRepository;
@@ -58,17 +69,22 @@ public class PushNotificationService {
     public void subscribe(UUID userId, PushSubscriptionRequest request) {
         List<FieldValidationErrorDetail> details = new ArrayList<>();
         String endpoint = request.endpoint() == null ? "" : request.endpoint().trim();
-        if (!endpoint.startsWith("https://")) {
-            details.add(new FieldValidationErrorDetail("endpoint", "Tiene que ser la URL https del servicio de push"));
-        } else if (endpoint.length() > 1000) {
+        if (endpoint.length() > 1000) {
             details.add(new FieldValidationErrorDetail("endpoint", "Hasta 1000 caracteres"));
+        } else if (!isKnownPushService(endpoint)) {
+            details.add(new FieldValidationErrorDetail("endpoint",
+                    "Tiene que ser la URL https de un servicio de push de navegador conocido"));
         }
         PushSubscriptionRequest.Keys keys = request.keys();
-        if (keys == null || keys.p256dh() == null || keys.p256dh().isBlank()) {
-            details.add(new FieldValidationErrorDetail("keys.p256dh", "Obligatoria"));
+        // p256dh: punto P-256 sin comprimir (65 bytes, empieza con 0x04); auth: 16 bytes. Una clave mal
+        // formada haría fallar cada envío para siempre.
+        byte[] p256dh = keys == null ? null : decodeBase64Url(keys.p256dh());
+        if (p256dh == null || p256dh.length != 65 || p256dh[0] != 0x04) {
+            details.add(new FieldValidationErrorDetail("keys.p256dh", "Tiene que ser una clave P-256 en base64url"));
         }
-        if (keys == null || keys.auth() == null || keys.auth().isBlank()) {
-            details.add(new FieldValidationErrorDetail("keys.auth", "Obligatoria"));
+        byte[] auth = keys == null ? null : decodeBase64Url(keys.auth());
+        if (auth == null || auth.length != 16) {
+            details.add(new FieldValidationErrorDetail("keys.auth", "Tiene que ser un secreto de 16 bytes en base64url"));
         }
         if (!details.isEmpty()) {
             throw new PushValidationException("Suscripción inválida", details);
@@ -77,6 +93,39 @@ public class PushNotificationService {
         subscriptionRepository.findByEndpoint(endpoint).ifPresentOrElse(
                 existing -> existing.renew(userId, keys.p256dh(), keys.auth()),
                 () -> subscriptionRepository.save(new PushSubscription(userId, endpoint, keys.p256dh(), keys.auth())));
+        log.info("Push activada para el usuario {} en {}…", userId, endpoint.substring(0, Math.min(40, endpoint.length())));
+    }
+
+    /**
+     * Solo los servicios de push de los navegadores: el backend le hace un POST a esta URL, así que una
+     * cualquiera (https://10.0.0.5/...) serviría para hacerle pedidos a hosts internos (SSRF).
+     */
+    static boolean isKnownPushService(String endpoint) {
+        URI uri;
+        try {
+            uri = new URI(endpoint);
+        } catch (URISyntaxException e) {
+            return false;
+        }
+        String host = uri.getHost();
+        if (!"https".equals(uri.getScheme()) || host == null || uri.getUserInfo() != null
+                || (uri.getPort() != -1 && uri.getPort() != 443)) {
+            return false;
+        }
+        String lowerHost = host.toLowerCase(Locale.ROOT);
+        return PUSH_SERVICE_DOMAINS.stream()
+                .anyMatch(domain -> lowerHost.equals(domain) || lowerHost.endsWith("." + domain));
+    }
+
+    private static byte[] decodeBase64Url(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Base64.getUrlDecoder().decode(value.trim().replace("=", ""));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /** Idempotente: un endpoint que no existe, o que es de otro usuario, no hace nada. */
@@ -89,6 +138,10 @@ public class PushNotificationService {
 
     @Async
     public void sendToUser(UUID userId, String title, String message, String link) {
+        // Un usuario desactivado (CAM-23) no recibe nada, igual que en sendToAdmins.
+        if (userRepository.findById(userId).filter(User::isActive).isEmpty()) {
+            return;
+        }
         deliver(subscriptionRepository.findByUserId(userId), title, message, link);
     }
 
@@ -116,6 +169,8 @@ public class PushNotificationService {
     /** Devuelve a cuántos navegadores la aceptó su servicio de push. */
     int deliver(List<PushSubscription> subscriptions, String title, String message, String link) {
         if (!gateway.isEnabled() || subscriptions.isEmpty()) {
+            log.info("Push \"{}\" sin enviar: {}", title,
+                    gateway.isEnabled() ? "el usuario no tiene navegadores suscriptos" : "la push está apagada");
             return 0;
         }
         String payload = payload(title, message, link);
@@ -123,10 +178,11 @@ public class PushNotificationService {
         for (PushSubscription subscription : subscriptions) {
             try {
                 int status = gateway.send(subscription, payload);
-                if (status < 400) {
+                if (status >= 200 && status < 300) {
                     accepted++;
                 } else if (status == 404 || status == 410) {
                     // El usuario revocó el permiso o el navegador venció la suscripción: no va a volver.
+                    log.info("Suscripción push {} vencida ({}): se borra", subscription.getId(), status);
                     subscriptionRepository.delete(subscription);
                 } else {
                     log.warn("El servicio de push respondió {} para la suscripción {}", status, subscription.getId());
@@ -136,6 +192,7 @@ public class PushNotificationService {
                 log.error("No se pudo mandar la push a la suscripción {}", subscription.getId(), e);
             }
         }
+        log.info("Push \"{}\" aceptada por {} de {} navegadores", title, accepted, subscriptions.size());
         return accepted;
     }
 
