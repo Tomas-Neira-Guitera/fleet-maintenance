@@ -3,6 +3,7 @@ package org.fleetguard.repository;
 import org.fleetguard.entity.Trip;
 import org.fleetguard.entity.TripStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -18,6 +19,24 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
     /** Todos los viajes abiertos, con su vehículo: arma el listado de flota sin una consulta por vehículo. */
     @Query("select t from Trip t join fetch t.vehicle where t.status = :status")
     List<Trip> findByStatusWithVehicle(@Param("status") TripStatus status);
+
+    /**
+     * Viajes abiertos antes de {@code startedBefore} a los que todavía no se les mandó el recordatorio
+     * de cerrarlos (CAM-101), con su vehículo. Sin quién lo abrió no hay a quién avisarle.
+     */
+    @Query("select t from Trip t join fetch t.vehicle where t.status = org.fleetguard.entity.TripStatus.OPEN "
+            + "and t.openedById is not null and t.reminderSentAt is null and t.startedAt < :startedBefore")
+    List<Trip> findOpenTripsToRemind(@Param("startedBefore") Instant startedBefore);
+
+    /**
+     * Marca que se manda el recordatorio (CAM-101), solo si el viaje sigue abierto y sin recordatorio.
+     * Devuelve 1 si lo marcó y 0 si no: el chofer lo cerró desde que se leyó, u otra corrida ya lo
+     * marcó. Es un update de esa sola columna y no un save del viaje leído antes, que lo volvería a abrir.
+     */
+    @Modifying
+    @Query("update Trip t set t.reminderSentAt = :sentAt where t.id = :id "
+            + "and t.status = org.fleetguard.entity.TripStatus.OPEN and t.reminderSentAt is null")
+    int markReminderSent(@Param("id") UUID id, @Param("sentAt") Instant sentAt);
 
     /**
      * Viajes iniciados en el período, por chofer que los abrió (CAM-91). No cuenta los que se

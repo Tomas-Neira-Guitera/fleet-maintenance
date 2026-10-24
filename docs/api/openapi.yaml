@@ -40,11 +40,27 @@ info:
     (CAM-105). Ver docs/api/CAM-105-vehicle-costs-contract.md.
 
 
+    Y los avisos in-app de cada usuario (CAM-96), con la campanita del
+    header. Ver docs/api/CAM-96-notifications-contract.md.
+
+
+    Y las push al navegador (CAM-119): los mismos avisos llegan aunque la
+    app esté cerrada. Ver docs/api/CAM-119-push-contract.md.
+
+
+    Y la configuración de los avisos (CAM-117): por tipo, si está activo,
+    por qué canales sale (campanita, push, email) y a quién; y los avisos de
+    vencimiento de cada plan (CAM-118). Ver
+    docs/api/CAM-117-118-notification-settings-contract.md.
+
+
     Autenticación: hoy validan el JWT (bearerAuth) /api/users y
     /api/expenses y /api/vehicles/{id}/costs (rol ADMIN) y POST /api/inspections/{vehicleId} (rol
-    CHOFER, CAM-85). El resto de los endpoints todavía no lo valida aunque
+    CHOFER, CAM-85), /api/notifications y /api/push (cualquier rol,
+    CAM-96 y CAM-119), y /api/notification-settings y
+    /api/maintenance-plans/{id}/notifications (rol ADMIN, CAM-117 y CAM-118). El resto de los endpoints todavía no lo valida aunque
     el esquema global lo declare (CAM-73).
-  version: "1.10"
+  version: "1.13"
 
 servers:
   - url: http://localhost:8080
@@ -1581,6 +1597,401 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
+  /api/notifications:
+    get:
+      summary: Mis avisos, del más nuevo al más viejo (CAM-96)
+      description: >
+        Cualquier rol (ADMIN, CHOFER, TECNICO). Devuelve solo los avisos del
+        usuario dueño del token, leídos y sin leer, hasta `limit`. Ver
+        docs/api/CAM-96-notifications-contract.md. Los descartados (la X
+        del panel) no vienen.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          description: Cuántos avisos traer. Por defecto 30, máximo 100.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Notification"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/notifications/unread-count:
+    get:
+      summary: Cuántos avisos sin leer tengo (CAM-96)
+      description: >
+        Cualquier rol. El numerito de la campanita: el front lo pide cada
+        60 segundos, así que tiene que ser una consulta liviana (un count).
+        No cuenta los descartados.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count]
+                properties:
+                  count: { type: integer, minimum: 0 }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/notifications/{id}/read:
+    patch:
+      summary: Marcar un aviso como leído (CAM-96)
+      description: >
+        Cualquier rol. Idempotente: marcar uno ya leído no cambia su
+        `readAt`. Un aviso de otro usuario responde 404, igual que uno que no
+        existe, para no revelar ids ajenos.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Marcado como leído
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: NOTIFICATION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/notifications/read-all:
+    patch:
+      summary: Marcar todos mis avisos como leídos (CAM-96)
+      description: >
+        Cualquier rol. Solo toca los avisos del usuario del token.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Todos marcados como leídos
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/notifications/{id}/dismiss:
+    patch:
+      summary: Descartar un aviso (la X del panel, CAM-96)
+      description: >
+        Cualquier rol. Lo saca de la campanita sin borrarlo y cuenta como
+        leído. Idempotente. Un aviso de otro usuario responde 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Descartado
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: NOTIFICATION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/notification-settings:
+    get:
+      summary: Configuración de cada tipo de aviso (CAM-117)
+      description: >
+        Solo ADMIN. Un item por tipo, en el orden de la pantalla, aunque no
+        se haya guardado nada (rige el default: activo, campanita + push, a
+        los admins; anticipación 7 días / 1000 km).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/NotificationSetting"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/notification-settings/{type}:
+    parameters:
+      - name: type
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/NotificationType"
+    put:
+      summary: Guardar la configuración de un tipo de aviso (CAM-117)
+      description: >
+        Solo ADMIN. Reemplaza la configuración completa. Activo pide al menos
+        un canal y, si el aviso es "configurable", al menos un rol o usuario.
+        Un aviso "owner" no acepta destinatarios; solo maintenance_due_soon
+        acepta (y pide) leadDays y leadKm.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNotificationSettingRequest"
+      responses:
+        "200":
+          description: Guardada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSetting"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: NOTIFICATION_TYPE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Volver a la configuración por defecto (CAM-117)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: La configuración por defecto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSetting"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: NOTIFICATION_TYPE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/maintenance-plans/{id}/notifications:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Avisos de vencimiento del plan (CAM-118)
+      description: >
+        Solo ADMIN. custom=false: el plan usa la configuración general de
+        maintenance_due_soon / maintenance_overdue, que viene en `general`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanNotificationSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: MAINTENANCE_PLAN_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    put:
+      summary: Darle al plan su propia configuración de avisos (CAM-118)
+      description: >
+        Solo ADMIN. leadDays solo en planes por tiempo (time/both) y leadKm
+        solo en planes por km (km/both); en esos casos son obligatorios.
+        Los destinatarios son siempre los de la configuración general. Con
+        enabled=false el plan no avisa aunque lo general esté activo.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePlanNotificationSettingsRequest"
+      responses:
+        "200":
+          description: Guardada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanNotificationSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: MAINTENANCE_PLAN_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: El plan vuelve a la configuración general (CAM-118)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: La configuración del plan, ya sin la propia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanNotificationSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: MAINTENANCE_PLAN_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/push/public-key:
+    get:
+      summary: Clave VAPID pública para suscribirse a las push (CAM-119)
+      description: >
+        Cualquier rol. El front la pasa como `applicationServerKey` a
+        `PushManager.subscribe()`. `publicKey` es null si el servidor no
+        tiene las push configuradas: en ese caso el front no ofrece activarlas.
+        Ver docs/api/CAM-119-push-contract.md.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [publicKey]
+                properties:
+                  publicKey: { type: string, nullable: true, description: Base64url, punto EC sin comprimir (65 bytes). }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/push/subscriptions:
+    post:
+      summary: Activar las push en este navegador (CAM-119)
+      description: >
+        Cualquier rol. El body es lo que devuelve `PushSubscription.toJSON()`
+        en el navegador, tal cual. Si ese navegador ya estaba suscripto (por
+        este usuario o por otro que usó la misma compu antes), pasa a ser del
+        usuario del token.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushSubscriptionRequest"
+      responses:
+        "204":
+          description: Suscripción guardada
+        "400":
+          description: JSON mal formado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Desactivar las push en este navegador (CAM-119)
+      description: >
+        Cualquier rol. Idempotente: un endpoint que no existe, o que es de
+        otro usuario, responde 204 igual y no borra nada. El front lo llama al
+        desactivar y al cerrar sesión.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: endpoint
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Suscripción borrada (o no había)
+        "400":
+          description: Falta el parámetro endpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/push/test:
+    post:
+      summary: Mandarme una push de prueba (CAM-119)
+      description: >
+        Cualquier rol. Manda "Las notificaciones de este dispositivo
+        funcionan." a todos los navegadores del usuario y responde cuántos
+        servicios de push la aceptaron. Es sincrónico, a diferencia de las
+        push de los avisos.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [delivered]
+                properties:
+                  delivered: { type: integer, minimum: 0 }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
 
 components:
   securitySchemes:
@@ -2518,6 +2929,10 @@ components:
         active:
           type: boolean
           description: CAM-23 -- false = desactivado, no puede loguearse.
+        email:
+          type: string
+          nullable: true
+          description: CAM-117 -- para los avisos por email. null si no tiene.
 
     CreateUserRequest:
       type: object
@@ -2541,6 +2956,10 @@ components:
             una letra con acento ocupa 2, así que puede ser 422 con menos de 72 caracteres.
         role:
           $ref: "#/components/schemas/Role"
+        email:
+          type: string
+          maxLength: 254
+          description: CAM-117 -- opcional. Vacío es "sin email".
 
     UpdateUserRequest:
       type: object
@@ -2559,6 +2978,10 @@ components:
           description: Resetea la contraseña. Mismo tope de 72 bytes que en el alta.
         active:
           type: boolean
+        email:
+          type: string
+          maxLength: 254
+          description: CAM-117 -- "" lo borra.
 
     UserStats:
       type: object
@@ -2602,3 +3025,150 @@ components:
           nullable: true
           description: Promedio de horas entre que se creó y se finalizó cada una de esas OTs. null si no finalizó ninguna.
         expensesTotal: { type: number, description: Suma de los gastos cargados en el período en las OTs a su cargo. }
+
+    NotificationType:
+      type: string
+      description: >
+        Qué pasó. Cada card de aviso suma el suyo (CAM-97 a CAM-103); el
+        front no depende del tipo para mostrar el aviso, solo del texto.
+      enum: [work_order_assigned, work_order_unassigned, work_order_cancelled, trip_open_reminder,
+             blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue]
+
+    NotificationChannel:
+      type: string
+      description: CAM-117 -- campanita, push al navegador o email.
+      enum: [in_app, push, email]
+
+    NotificationSetting:
+      type: object
+      required: [type, label, description, audience, enabled, channels, recipientRoles, recipientUserIds,
+                 supportsLead, customized]
+      properties:
+        type:
+          $ref: "#/components/schemas/NotificationType"
+        label: { type: string }
+        description: { type: string }
+        audience:
+          type: string
+          enum: [owner, configurable]
+          description: >
+            owner: le llega a la persona involucrada (recipientDescription dice
+            a quién) y no se eligen destinatarios. configurable: a los roles y
+            usuarios elegidos.
+        recipientDescription: { type: string, nullable: true }
+        enabled: { type: boolean }
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+        recipientRoles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Role"
+        recipientUserIds:
+          type: array
+          items: { type: string }
+        supportsLead: { type: boolean, description: Solo maintenance_due_soon. }
+        leadDays: { type: integer, nullable: true }
+        leadKm: { type: integer, nullable: true }
+        customized: { type: boolean, description: false si rige el default. }
+
+    UpdateNotificationSettingRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+        recipientRoles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Role"
+        recipientUserIds:
+          type: array
+          items: { type: string }
+        leadDays: { type: integer, minimum: 1, maximum: 365 }
+        leadKm: { type: integer, minimum: 1, maximum: 100000 }
+
+    PlanNotificationSettings:
+      type: object
+      required: [planId, intervalType, custom, general]
+      properties:
+        planId: { type: string }
+        intervalType: { type: string, enum: [km, time, both] }
+        custom: { type: boolean }
+        enabled: { type: boolean, nullable: true }
+        channels:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+        leadDays: { type: integer, nullable: true }
+        leadKm: { type: integer, nullable: true }
+        general:
+          type: object
+          required: [dueSoonEnabled, overdueEnabled, channels]
+          properties:
+            dueSoonEnabled: { type: boolean }
+            overdueEnabled: { type: boolean }
+            channels:
+              type: array
+              items:
+                $ref: "#/components/schemas/NotificationChannel"
+            leadDays: { type: integer, nullable: true }
+            leadKm: { type: integer, nullable: true }
+
+    UpdatePlanNotificationSettingsRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+        leadDays: { type: integer, minimum: 1, maximum: 365 }
+        leadKm: { type: integer, minimum: 1, maximum: 100000 }
+
+    Notification:
+      type: object
+      required: [id, type, title, message, createdAt]
+      properties:
+        id: { type: string }
+        type:
+          $ref: "#/components/schemas/NotificationType"
+        title: { type: string, description: Una línea, por ejemplo "Te asignaron una orden de trabajo". }
+        message: { type: string, description: El detalle, ya armado por el backend. }
+        link:
+          type: string
+          nullable: true
+          description: >
+            Ruta del front a la que lleva tocar el aviso ("/vehiculos/{id}",
+            "/"). null si no lleva a ningún lado.
+        createdAt: { type: string, format: date-time }
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Cuándo se marcó como leído. null mientras no se leyó.
+
+    PushSubscriptionRequest:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint:
+          type: string
+          description: >
+            URL https del servicio de push del navegador, hasta 1000 caracteres.
+            Solo se aceptan los de Google (fcm.googleapis.com), Mozilla
+            (push.services.mozilla.com), Microsoft (notify.windows.com) y Apple
+            (push.apple.com), o subdominios, en el puerto 443.
+        expirationTime: { type: number, nullable: true, description: Se ignora. }
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh: { type: string, description: Clave P-256 sin comprimir (65 bytes) en base64url. }
+            auth: { type: string, description: Secreto de 16 bytes en base64url. }

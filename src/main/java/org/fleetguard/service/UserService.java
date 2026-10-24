@@ -37,6 +37,9 @@ public class UserService {
     private static final Pattern USERNAME_PATTERN = Pattern.compile("[\\p{L}\\p{N} ._-]+");
     // Cualquier tipo de espacio, no solo el ASCII: el espacio duro (NBSP, U+00A0) y parecidos
     // llegan al pegar desde un documento o desde algunos teclados de celular.
+    // CAM-117: alcanza con frenar errores de tipeo; si el email no existe, el envío falla y queda en el log.
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("[^@\\s]+@[^@\\s]+\\.[^@\\s]+");
+    public static final int EMAIL_MAX_LENGTH = 254;
     private static final Pattern WHITESPACE_RUN = Pattern.compile("[\\s\\p{Z}]+", Pattern.UNICODE_CHARACTER_CLASS);
 
     private final UserRepository userRepository;
@@ -78,6 +81,7 @@ public class UserService {
         validateUsername(username, details);
         validatePassword(request.password(), details);
         Role role = parseRole(request.role(), details);
+        String email = normalizeEmail(request.email(), details);
         if (!details.isEmpty()) {
             throw new UserValidationException("Datos inválidos para crear el usuario", details);
         }
@@ -86,6 +90,7 @@ public class UserService {
             throw usernameTaken(username);
         }
         User user = new User(username, passwordEncoder.encode(request.password()), role);
+        user.setEmail(email);
         try {
             // saveAndFlush para que, si otra alta con el mismo nombre ganó la carrera entre el
             // chequeo de arriba y este insert, el unique de la base se traduzca acá a 409 y no a 500.
@@ -133,6 +138,7 @@ public class UserService {
         if (request.password() != null) {
             validatePassword(request.password(), details);
         }
+        String newEmail = request.email() == null ? null : normalizeEmail(request.email(), details);
         if (!details.isEmpty()) {
             throw new UserValidationException("Datos inválidos para editar el usuario", details);
         }
@@ -153,6 +159,9 @@ public class UserService {
         }
         if (request.active() != null) {
             user.setActive(request.active());
+        }
+        if (request.email() != null) {
+            user.setEmail(newEmail);
         }
         try {
             // Misma carrera que en el alta: dos pedidos que eligen el mismo nombre a la vez.
@@ -185,6 +194,20 @@ public class UserService {
             details.add(new FieldValidationErrorDetail("username",
                     "Solo letras, números, espacios, punto, guion y guion bajo"));
         }
+    }
+
+    /** Vacío es "sin email" (null). */
+    private static String normalizeEmail(String raw, List<FieldValidationErrorDetail> details) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String email = raw.trim();
+        if (email.length() > EMAIL_MAX_LENGTH) {
+            details.add(new FieldValidationErrorDetail("email", "No puede superar los " + EMAIL_MAX_LENGTH + " caracteres"));
+        } else if (!EMAIL_PATTERN.matcher(email).matches()) {
+            details.add(new FieldValidationErrorDetail("email", "No es un email válido"));
+        }
+        return email;
     }
 
     private static void validatePassword(String password, List<FieldValidationErrorDetail> details) {
@@ -223,6 +246,7 @@ public class UserService {
     }
 
     private static UserSummaryDto toDto(User user) {
-        return new UserSummaryDto(user.getId().toString(), user.getUsername(), user.getRole().name(), user.isActive());
+        return new UserSummaryDto(user.getId().toString(), user.getUsername(), user.getRole().name(), user.isActive(),
+                user.getEmail());
     }
 }

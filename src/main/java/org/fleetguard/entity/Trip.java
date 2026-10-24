@@ -47,6 +47,11 @@ public class Trip {
     @Column(name = "closed_by_name")
     private String closedByName;
 
+    // CAM-101: cuándo se le recordó al chofer que cerrara el viaje. Un solo recordatorio por viaje.
+    // Lo escribe TripRepository.markReminderSent, no el viaje.
+    @Column(name = "reminder_sent_at")
+    private Instant reminderSentAt;
+
     protected Trip() {
         // JPA
     }

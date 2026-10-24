@@ -143,6 +143,24 @@ public class GlobalExceptionHandler {
                 .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
     }
 
+    @ExceptionHandler(PushValidationException.class)
+    public ResponseEntity<ValidationError<FieldValidationErrorDetail>> handlePushValidation(PushValidationException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
+    }
+
+    @ExceptionHandler(NotificationNotFoundException.class)
+    public ResponseEntity<ApiError> handleNotificationNotFound(NotificationNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError(ex.getErrorCode(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(NotificationValidationException.class)
+    public ResponseEntity<ValidationError<FieldValidationErrorDetail>> handleNotificationValidation(NotificationValidationException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
+    }
+
     @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<ApiError> handleUserNotFound(UserNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

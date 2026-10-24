@@ -32,6 +32,18 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
 
+    // Avisos por email (CAM-117): SMTP de spring.mail; en local, Mailpit.
+    implementation("org.springframework.boot:spring-boot-starter-mail")
+
+    // Push al navegador (CAM-119): firma VAPID y cifrado del mensaje (RFC 8291) con Bouncy Castle.
+    // Decidido con Guido el 2026-10-23: hacerlo a mano no tiene sentido.
+    // Sin async-http-client (trae Netty entero) ni jcommander (su CLI): PushService no usa ninguno.
+    implementation("nl.martijndwars:web-push:5.1.1") {
+        exclude(group = "org.asynchttpclient")
+        exclude(group = "com.beust")
+    }
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")

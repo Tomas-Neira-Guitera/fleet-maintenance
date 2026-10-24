@@ -57,4 +57,19 @@ class OdometerReadingsTest {
         assertFalse(readings.apply(vehicle, 120300));
         assertEquals(120000, vehicle.getOdometerKm());
     }
+
+    @Test
+    void cuandoAvanzaPublicaElEventoParaLosAvisosDeVencimiento() throws Exception {
+        java.util.List<Object> events = new java.util.ArrayList<>();
+        OdometerReadings withEvents = new OdometerReadings(5000, events::add);
+        Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
+        vehicle.setOdometerKm(10_000);
+
+        withEvents.apply(vehicle, 10_500);
+        withEvents.apply(vehicle, 10_400);
+
+        // CAM-118: solo la lectura que cambió el km.
+        assertEquals(1, events.size());
+        assertTrue(events.get(0) instanceof org.fleetguard.event.OdometerChangedEvent);
+    }
 }

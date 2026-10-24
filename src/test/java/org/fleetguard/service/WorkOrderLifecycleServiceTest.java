@@ -36,6 +36,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -79,7 +80,8 @@ class WorkOrderLifecycleServiceTest {
     private final MaintenanceCompletionService completionService = mock(MaintenanceCompletionService.class);
     private final WorkOrderService service = new WorkOrderService(workOrderRepository, expenseRepository, photoRepository,
             vehicleRepository, defectRepository, scheduleRepository, scheduledMaintenanceService, completionService,
-            mock(UserRepository.class), new WorkOrderMapper(), new DefectMapper(), new OdometerReadings(5000));
+            mock(UserRepository.class), new WorkOrderMapper(), new DefectMapper(), new OdometerReadings(5000),
+            mock(ApplicationEventPublisher.class));
 
     private final UUID vehicleId = UUID.randomUUID();
     private final Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");

@@ -9,6 +9,8 @@ import org.fleetguard.mapper.InspectionMapper;
 import org.fleetguard.repository.DefectRepository;
 import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.entity.Defect;
+import org.fleetguard.event.BlockingDefectReportedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.fleetguard.entity.DefectSeverity;
 import org.fleetguard.exception.InspectionValidationException;
 import org.fleetguard.dto.ValidationErrorDetail;
@@ -48,10 +50,13 @@ public class InspectionService {
     private final VehicleChecklistService checklistService;
     private final OdometerReadings odometerReadings;
 
+    private final ApplicationEventPublisher eventPublisher;
+
     public InspectionService(VehicleRepository vehicleRepository, TripRepository tripRepository,
                               InspectionRepository inspectionRepository, DefectRepository defectRepository,
                               InspectionMapper inspectionMapper, TripMapper tripMapper,
-                              VehicleChecklistService checklistService, OdometerReadings odometerReadings) {
+                              VehicleChecklistService checklistService, OdometerReadings odometerReadings,
+                              ApplicationEventPublisher eventPublisher) {
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.inspectionRepository = inspectionRepository;
@@ -61,6 +66,7 @@ public class InspectionService {
         this.tripMapper = tripMapper;
         this.checklistService = checklistService;
         this.odometerReadings = odometerReadings;
+        this.eventPublisher = eventPublisher;
     }
 
     /** driver: el chofer del JWT (CAM-85); queda en la inspección y en el viaje que abre o cierra (CAM-87). */
@@ -126,6 +132,17 @@ public class InspectionService {
         }
 
         inspectionRepository.save(inspection);
+
+        // CAM-97: el aviso sale después del commit (BlockingDefectNotificationListener).
+        List<String> blockingTitles = inspection.getAnswers().stream()
+                .map(InspectionAnswer::getDefect)
+                .filter(defect -> defect != null && defect.getSeverity() == DefectSeverity.BLOCKING)
+                .map(Defect::getDescription)
+                .toList();
+        if (!blockingTitles.isEmpty()) {
+            eventPublisher.publishEvent(new BlockingDefectReportedEvent(vehicleId, vehicle.getPlate(), type,
+                    driver.username(), blockingTitles));
+        }
 
         // CAM-90: el km que cargó el chofer avanza el del vehículo (parte entera; la inspección guarda
         // el valor tal cual). Si no pasa la regla de OdometerReadings, la inspección vale igual.

@@ -81,6 +81,26 @@ class ContractEnumsTest {
     }
 
     @Test
+    void avisos() {
+        assertContract(NotificationType.class, NotificationType::toJson, NotificationType::fromJson,
+                Map.of(NotificationType.WORK_ORDER_ASSIGNED, "work_order_assigned",
+                        NotificationType.WORK_ORDER_UNASSIGNED, "work_order_unassigned",
+                        NotificationType.WORK_ORDER_CANCELLED, "work_order_cancelled",
+                        NotificationType.TRIP_OPEN_REMINDER, "trip_open_reminder",
+                        NotificationType.BLOCKING_DEFECT_REPORTED, "blocking_defect_reported",
+                        NotificationType.WORK_ORDER_FINALIZED, "work_order_finalized",
+                        NotificationType.MAINTENANCE_DUE_SOON, "maintenance_due_soon",
+                        NotificationType.MAINTENANCE_OVERDUE, "maintenance_overdue"));
+    }
+
+    @Test
+    void canalesDeAviso() {
+        assertContract(NotificationChannel.class, NotificationChannel::toJson, NotificationChannel::fromJson,
+                Map.of(NotificationChannel.IN_APP, "in_app", NotificationChannel.PUSH, "push",
+                        NotificationChannel.EMAIL, "email"));
+    }
+
+    @Test
     void elEstadoDeMantenimientoSeOrdenaPorGravedad() {
         assertEquals(Map.of(MaintenanceStatus.AL_DIA, "al_dia", MaintenanceStatus.POR_VENCER, "por_vencer",
                         MaintenanceStatus.VENCIDO, "vencido"),

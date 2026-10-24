@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -88,7 +89,7 @@ class UserServiceTest {
         when(passwordEncoder.encode("secreta1")).thenReturn("hash-de-secreta1");
         saveReturnsTheSameUserWithId();
 
-        UserSummaryDto created = service.create(new CreateUserRequest("  juan.perez ", "secreta1", "TECNICO"));
+        UserSummaryDto created = service.create(new CreateUserRequest("  juan.perez ", "secreta1", "TECNICO", null));
 
         assertEquals("juan.perez", created.username());
         assertEquals("TECNICO", created.role());
@@ -105,7 +106,7 @@ class UserServiceTest {
                         + "  Detail: Key (username)=(juan) already exists.")));
 
         UserConflictException ex = assertThrows(UserConflictException.class,
-                () -> service.create(new CreateUserRequest("juan", "secreta1", "CHOFER")));
+                () -> service.create(new CreateUserRequest("juan", "secreta1", "CHOFER", null)));
 
         assertEquals("USERNAME_TAKEN", ex.getErrorCode());
     }
@@ -118,14 +119,14 @@ class UserServiceTest {
                 new RuntimeException("ERROR: new row for relation \"users\" violates check constraint \"users_role_check\"")));
 
         assertThrows(DataIntegrityViolationException.class,
-                () -> service.create(new CreateUserRequest("juan", "secreta1", "TECNICO")));
+                () -> service.create(new CreateUserRequest("juan", "secreta1", "TECNICO", null)));
     }
 
     @Test
     void contraseñaDeMenosDe72CaracteresPeroMasDe72BytesDevuelve422() {
         // 40 "ñ" = 40 caracteres, 80 bytes en UTF-8: BCrypt la truncaría en silencio.
         UserValidationException ex = assertThrows(UserValidationException.class,
-                () -> service.create(new CreateUserRequest("juan", "ñ".repeat(40), "CHOFER")));
+                () -> service.create(new CreateUserRequest("juan", "ñ".repeat(40), "CHOFER", null)));
 
         assertTrue(ex.getDetails().stream().anyMatch(d -> d.field().equals("password")));
     }
@@ -135,7 +136,7 @@ class UserServiceTest {
         when(passwordEncoder.encode("secreta1")).thenReturn("hash");
         saveReturnsTheSameUserWithId();
 
-        UserSummaryDto created = service.create(new CreateUserRequest("  José   Muñoz ", "secreta1", "TECNICO"));
+        UserSummaryDto created = service.create(new CreateUserRequest("  José   Muñoz ", "secreta1", "TECNICO", null));
 
         assertEquals("José Muñoz", created.username());
         verify(userRepository).existsByUsernameIgnoreCase("José Muñoz");
@@ -156,7 +157,7 @@ class UserServiceTest {
         when(userRepository.existsByUsernameIgnoreCase("Admin")).thenReturn(true);
 
         UserConflictException ex = assertThrows(UserConflictException.class,
-                () -> service.create(new CreateUserRequest("Admin", "secreta1", "ADMIN")));
+                () -> service.create(new CreateUserRequest("Admin", "secreta1", "ADMIN", null)));
 
         assertEquals("USERNAME_TAKEN", ex.getErrorCode());
         verify(userRepository, never()).save(any());
@@ -165,7 +166,7 @@ class UserServiceTest {
     @Test
     void altaConContraseñaDeMenosDeSeisCaracteresDevuelve422() {
         UserValidationException ex = assertThrows(UserValidationException.class,
-                () -> service.create(new CreateUserRequest("juan", "12345", "CHOFER")));
+                () -> service.create(new CreateUserRequest("juan", "12345", "CHOFER", null)));
 
         assertTrue(ex.getDetails().stream().anyMatch(d -> d.field().equals("password")));
     }
@@ -173,7 +174,7 @@ class UserServiceTest {
     @Test
     void altaConDatosInvalidosDevuelveTodosLosErroresJuntos() {
         UserValidationException ex = assertThrows(UserValidationException.class,
-                () -> service.create(new CreateUserRequest("juan@perez", null, "MECANICO")));
+                () -> service.create(new CreateUserRequest("juan@perez", null, "MECANICO", null)));
 
         assertEquals(3, ex.getDetails().size());
     }
@@ -186,7 +187,7 @@ class UserServiceTest {
         saveReturnsTheSameUserWithId();
 
         UserSummaryDto updated = service.update(tecnico.getId().toString(),
-                new UpdateUserRequest("  Javier   Romero ", "nueva123", false, null), UUID.randomUUID());
+                new UpdateUserRequest("  Javier   Romero ", "nueva123", false, null, null), UUID.randomUUID());
 
         // CAM-91: el nombre se guarda en la misma forma canónica que en el alta.
         assertEquals("Javier Romero", updated.username());
@@ -196,13 +197,46 @@ class UserServiceTest {
     }
 
     @Test
+    void elEmailEsOpcionalYSeGuardaRecortado() {
+        when(passwordEncoder.encode("secreta1")).thenReturn("hash");
+        saveReturnsTheSameUserWithId();
+
+        UserSummaryDto created = service.create(new CreateUserRequest("juan", "secreta1", "ADMIN", "  juan@flota.com "));
+
+        assertEquals("juan@flota.com", created.email());
+    }
+
+    @Test
+    void unEmailInvalidoEs422() {
+        UserValidationException ex = assertThrows(UserValidationException.class,
+                () -> service.create(new CreateUserRequest("juan", "secreta1", "ADMIN", "juan@flota")));
+        assertEquals("email", ex.getDetails().get(0).field());
+    }
+
+    @Test
+    void editarElEmailYBorrarloConVacio() throws Exception {
+        User admin = user("admin", Role.ADMIN);
+        when(userRepository.findById(admin.getId())).thenReturn(Optional.of(admin));
+        saveReturnsTheSameUserWithId();
+
+        service.update(admin.getId().toString(), new UpdateUserRequest(null, null, null, null, "admin@flota.com"), admin.getId());
+        assertEquals("admin@flota.com", admin.getEmail());
+
+        service.update(admin.getId().toString(), new UpdateUserRequest(null, null, null, null, null), admin.getId());
+        assertEquals("admin@flota.com", admin.getEmail());
+
+        service.update(admin.getId().toString(), new UpdateUserRequest(null, null, null, null, ""), admin.getId());
+        assertNull(admin.getEmail());
+    }
+
+    @Test
     void elRolNoSePuedeCambiar() throws Exception {
         User tecnico = user("tecnico", Role.TECNICO);
         when(userRepository.findById(tecnico.getId())).thenReturn(Optional.of(tecnico));
 
         UserValidationException ex = assertThrows(UserValidationException.class,
                 () -> service.update(tecnico.getId().toString(),
-                        new UpdateUserRequest(null, null, null, "ADMIN"), UUID.randomUUID()));
+                        new UpdateUserRequest(null, null, null, "ADMIN", null), UUID.randomUUID()));
 
         assertEquals("role", ex.getDetails().get(0).field());
         assertEquals(Role.TECNICO, tecnico.getRole());
@@ -216,7 +250,7 @@ class UserServiceTest {
         saveReturnsTheSameUserWithId();
 
         UserSummaryDto updated = service.update(tecnico.getId().toString(),
-                new UpdateUserRequest(null, null, false, "TECNICO"), UUID.randomUUID());
+                new UpdateUserRequest(null, null, false, "TECNICO", null), UUID.randomUUID());
 
         assertEquals("TECNICO", updated.role());
         assertFalse(updated.active());
@@ -230,7 +264,7 @@ class UserServiceTest {
 
         UserConflictException ex = assertThrows(UserConflictException.class,
                 () -> service.update(chofer.getId().toString(),
-                        new UpdateUserRequest("Chofer2", null, null, null), UUID.randomUUID()));
+                        new UpdateUserRequest("Chofer2", null, null, null, null), UUID.randomUUID()));
 
         assertEquals("USERNAME_TAKEN", ex.getErrorCode());
         assertEquals("chofer1", chofer.getUsername());
@@ -244,7 +278,7 @@ class UserServiceTest {
 
         // El chequeo de nombre repetido ignora mayúsculas, pero excluye al propio usuario.
         UserSummaryDto updated = service.update(chofer.getId().toString(),
-                new UpdateUserRequest("Juan Perez", null, null, null), UUID.randomUUID());
+                new UpdateUserRequest("Juan Perez", null, null, null, null), UUID.randomUUID());
 
         assertEquals("Juan Perez", updated.username());
         verify(userRepository).existsByUsernameIgnoreCaseAndIdNot("Juan Perez", chofer.getId());
@@ -257,14 +291,14 @@ class UserServiceTest {
 
         UserValidationException vacio = assertThrows(UserValidationException.class,
                 () -> service.update(chofer.getId().toString(),
-                        new UpdateUserRequest("   ", null, null, null), UUID.randomUUID()));
+                        new UpdateUserRequest("   ", null, null, null, null), UUID.randomUUID()));
         UserValidationException conArroba = assertThrows(UserValidationException.class,
                 () -> service.update(chofer.getId().toString(),
-                        new UpdateUserRequest("juan@perez", null, null, null), UUID.randomUUID()));
+                        new UpdateUserRequest("juan@perez", null, null, null, null), UUID.randomUUID()));
 
         UserValidationException largo = assertThrows(UserValidationException.class,
                 () -> service.update(chofer.getId().toString(),
-                        new UpdateUserRequest("x".repeat(31), null, null, null), UUID.randomUUID()));
+                        new UpdateUserRequest("x".repeat(31), null, null, null, null), UUID.randomUUID()));
 
         assertEquals("username", vacio.getDetails().get(0).field());
         assertEquals("username", conArroba.getDetails().get(0).field());
@@ -282,7 +316,7 @@ class UserServiceTest {
 
         UserConflictException ex = assertThrows(UserConflictException.class,
                 () -> service.update(chofer.getId().toString(),
-                        new UpdateUserRequest("juan", null, null, null), UUID.randomUUID()));
+                        new UpdateUserRequest("juan", null, null, null, null), UUID.randomUUID()));
 
         assertEquals("USERNAME_TAKEN", ex.getErrorCode());
     }
@@ -296,7 +330,7 @@ class UserServiceTest {
 
         assertThrows(DataIntegrityViolationException.class,
                 () -> service.update(chofer.getId().toString(),
-                        new UpdateUserRequest(null, null, false, null), UUID.randomUUID()));
+                        new UpdateUserRequest(null, null, false, null, null), UUID.randomUUID()));
     }
 
     @Test
@@ -306,7 +340,7 @@ class UserServiceTest {
 
         UserValidationException ex = assertThrows(UserValidationException.class,
                 () -> service.update(chofer.getId().toString(),
-                        new UpdateUserRequest(null, "123", null, null), UUID.randomUUID()));
+                        new UpdateUserRequest(null, "123", null, null, null), UUID.randomUUID()));
 
         assertEquals("password", ex.getDetails().get(0).field());
     }
@@ -317,7 +351,7 @@ class UserServiceTest {
         when(userRepository.findById(admin.getId())).thenReturn(Optional.of(admin));
 
         UserConflictException ex = assertThrows(UserConflictException.class,
-                () -> service.update(admin.getId().toString(), new UpdateUserRequest(null, null, false, null), admin.getId()));
+                () -> service.update(admin.getId().toString(), new UpdateUserRequest(null, null, false, null, null), admin.getId()));
 
         assertEquals("CANNOT_MODIFY_SELF", ex.getErrorCode());
         assertTrue(admin.isActive());
@@ -330,7 +364,7 @@ class UserServiceTest {
         when(passwordEncoder.encode("otra123")).thenReturn("hash-otra");
         saveReturnsTheSameUserWithId();
 
-        service.update(admin.getId().toString(), new UpdateUserRequest("Administración", "otra123", true, null), admin.getId());
+        service.update(admin.getId().toString(), new UpdateUserRequest("Administración", "otra123", true, null, null), admin.getId());
 
         assertEquals("Administración", admin.getUsername());
         assertEquals("hash-otra", admin.getPasswordHash());
@@ -339,8 +373,8 @@ class UserServiceTest {
     @Test
     void editarUnUsuarioInexistenteDevuelve404() {
         assertThrows(UserNotFoundException.class,
-                () -> service.update(UUID.randomUUID().toString(), new UpdateUserRequest(null, null, true, null), UUID.randomUUID()));
+                () -> service.update(UUID.randomUUID().toString(), new UpdateUserRequest(null, null, true, null, null), UUID.randomUUID()));
         assertThrows(UserNotFoundException.class,
-                () -> service.update("no-es-un-uuid", new UpdateUserRequest(null, null, true, null), UUID.randomUUID()));
+                () -> service.update("no-es-un-uuid", new UpdateUserRequest(null, null, true, null, null), UUID.randomUUID()));
     }
 }

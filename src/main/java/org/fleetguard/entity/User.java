@@ -34,6 +34,10 @@ public class User {
     @Column(nullable = false, columnDefinition = "boolean default true")
     private boolean active = true;
 
+    // CAM-117: para los avisos por email. Opcional: sin email, ese usuario solo recibe los otros canales.
+    @Column(length = 254)
+    private String email;
+
     protected User() {
         // JPA
     }
@@ -70,6 +74,14 @@ public class User {
 
     public void setRole(Role role) {
         this.role = role;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
     }
 
     public boolean isActive() {

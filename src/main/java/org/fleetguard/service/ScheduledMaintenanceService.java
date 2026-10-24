@@ -26,6 +26,8 @@ import org.fleetguard.repository.UserRepository;
 import org.fleetguard.repository.VehicleMaintenanceAssignmentRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderRepository;
+import org.fleetguard.event.WorkOrderCancelledEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,19 +59,22 @@ public class ScheduledMaintenanceService {
     private final VehicleRepository vehicleRepository;
     private final WorkOrderRepository workOrderRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ScheduledMaintenanceService(ScheduledMaintenanceRepository scheduleRepository,
                                         VehicleMaintenanceAssignmentRepository assignmentRepository,
                                         DefectRepository defectRepository,
                                         VehicleRepository vehicleRepository,
                                         WorkOrderRepository workOrderRepository,
-                                        UserRepository userRepository) {
+                                        UserRepository userRepository,
+                                        ApplicationEventPublisher eventPublisher) {
         this.scheduleRepository = scheduleRepository;
         this.assignmentRepository = assignmentRepository;
         this.defectRepository = defectRepository;
         this.vehicleRepository = vehicleRepository;
         this.workOrderRepository = workOrderRepository;
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     public record CreateResult(ScheduleDto dto, boolean created) {
@@ -254,6 +259,10 @@ public class ScheduledMaintenanceService {
         for (WorkOrder workOrder : open) {
             workOrder.cancel();
             workOrderRepository.save(workOrder);
+            // CAM-100: el técnico se entera igual que si la cancelaran desde la OT.
+            if (workOrder.getTechnicianId() != null) {
+                eventPublisher.publishEvent(new WorkOrderCancelledEvent(workOrder.getId(), workOrder.getTechnicianId()));
+            }
         }
     }
 
