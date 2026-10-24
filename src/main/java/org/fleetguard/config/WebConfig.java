@@ -1,6 +1,9 @@
 package org.fleetguard.config;
 
 import org.fleetguard.auth.JwtAuthInterceptor;
+import org.fleetguard.entity.Role;
+import org.fleetguard.repository.UserRepository;
+import org.fleetguard.service.JwtService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -12,12 +15,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebConfig implements WebMvcConfigurer {
 
     private final String[] allowedOrigins;
-    private final JwtAuthInterceptor jwtAuthInterceptor;
+    private final JwtService jwtService;
+    private final UserRepository userRepository;
 
     public WebConfig(@Value("${fleetguard.cors.allowed-origins}") String allowedOrigins,
-                     JwtAuthInterceptor jwtAuthInterceptor) {
+                     JwtService jwtService, UserRepository userRepository) {
         this.allowedOrigins = allowedOrigins.split(",");
-        this.jwtAuthInterceptor = jwtAuthInterceptor;
+        this.jwtService = jwtService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -28,9 +33,22 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedHeaders("*");
     }
 
-    // CAM-23: por ahora solo /users exige JWT de ADMIN. CAM-73 suma el resto de la API acá.
+    // Rutas que ya exigen JWT, cada una con su rol: usuarios (CAM-23), gastos (CAM-52) y costos de
+    // un vehículo (CAM-105) son del admin; las inspecciones (CAM-85), del chofer; las push al
+    // navegador (CAM-119) y la campanita (CAM-96), de cualquiera que esté logueado. CAM-73 suma el resto.
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(jwtAuthInterceptor).addPathPatterns("/users", "/users/**");
+        registry.addInterceptor(requiring(Role.ADMIN))
+                .addPathPatterns("/users", "/users/**", "/expenses", "/vehicles/*/costs");
+        registry.addInterceptor(requiring(Role.CHOFER)).addPathPatterns("/inspections/**");
+        registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER, Role.TECNICO))
+                .addPathPatterns("/push/**", "/notifications", "/notifications/**");
+        // CAM-117/CAM-118: configuración de avisos, solo el admin.
+        registry.addInterceptor(requiring(Role.ADMIN))
+                .addPathPatterns("/notification-settings", "/notification-settings/**", "/maintenance-plans/*/notifications");
+    }
+
+    private JwtAuthInterceptor requiring(Role... roles) {
+        return new JwtAuthInterceptor(jwtService, userRepository, roles);
     }
 }

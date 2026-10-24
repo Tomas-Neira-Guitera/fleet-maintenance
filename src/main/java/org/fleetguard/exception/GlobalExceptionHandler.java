@@ -59,12 +59,6 @@ public class GlobalExceptionHandler {
                 .body(new ApiError("INVALID_CREDENTIALS", ex.getMessage()));
     }
 
-    @ExceptionHandler(MissingDriverHeaderException.class)
-    public ResponseEntity<ApiError> handleMissingDriverHeader(MissingDriverHeaderException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(new ApiError("MISSING_DRIVER_HEADER", ex.getMessage()));
-    }
-
     @ExceptionHandler(UnsupportedPhotoTypeException.class)
     public ResponseEntity<ApiError> handleUnsupportedPhotoType(UnsupportedPhotoTypeException ex) {
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
@@ -145,6 +139,24 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(UserValidationException.class)
     public ResponseEntity<ValidationError<FieldValidationErrorDetail>> handleUserValidation(UserValidationException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
+    }
+
+    @ExceptionHandler(PushValidationException.class)
+    public ResponseEntity<ValidationError<FieldValidationErrorDetail>> handlePushValidation(PushValidationException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
+    }
+
+    @ExceptionHandler(NotificationNotFoundException.class)
+    public ResponseEntity<ApiError> handleNotificationNotFound(NotificationNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError(ex.getErrorCode(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(NotificationValidationException.class)
+    public ResponseEntity<ValidationError<FieldValidationErrorDetail>> handleNotificationValidation(NotificationValidationException ex) {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
     }

@@ -6,12 +6,10 @@ import org.fleetguard.dto.UpdateUserRequest;
 import org.fleetguard.dto.UserSummaryDto;
 import org.fleetguard.entity.Role;
 import org.fleetguard.entity.User;
-import org.fleetguard.entity.WorkOrderStatus;
 import org.fleetguard.exception.UserConflictException;
 import org.fleetguard.exception.UserNotFoundException;
 import org.fleetguard.exception.UserValidationException;
 import org.fleetguard.repository.UserRepository;
-import org.fleetguard.repository.WorkOrderRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,8 +23,8 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
- * Gestión de usuarios (CAM-23): listado, alta y edición. Solo la usa un ADMIN -- /api/users
- * está protegido por JwtAuthInterceptor. Ver docs/api/CAM-23-users-contract.md.
+ * Gestión de usuarios (CAM-23, CAM-91): listado, alta y edición. Solo la usa un ADMIN --
+ * /api/users está protegido por JwtAuthInterceptor. Ver docs/api/CAM-23-users-contract.md.
  */
 @Service
 public class UserService {
@@ -39,18 +37,16 @@ public class UserService {
     private static final Pattern USERNAME_PATTERN = Pattern.compile("[\\p{L}\\p{N} ._-]+");
     // Cualquier tipo de espacio, no solo el ASCII: el espacio duro (NBSP, U+00A0) y parecidos
     // llegan al pegar desde un documento o desde algunos teclados de celular.
+    // CAM-117: alcanza con frenar errores de tipeo; si el email no existe, el envío falla y queda en el log.
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("[^@\\s]+@[^@\\s]+\\.[^@\\s]+");
+    public static final int EMAIL_MAX_LENGTH = 254;
     private static final Pattern WHITESPACE_RUN = Pattern.compile("[\\s\\p{Z}]+", Pattern.UNICODE_CHARACTER_CLASS);
-    private static final List<WorkOrderStatus> OPEN_WORK_ORDER_STATUSES =
-            List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO);
 
     private final UserRepository userRepository;
-    private final WorkOrderRepository workOrderRepository;
     private final PasswordEncoder passwordEncoder;
 
-    public UserService(UserRepository userRepository, WorkOrderRepository workOrderRepository,
-                       PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
-        this.workOrderRepository = workOrderRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -82,17 +78,10 @@ public class UserService {
     public UserSummaryDto create(CreateUserRequest request) {
         List<FieldValidationErrorDetail> details = new ArrayList<>();
         String username = normalizeUsername(request.username());
-        if (username.isEmpty()) {
-            details.add(new FieldValidationErrorDetail("username", "Obligatorio"));
-        } else if (username.length() > USERNAME_MAX_LENGTH) {
-            details.add(new FieldValidationErrorDetail("username",
-                    "No puede superar los " + USERNAME_MAX_LENGTH + " caracteres"));
-        } else if (!USERNAME_PATTERN.matcher(username).matches()) {
-            details.add(new FieldValidationErrorDetail("username",
-                    "Solo letras, números, espacios, punto, guion y guion bajo"));
-        }
+        validateUsername(username, details);
         validatePassword(request.password(), details);
         Role role = parseRole(request.role(), details);
+        String email = normalizeEmail(request.email(), details);
         if (!details.isEmpty()) {
             throw new UserValidationException("Datos inválidos para crear el usuario", details);
         }
@@ -101,6 +90,7 @@ public class UserService {
             throw usernameTaken(username);
         }
         User user = new User(username, passwordEncoder.encode(request.password()), role);
+        user.setEmail(email);
         try {
             // saveAndFlush para que, si otra alta con el mismo nombre ganó la carrera entre el
             // chequeo de arriba y este insert, el unique de la base se traduzca acá a 409 y no a 500.
@@ -128,42 +118,41 @@ public class UserService {
         return new UserConflictException("USERNAME_TAKEN", "Ya existe un usuario \"" + username + "\"");
     }
 
-    /** currentUserId: el admin que hace el pedido -- no puede desactivarse ni quitarse el rol ADMIN. */
+    /**
+     * CAM-91: se edita el nombre, la contraseña y si está activo; el rol queda como se dio de alta.
+     * currentUserId: el admin que hace el pedido -- no puede desactivarse a sí mismo.
+     */
     @Transactional
     public UserSummaryDto update(String idRaw, UpdateUserRequest request, UUID currentUserId) {
         User user = findUser(idRaw);
 
         List<FieldValidationErrorDetail> details = new ArrayList<>();
-        Role newRole = request.role() == null ? null : parseRole(request.role(), details);
+        // Mandar el mismo rol que ya tiene no es un cambio: se acepta sin hacer nada.
+        if (request.role() != null && !request.role().equals(user.getRole().name())) {
+            details.add(new FieldValidationErrorDetail("role", "El rol de un usuario no se puede cambiar"));
+        }
+        String newUsername = request.username() == null ? null : normalizeUsername(request.username());
+        if (newUsername != null) {
+            validateUsername(newUsername, details);
+        }
         if (request.password() != null) {
             validatePassword(request.password(), details);
         }
+        String newEmail = request.email() == null ? null : normalizeEmail(request.email(), details);
         if (!details.isEmpty()) {
             throw new UserValidationException("Datos inválidos para editar el usuario", details);
         }
 
-        boolean self = user.getId().equals(currentUserId);
-        if (self && Boolean.FALSE.equals(request.active())) {
+        if (user.getId().equals(currentUserId) && Boolean.FALSE.equals(request.active())) {
             throw new UserConflictException("CANNOT_MODIFY_SELF", "No podés desactivar tu propio usuario");
         }
-        if (self && newRole != null && newRole != Role.ADMIN) {
-            throw new UserConflictException("CANNOT_MODIFY_SELF", "No podés quitarte el rol de administrador");
-        }
-        // Las OTs abiertas de un técnico apuntan a él por technicianId: si deja de ser técnico,
-        // quedarían a cargo de alguien que ya no puede trabajarlas. Primero hay que reasignarlas.
-        if (user.getRole() == Role.TECNICO && newRole != null && newRole != Role.TECNICO) {
-            long openWorkOrders = workOrderRepository.countByTechnicianIdAndStatusIn(user.getId(),
-                    OPEN_WORK_ORDER_STATUSES);
-            if (openWorkOrders > 0) {
-                throw new UserConflictException("TECHNICIAN_HAS_OPEN_WORK_ORDERS",
-                        user.getUsername() + " tiene " + openWorkOrders + (openWorkOrders == 1
-                                ? " orden de trabajo abierta" : " órdenes de trabajo abiertas")
-                                + ". Reasignalas a otro técnico antes de cambiarle el rol.");
+        // Renombrar no rompe nada: inspecciones, viajes y OTs apuntan al usuario por id, y el
+        // token también (claim sub), así que la sesión abierta de ese usuario sigue valiendo.
+        if (newUsername != null && !newUsername.equals(user.getUsername())) {
+            if (userRepository.existsByUsernameIgnoreCaseAndIdNot(newUsername, user.getId())) {
+                throw usernameTaken(newUsername);
             }
-        }
-
-        if (newRole != null) {
-            user.setRole(newRole);
+            user.setUsername(newUsername);
         }
         if (request.password() != null) {
             user.setPasswordHash(passwordEncoder.encode(request.password()));
@@ -171,7 +160,18 @@ public class UserService {
         if (request.active() != null) {
             user.setActive(request.active());
         }
-        return toDto(userRepository.save(user));
+        if (request.email() != null) {
+            user.setEmail(newEmail);
+        }
+        try {
+            // Misma carrera que en el alta: dos pedidos que eligen el mismo nombre a la vez.
+            return toDto(userRepository.saveAndFlush(user));
+        } catch (DataIntegrityViolationException e) {
+            if (isUsernameUniqueViolation(e)) {
+                throw usernameTaken(user.getUsername());
+            }
+            throw e;
+        }
     }
 
     private User findUser(String idRaw) {
@@ -182,6 +182,32 @@ public class UserService {
             throw new UserNotFoundException(idRaw);
         }
         return userRepository.findById(id).orElseThrow(() -> new UserNotFoundException(idRaw));
+    }
+
+    private static void validateUsername(String username, List<FieldValidationErrorDetail> details) {
+        if (username.isEmpty()) {
+            details.add(new FieldValidationErrorDetail("username", "Obligatorio"));
+        } else if (username.length() > USERNAME_MAX_LENGTH) {
+            details.add(new FieldValidationErrorDetail("username",
+                    "No puede superar los " + USERNAME_MAX_LENGTH + " caracteres"));
+        } else if (!USERNAME_PATTERN.matcher(username).matches()) {
+            details.add(new FieldValidationErrorDetail("username",
+                    "Solo letras, números, espacios, punto, guion y guion bajo"));
+        }
+    }
+
+    /** Vacío es "sin email" (null). */
+    private static String normalizeEmail(String raw, List<FieldValidationErrorDetail> details) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String email = raw.trim();
+        if (email.length() > EMAIL_MAX_LENGTH) {
+            details.add(new FieldValidationErrorDetail("email", "No puede superar los " + EMAIL_MAX_LENGTH + " caracteres"));
+        } else if (!EMAIL_PATTERN.matcher(email).matches()) {
+            details.add(new FieldValidationErrorDetail("email", "No es un email válido"));
+        }
+        return email;
     }
 
     private static void validatePassword(String password, List<FieldValidationErrorDetail> details) {
@@ -220,6 +246,7 @@ public class UserService {
     }
 
     private static UserSummaryDto toDto(User user) {
-        return new UserSummaryDto(user.getId().toString(), user.getUsername(), user.getRole().name(), user.isActive());
+        return new UserSummaryDto(user.getId().toString(), user.getUsername(), user.getRole().name(), user.isActive(),
+                user.getEmail());
     }
 }

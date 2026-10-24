@@ -29,11 +29,38 @@ info:
     alimenta su selector. Ver docs/api/CAM-60-technician-contract.md.
 
 
-    Y la gestión de usuarios (CAM-23): alta, edición y desactivación. Es el
-    único recurso que hoy valida el JWT (bearerAuth) y exige rol ADMIN; el
-    resto de los endpoints todavía no lo valida aunque el esquema global lo
-    declare (CAM-73). Ver docs/api/CAM-23-users-contract.md.
-  version: "1.7"
+    Y la gestión de usuarios (CAM-23, CAM-91): alta, edición, desactivación
+    y actividad por usuario. Ver docs/api/CAM-23-users-contract.md.
+
+
+    Y los gastos de mantenimiento de toda la flota (CAM-52), de solo
+    lectura. Ver docs/api/CAM-52-expenses-contract.md.
+
+    Y el costo de mantenimiento de un vehículo, con su costo por km
+    (CAM-105). Ver docs/api/CAM-105-vehicle-costs-contract.md.
+
+
+    Y los avisos in-app de cada usuario (CAM-96), con la campanita del
+    header. Ver docs/api/CAM-96-notifications-contract.md.
+
+
+    Y las push al navegador (CAM-119): los mismos avisos llegan aunque la
+    app esté cerrada. Ver docs/api/CAM-119-push-contract.md.
+
+
+    Y la configuración de los avisos (CAM-117): por tipo, si está activo,
+    por qué canales sale (campanita, push, email) y a quién; y los avisos de
+    vencimiento de cada plan (CAM-118). Ver
+    docs/api/CAM-117-118-notification-settings-contract.md.
+
+
+    Autenticación: hoy validan el JWT (bearerAuth) /api/users y
+    /api/expenses y /api/vehicles/{id}/costs (rol ADMIN) y POST /api/inspections/{vehicleId} (rol
+    CHOFER, CAM-85), /api/notifications y /api/push (cualquier rol,
+    CAM-96 y CAM-119), y /api/notification-settings y
+    /api/maintenance-plans/{id}/notifications (rol ADMIN, CAM-117 y CAM-118). El resto de los endpoints todavía no lo valida aunque
+    el esquema global lo declare (CAM-73).
+  version: "1.13"
 
 servers:
   - url: http://localhost:8080
@@ -48,7 +75,9 @@ paths:
       description: >
         Sin `view` (o `view` ausente): devuelve todos los vehículos con su
         estado de viaje actual (disponible / en viaje), para que el chofer
-        elija uno -- CAM-11.
+        elija uno -- CAM-11. Cada vehículo dice además si está bloqueado por
+        un defecto sin resolver (`blocked`, CAM-89) y, si está en viaje, quién
+        lo abrió y desde cuándo (`currentTrip`, CAM-87).
 
 
         Con `view=fleet-status`: vista agregada para el dashboard de admin
@@ -148,6 +177,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VehicleHistory"
+        "404":
+          description: VEHICLE_NOT_FOUND
+
+  /api/vehicles/{id}/costs:
+    get:
+      summary: Costo de mantenimiento de un vehículo (CAM-105)
+      description: >
+        Solo ADMIN, solo lectura. Suma los gastos cargados en todas las OTs del
+        vehículo (los mismos de GET /api/expenses), sin importar el estado de
+        la OT. Funciona también para un vehículo dado de baja. El costo por km
+        divide el total histórico por los km recorridos desde el primer
+        registro de odómetro conocido (el más antiguo de sus inspecciones y de
+        sus mantenimientos hechos); si no hay registros, o el km actual no supera
+        a ese primero, `kmDriven` y `costPerKm` vienen en null en vez de un
+        número engañoso. Ver CAM-105-vehicle-costs-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleCosts"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: VEHICLE_NOT_FOUND
 
@@ -464,9 +527,10 @@ paths:
       description: >
         Solo autentica y emite el token -- no incluye alta ni invitación de
         usuarios (eso es POST /api/users, CAM-23). Los usuarios de prueba iniciales se cargan
-        con docs/db/seed-users.sql. Todavía no reemplaza al header temporal
-        X-Driver-Id de CAM-11 -- conviven hasta que el frontend (CAM-45) esté
-        migrado. Ver docs/api/CAM-43-login-contract.md para el detalle de
+        con docs/db/seed-users.sql. El token vence a las 12 horas
+        (`fleetguard.jwt.expiration-minutes`, CAM-85), para que un chofer no
+        tenga que volver a entrar entre el pre-viaje y el post-viaje. Ver
+        docs/api/CAM-43-login-contract.md para el detalle de
         decisiones (comparación contra hash dummy para evitar timing attacks,
         motivo de emitir HS512, etc).
       security: []
@@ -524,6 +588,28 @@ paths:
         SÍ tiene uno abierto (lo cierra). El chofer y la fecha/hora del envío
         se resuelven server-side (token de auth y reloj del servidor) — nunca
         se confían del body, aunque el cliente los mande.
+
+
+        Exige el JWT de un usuario activo con rol CHOFER (CAM-85): ese
+        usuario queda como chofer de la inspección y como quien abrió o
+        cerró el viaje (CAM-87). Los headers `X-Driver-Id` / `X-Driver-Name`
+        ya no existen.
+
+
+        El km de la inspección (parte entera) actualiza el odometerKm del
+        vehículo si es mayor y no lo supera en más del tope fleetguard.odometer.max-jump-km (5.000 km) (CAM-90, ver
+        CAM-40-fleet-status-contract.md); si no, la inspección se guarda igual
+        y el vehículo no cambia.
+
+
+        Un pre-trip se rechaza si el vehículo no puede salir (CAM-89): dado
+        de baja o con un defecto bloqueante sin resolver. Un post-trip no se
+        rechaza por eso: un viaje abierto se tiene que poder cerrar. Si el
+        propio pre-trip reporta un defecto bloqueante (CAM-86), la inspección
+        y el defecto se guardan pero el vehículo no queda en viaje: `trip`
+        vuelve ya cerrado, con `startedAt` igual a `endedAt`.
+      security:
+        - bearerAuth: []
       parameters:
         - name: vehicleId
           in: path
@@ -543,13 +629,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InspectionResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Vehículo inexistente
         "409":
           description: >
             El `type` enviado no es válido para el estado actual del vehículo
             (ej. pre-trip sobre un vehículo que ya está "en viaje", o post-trip
-            sobre uno sin viaje abierto).
+            sobre uno sin viaje abierto), o es un pre-trip sobre un vehículo
+            que no puede salir (bloqueado o dado de baja, CAM-89).
           content:
             application/json:
               schema:
@@ -559,6 +650,10 @@ paths:
                   value: { error: "VEHICLE_ON_TRIP", message: "El vehículo ya tiene un pre-trip abierto." }
                 noOpenTrip:
                   value: { error: "NO_OPEN_TRIP", message: "El vehículo no tiene un viaje abierto para cerrar." }
+                vehicleBlocked:
+                  value: { error: "VEHICLE_BLOCKED", message: "El vehículo tiene un defecto bloqueante sin resolver y no puede salir." }
+                vehicleInactive:
+                  value: { error: "VEHICLE_INACTIVE", message: "El vehículo está dado de baja." }
         "422":
           description: Faltan respuestas obligatorias o un defecto no cumple sus reglas
           content:
@@ -833,7 +928,10 @@ paths:
       description: >
         A diferencia de las inspecciones DVIR, completedAt lo manda el
         cliente (puede estar cargando algo que ya pasó) -- ver
-        CAM-40-maintenance-api-contract.md decisión 2.
+        CAM-40-maintenance-api-contract.md decisión 2. Desde CAM-90,
+        completedKm también actualiza el odometerKm del vehículo si es mayor
+        y no lo supera en más del tope fleetguard.odometer.max-jump-km (5.000 km) (ver CAM-40-fleet-status-contract.md);
+        el estado devuelto ya se calcula con ese kilometraje.
       parameters:
         - name: vehicleId
           in: path
@@ -879,6 +977,9 @@ paths:
       description: >
         No toca nextDueKm de ningún plan (eso solo cambia con un completion) --
         solo actualiza la referencia contra la que se compara al calcular status.
+        Desde CAM-90 queda para correcciones: el kilometraje también avanza solo
+        con el km de inspecciones, OTs finalizadas y completions (ver
+        CAM-40-fleet-status-contract.md).
         Bloqueado con `409 VEHICLE_INACTIVE` si el vehículo está dado de baja
         (ver CAM-25-vehicle-abm-contract.md) -- reactivalo primero.
       parameters:
@@ -920,8 +1021,12 @@ paths:
       summary: Mantenimientos programados en un rango de fechas (calendario semanal del Resumen, CAM-42)
       description: >
         Por defecto solo trae status=scheduled (lo que interesa ver "por
-        venir"); el query param status permite pedir también done/cancelled
-        para vistas de historial futuras.
+        venir"); el query param status permite pedir también done/cancelled.
+        Acepta varios estados, separados por comas o repitiendo el parámetro
+        (CAM-65: el calendario pide `status=scheduled,done,cancelled`). Se
+        ignoran los espacios alrededor y los valores vacíos (`status=` vale
+        como sin filtro). Un estado desconocido, aunque venga junto a otros
+        válidos, es un 422 con details[].field = "status".
       parameters:
         - name: from
           in: query
@@ -937,9 +1042,13 @@ paths:
             type: string
         - name: status
           in: query
+          style: form
+          explode: false
           schema:
-            $ref: "#/components/schemas/ScheduleStatus"
-            default: scheduled
+            type: array
+            items:
+              $ref: "#/components/schemas/ScheduleStatus"
+            default: [scheduled]
         - name: vehicleId
           in: query
           description: Filtro opcional por vehículo, de uso general (no lo usa el preview de "ya programado", que mira todos los vehículos ese día).
@@ -1196,7 +1305,7 @@ paths:
 
   /api/work-orders/{id}/expenses:
     post:
-      summary: Cargar un gasto a una orden de trabajo abierta (CAM-63)
+      summary: Cargar un gasto a una orden de trabajo abierta (CAM-63), con el comprobante opcional, número y foto (CAM-107)
       parameters:
         - name: id
           in: path
@@ -1362,17 +1471,21 @@ paths:
 
   /api/users/{id}:
     patch:
-      summary: Editar un usuario -- rol, contraseña, activo (CAM-23)
+      summary: Editar un usuario -- nombre, contraseña, activo (CAM-23, CAM-91)
       description: >
-        Solo ADMIN. Campos parciales: lo que no viene no se toca. El username
-        no se edita. Un admin no puede desactivarse a sí mismo ni quitarse el
-        rol ADMIN (409 CANNOT_MODIFY_SELF); sí puede cambiarse la contraseña.
-        Un TECNICO con OTs abiertas (asignadas o en proceso) no puede pasar a
-        otro rol hasta que se las reasignen (409 TECHNICIAN_HAS_OPEN_WORK_ORDERS);
-        sí se lo puede desactivar. Desactivar no borra nada: el historial del
-        usuario (inspecciones, OTs) se conserva, y su sesión deja de valer en
-        /api/users desde el pedido siguiente aunque su token siga vigente.
-        Resetear la contraseña, en cambio, no invalida los tokens ya emitidos.
+        Solo ADMIN. Campos parciales: lo que no viene no se toca. El rol no se
+        edita (CAM-91): queda el del alta, y pedir uno distinto es un 422.
+        El username sí se puede cambiar, con las mismas reglas que en el alta
+        (409 USERNAME_TAKEN si ya lo usa otro). Renombrar no corta nada: el
+        token identifica al usuario por id, así que su sesión abierta sigue
+        valiendo, y sus inspecciones, viajes y OTs pasan a mostrar el nombre
+        nuevo; lo único que cambia para esa persona es con qué nombre entra.
+        Un admin no puede desactivarse a sí mismo (409 CANNOT_MODIFY_SELF);
+        sí puede cambiarse el nombre y la contraseña. Desactivar no borra
+        nada: el historial del usuario (inspecciones, OTs) se conserva, y su
+        sesión deja de valer desde el pedido siguiente aunque su token siga
+        vigente. Resetear la contraseña, en cambio, no invalida los tokens ya
+        emitidos.
       security:
         - bearerAuth: []
       parameters:
@@ -1405,13 +1518,479 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "409":
-          description: CANNOT_MODIFY_SELF | TECHNICIAN_HAS_OPEN_WORK_ORDERS
+          description: CANNOT_MODIFY_SELF | USERNAME_TAKEN
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/users/stats:
+    get:
+      summary: Actividad de choferes y técnicos en un período (CAM-91)
+      description: >
+        Solo ADMIN. Alimenta los gráficos de la sección Usuarios. Devuelve
+        todos los choferes y todos los técnicos (también los desactivados),
+        cada uno con su actividad en [from, to). Todo se cuenta por id de
+        usuario: las inspecciones y viajes anteriores a CAM-85, que no
+        guardaban un usuario real, no le suman a nadie. Los pre-viajes con
+        defecto bloqueante (CAM-86) cuentan como inspección, no como viaje.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PeriodFrom"
+        - $ref: "#/components/parameters/PeriodTo"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/expenses:
+    get:
+      summary: Gastos de mantenimiento de toda la flota (CAM-52)
+      description: >
+        Solo ADMIN, solo lectura. Lista los gastos que se cargan dentro de
+        cada orden de trabajo (POST /api/work-orders/{id}/expenses), de todas
+        las OTs sin importar su estado, del más reciente al más antiguo. La
+        fecha de un gasto es la de su carga. No trae totales: el cliente los
+        calcula sobre el listado ya filtrado. Un `vehicleId` o `category` que
+        no existe devuelve una lista vacía, no un error.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: vehicleId
+          in: query
+          schema: { type: string }
+        - name: category
+          in: query
+          schema:
+            $ref: "#/components/schemas/WorkOrderExpenseCategory"
+        - $ref: "#/components/parameters/PeriodFrom"
+        - $ref: "#/components/parameters/PeriodTo"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Expense"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/notifications:
+    get:
+      summary: Mis avisos, del más nuevo al más viejo (CAM-96)
+      description: >
+        Cualquier rol (ADMIN, CHOFER, TECNICO). Devuelve solo los avisos del
+        usuario dueño del token, leídos y sin leer, hasta `limit`. Ver
+        docs/api/CAM-96-notifications-contract.md. Los descartados (la X
+        del panel) no vienen.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          description: Cuántos avisos traer. Por defecto 30, máximo 100.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Notification"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/notifications/unread-count:
+    get:
+      summary: Cuántos avisos sin leer tengo (CAM-96)
+      description: >
+        Cualquier rol. El numerito de la campanita: el front lo pide cada
+        60 segundos, así que tiene que ser una consulta liviana (un count).
+        No cuenta los descartados.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count]
+                properties:
+                  count: { type: integer, minimum: 0 }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/notifications/{id}/read:
+    patch:
+      summary: Marcar un aviso como leído (CAM-96)
+      description: >
+        Cualquier rol. Idempotente: marcar uno ya leído no cambia su
+        `readAt`. Un aviso de otro usuario responde 404, igual que uno que no
+        existe, para no revelar ids ajenos.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Marcado como leído
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: NOTIFICATION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/notifications/read-all:
+    patch:
+      summary: Marcar todos mis avisos como leídos (CAM-96)
+      description: >
+        Cualquier rol. Solo toca los avisos del usuario del token.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Todos marcados como leídos
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/notifications/{id}/dismiss:
+    patch:
+      summary: Descartar un aviso (la X del panel, CAM-96)
+      description: >
+        Cualquier rol. Lo saca de la campanita sin borrarlo y cuenta como
+        leído. Idempotente. Un aviso de otro usuario responde 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Descartado
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: NOTIFICATION_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/notification-settings:
+    get:
+      summary: Configuración de cada tipo de aviso (CAM-117)
+      description: >
+        Solo ADMIN. Un item por tipo, en el orden de la pantalla, aunque no
+        se haya guardado nada (rige el default: activo, campanita + push, a
+        los admins; anticipación 7 días / 1000 km).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/NotificationSetting"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/notification-settings/{type}:
+    parameters:
+      - name: type
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/NotificationType"
+    put:
+      summary: Guardar la configuración de un tipo de aviso (CAM-117)
+      description: >
+        Solo ADMIN. Reemplaza la configuración completa. Activo pide al menos
+        un canal y, si el aviso es "configurable", al menos un rol o usuario.
+        Un aviso "owner" no acepta destinatarios; solo maintenance_due_soon
+        acepta (y pide) leadDays y leadKm.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNotificationSettingRequest"
+      responses:
+        "200":
+          description: Guardada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSetting"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: NOTIFICATION_TYPE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Volver a la configuración por defecto (CAM-117)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: La configuración por defecto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSetting"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: NOTIFICATION_TYPE_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/maintenance-plans/{id}/notifications:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Avisos de vencimiento del plan (CAM-118)
+      description: >
+        Solo ADMIN. custom=false: el plan usa la configuración general de
+        maintenance_due_soon / maintenance_overdue, que viene en `general`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanNotificationSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: MAINTENANCE_PLAN_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    put:
+      summary: Darle al plan su propia configuración de avisos (CAM-118)
+      description: >
+        Solo ADMIN. leadDays solo en planes por tiempo (time/both) y leadKm
+        solo en planes por km (km/both); en esos casos son obligatorios.
+        Los destinatarios son siempre los de la configuración general. Con
+        enabled=false el plan no avisa aunque lo general esté activo.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePlanNotificationSettingsRequest"
+      responses:
+        "200":
+          description: Guardada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanNotificationSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: MAINTENANCE_PLAN_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: El plan vuelve a la configuración general (CAM-118)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: La configuración del plan, ya sin la propia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanNotificationSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: MAINTENANCE_PLAN_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/push/public-key:
+    get:
+      summary: Clave VAPID pública para suscribirse a las push (CAM-119)
+      description: >
+        Cualquier rol. El front la pasa como `applicationServerKey` a
+        `PushManager.subscribe()`. `publicKey` es null si el servidor no
+        tiene las push configuradas: en ese caso el front no ofrece activarlas.
+        Ver docs/api/CAM-119-push-contract.md.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [publicKey]
+                properties:
+                  publicKey: { type: string, nullable: true, description: Base64url, punto EC sin comprimir (65 bytes). }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/push/subscriptions:
+    post:
+      summary: Activar las push en este navegador (CAM-119)
+      description: >
+        Cualquier rol. El body es lo que devuelve `PushSubscription.toJSON()`
+        en el navegador, tal cual. Si ese navegador ya estaba suscripto (por
+        este usuario o por otro que usó la misma compu antes), pasa a ser del
+        usuario del token.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushSubscriptionRequest"
+      responses:
+        "204":
+          description: Suscripción guardada
+        "400":
+          description: JSON mal formado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Desactivar las push en este navegador (CAM-119)
+      description: >
+        Cualquier rol. Idempotente: un endpoint que no existe, o que es de
+        otro usuario, responde 204 igual y no borra nada. El front lo llama al
+        desactivar y al cerrar sesión.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: endpoint
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Suscripción borrada (o no había)
+        "400":
+          description: Falta el parámetro endpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/push/test:
+    post:
+      summary: Mandarme una push de prueba (CAM-119)
+      description: >
+        Cualquier rol. Manda "Las notificaciones de este dispositivo
+        funcionan." a todos los navegadores del usuario y responde cuántos
+        servicios de push la aceptaron. Es sincrónico, a diferencia de las
+        push de los avisos.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [delivered]
+                properties:
+                  delivered: { type: integer, minimum: 0 }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
 
 components:
@@ -1420,6 +1999,25 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  parameters:
+    PeriodFrom:
+      name: from
+      in: query
+      description: >
+        Inicio del período, incluido. Instante ISO-8601 completo
+        ("2026-01-01T03:00:00Z") o fecha sola ("2026-01-01", medianoche UTC).
+        Sin valor, el período no tiene inicio.
+      schema: { type: string }
+    PeriodTo:
+      name: to
+      in: query
+      description: >
+        Fin del período. Con un instante ISO-8601 completo, ese instante no
+        se incluye; con una fecha sola, se incluye ese día entero (UTC). Sin
+        valor, el período no tiene fin. Para un día o un año "local", mandar
+        la medianoche local como instante completo.
+      schema: { type: string }
 
   responses:
     Unauthorized:
@@ -1434,7 +2032,11 @@ components:
             error: UNAUTHORIZED
             message: Tu sesión no es válida o venció. Volvé a iniciar sesión.
     Forbidden:
-      description: FORBIDDEN (CAM-23) -- token válido, pero el usuario no es ADMIN.
+      description: >
+        FORBIDDEN (CAM-23) -- token válido, pero el rol del usuario no es el
+        que pide el endpoint (ADMIN en /api/users, /api/expenses y
+        /api/vehicles/{id}/costs, CHOFER en
+        las inspecciones).
       content:
         application/json:
           schema:
@@ -1485,6 +2087,37 @@ components:
           description: >
             false si el vehículo está dado de baja (CAM-25) -- ver el
             parámetro `active` de GET /api/vehicles.
+        blocked:
+          type: boolean
+          description: >
+            CAM-89 -- true si tiene al menos un defecto bloqueante sin
+            resolver. Un vehículo bloqueado no puede iniciar un viaje (409
+            VEHICLE_BLOCKED en el pre-trip); vuelve a false cuando la orden
+            de trabajo del defecto se finaliza.
+        currentTrip:
+          allOf:
+            - $ref: "#/components/schemas/CurrentTrip"
+          nullable: true
+          description: CAM-87 -- el viaje abierto, si `status` es "on-trip"; null si está disponible.
+
+    UserRef:
+      type: object
+      description: Un usuario, por id y nombre actual.
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+
+    CurrentTrip:
+      type: object
+      required: [startedAt]
+      properties:
+        startedAt: { type: string, format: date-time }
+        openedBy:
+          allOf:
+            - $ref: "#/components/schemas/UserRef"
+          nullable: true
+          description: Chofer que abrió el viaje. null en viajes anteriores a CAM-87, que no lo guardaban.
 
     CreateVehicleRequest:
       type: object
@@ -1625,6 +2258,18 @@ components:
         status: { type: string, enum: [open, closed] }
         startedAt: { type: string, format: date-time }
         endedAt: { type: string, format: date-time, nullable: true }
+        openedBy:
+          allOf:
+            - $ref: "#/components/schemas/UserRef"
+          nullable: true
+          description: CAM-87 -- chofer que hizo el pre-trip. null en viajes anteriores.
+        closedBy:
+          allOf:
+            - $ref: "#/components/schemas/UserRef"
+          nullable: true
+          description: >
+            CAM-87 -- chofer que hizo el post-trip; puede no ser el que lo
+            abrió (CAM-33 lo va a impedir). null si el viaje sigue abierto.
 
     Inspection:
       type: object
@@ -1632,7 +2277,7 @@ components:
         id: { type: string }
         tripId: { type: string }
         vehicleId: { type: string }
-        driverId: { type: string, description: Resuelto del token, no del body. }
+        driverId: { type: string, description: "Id del usuario CHOFER del token (CAM-85), no del body." }
         type: { type: string, enum: [pre-trip, post-trip] }
         timestamp: { type: string, format: date-time, description: Reloj del servidor. }
         odometerKm: { type: number }
@@ -1664,7 +2309,7 @@ components:
         vehicleId: { type: string }
         vehiclePlate: { type: string, nullable: true, description: Puede faltar si el vehículo fue eliminado. }
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
-        reportedBy: { type: string, nullable: true, description: "Nombre del chofer que reportó el defecto (Inspection.driverName); puede faltar en datos antiguos." }
+        reportedBy: { type: string, nullable: true, description: "Nombre actual del chofer que reportó el defecto (CAM-85); en inspecciones anteriores, el nombre con el que se guardaron." }
         details: { type: string, nullable: true, description: "Descripción larga del defecto (CAM-32). description es el título corto." }
 
     VehicleHistory:
@@ -1691,7 +2336,7 @@ components:
         id: { type: string }
         type: { type: string, enum: [pre-trip, post-trip] }
         timestamp: { type: string, format: date-time }
-        driverName: { type: string, nullable: true }
+        driverName: { type: string, nullable: true, description: "Nombre actual del chofer (CAM-85); en inspecciones anteriores, el nombre con el que se guardaron." }
         odometerKm: { type: number, nullable: true }
         notes: { type: string, nullable: true }
         hasBlockingDefect: { type: boolean }
@@ -2138,6 +2783,8 @@ components:
             Km al finalizar (se usa si la OT viene de una asignación). Entero, no
             negativo y no menor al odometerKm actual del vehículo (CAM-74); si no,
             422 con el detalle en completedKm. Un decimal se rechaza, no se trunca.
+            Desde CAM-90 también actualiza el odometerKm del vehículo, salvo que lo
+            supere en más del tope fleetguard.odometer.max-jump-km (5.000 km) (ver CAM-40-fleet-status-contract.md).
         assignee: { type: string }
         technicianId:
           type: string
@@ -2154,7 +2801,7 @@ components:
 
     WorkOrderExpense:
       type: object
-      required: [id, category, description, amount, createdAt]
+      required: [id, category, description, amount, createdAt, receiptNumber, receiptPhotoUrl]
       properties:
         id: { type: string }
         category:
@@ -2162,6 +2809,72 @@ components:
         description: { type: string }
         amount: { type: number }
         createdAt: { type: string, format: date-time }
+        receiptNumber:
+          type: string
+          nullable: true
+          description: Número de la factura o el ticket (CAM-107); null si no se cargó.
+        receiptPhotoUrl:
+          type: string
+          nullable: true
+          description: Foto de la factura o el ticket (CAM-107); null si no se adjuntó.
+
+    Expense:
+      type: object
+      description: Un gasto de GET /api/expenses (CAM-52), con el vehículo y la OT de la que sale.
+      required: [id, date, vehicleId, category, description, amount, workOrderId, workOrderTitle, workOrderStatus, origin, executionType, receiptNumber, receiptPhotoUrl]
+      properties:
+        id: { type: string }
+        date: { type: string, format: date-time, description: Cuándo se cargó el gasto. }
+        vehicleId: { type: string }
+        plate: { type: string, nullable: true }
+        category:
+          $ref: "#/components/schemas/WorkOrderExpenseCategory"
+        description: { type: string }
+        amount: { type: number }
+        workOrderId: { type: string }
+        workOrderTitle: { type: string }
+        workOrderStatus:
+          $ref: "#/components/schemas/WorkOrderStatus"
+        origin:
+          type: string
+          enum: [plan, defect, manual]
+          description: >
+            De dónde nació la OT: de un plan de mantenimiento (gasto
+            preventivo), de un defecto (correctivo) o suelta. No es
+            `sourceType`: una OT creada desde el calendario conserva el plan
+            o el defecto que la originó.
+        executionType:
+          $ref: "#/components/schemas/WorkOrderExecutionType"
+        receiptNumber:
+          type: string
+          nullable: true
+          description: Número de la factura o el ticket (CAM-107); null si no se cargó.
+        receiptPhotoUrl:
+          type: string
+          nullable: true
+          description: Foto de la factura o el ticket (CAM-107); null si no se adjuntó.
+
+    VehicleCosts:
+      type: object
+      description: Costo de mantenimiento de un vehículo, de GET /api/vehicles/{id}/costs (CAM-105).
+      required: [totalAmount, last12MonthsAmount, expenseCount, currentKm, firstKnownKm, kmDriven, costPerKm]
+      properties:
+        totalAmount: { type: number, description: Total histórico de gastos del vehículo. }
+        last12MonthsAmount: { type: number, description: "Gastos cargados desde la medianoche (hora argentina) del mismo día de hace un año." }
+        expenseCount: { type: integer, description: Cantidad de gastos cargados en total. }
+        currentKm: { type: integer, description: Km actual del vehículo. }
+        firstKnownKm:
+          type: integer
+          nullable: true
+          description: Km del registro más antiguo entre sus inspecciones y mantenimientos hechos; null si no hay ninguno.
+        kmDriven:
+          type: integer
+          nullable: true
+          description: currentKm − firstKnownKm; null si no hay registro o no es mayor a 0.
+        costPerKm:
+          type: number
+          nullable: true
+          description: totalAmount / kmDriven, redondeado a 2 decimales; null cuando kmDriven es null.
 
     CreateWorkOrderExpenseRequest:
       type: object
@@ -2171,6 +2884,25 @@ components:
           $ref: "#/components/schemas/WorkOrderExpenseCategory"
         description: { type: string }
         amount: { type: number, minimum: 0, exclusiveMinimum: true }
+        receiptNumber:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: >
+            Opcional (CAM-107). Número de la factura o el ticket, tal como
+            figura. Se guarda sin los espacios de los costados; vacío o en
+            blanco = sin número; más de 50 caracteres da 422 en
+            `receiptNumber`. Va con o sin foto.
+        receiptPhotoUrl:
+          type: string
+          nullable: true
+          description: >
+            Opcional (CAM-107). La `photoUrl` que devuelve POST /api/photos
+            (paso 1, mismo mecanismo y formatos que las fotos de OT), tal cual:
+            tiene que ser una foto de este mismo servidor
+            (`<origen del pedido>/api/photos/{id}`). Otro host, otro puerto u
+            otra ruta dan 422 en `receiptPhotoUrl`. Vacía o en blanco = sin
+            comprobante. Se adjunta al crear el gasto: los gastos no se editan.
 
     WorkOrderPhoto:
       type: object
@@ -2197,6 +2929,10 @@ components:
         active:
           type: boolean
           description: CAM-23 -- false = desactivado, no puede loguearse.
+        email:
+          type: string
+          nullable: true
+          description: CAM-117 -- para los avisos por email. null si no tiene.
 
     CreateUserRequest:
       type: object
@@ -2220,13 +2956,21 @@ components:
             una letra con acento ocupa 2, así que puede ser 422 con menos de 72 caracteres.
         role:
           $ref: "#/components/schemas/Role"
+        email:
+          type: string
+          maxLength: 254
+          description: CAM-117 -- opcional. Vacío es "sin email".
 
     UpdateUserRequest:
       type: object
-      description: Campos parciales -- lo que no viene no se toca.
+      description: >
+        Campos parciales -- lo que no viene no se toca. El rol no se edita
+        (CAM-91): mandar `role` con un valor distinto del actual es un 422.
       properties:
-        role:
-          $ref: "#/components/schemas/Role"
+        username:
+          type: string
+          maxLength: 30
+          description: Renombra al usuario. Mismas reglas y misma normalización que en el alta.
         password:
           type: string
           minLength: 6
@@ -2234,3 +2978,197 @@ components:
           description: Resetea la contraseña. Mismo tope de 72 bytes que en el alta.
         active:
           type: boolean
+        email:
+          type: string
+          maxLength: 254
+          description: CAM-117 -- "" lo borra.
+
+    UserStats:
+      type: object
+      description: Respuesta de GET /api/users/stats (CAM-91), separada por rol.
+      required: [drivers, technicians]
+      properties:
+        drivers:
+          type: array
+          items:
+            $ref: "#/components/schemas/DriverStats"
+        technicians:
+          type: array
+          items:
+            $ref: "#/components/schemas/TechnicianStats"
+
+    DriverStats:
+      type: object
+      required: [userId, username, active, trips, inspections, defects, blockingDefects]
+      properties:
+        userId: { type: string }
+        username: { type: string }
+        active: { type: boolean }
+        trips: { type: integer, description: Viajes que abrió en el período. }
+        inspections: { type: integer, description: Inspecciones (pre-trip y post-trip) que hizo en el período. }
+        defects: { type: integer, description: Defectos que reportó en el período, bloqueantes incluidos. }
+        blockingDefects: { type: integer }
+
+    TechnicianStats:
+      type: object
+      required: [userId, username, active, openWorkOrders, finalizedWorkOrders, expensesTotal]
+      properties:
+        userId: { type: string }
+        username: { type: string }
+        active: { type: boolean }
+        openWorkOrders:
+          type: integer
+          description: OTs a su cargo asignadas o en proceso hoy. Es la foto actual, no depende del período.
+        finalizedWorkOrders: { type: integer, description: OTs a su cargo finalizadas en el período. }
+        avgResolutionHours:
+          type: number
+          nullable: true
+          description: Promedio de horas entre que se creó y se finalizó cada una de esas OTs. null si no finalizó ninguna.
+        expensesTotal: { type: number, description: Suma de los gastos cargados en el período en las OTs a su cargo. }
+
+    NotificationType:
+      type: string
+      description: >
+        Qué pasó. Cada card de aviso suma el suyo (CAM-97 a CAM-103); el
+        front no depende del tipo para mostrar el aviso, solo del texto.
+      enum: [work_order_assigned, work_order_unassigned, work_order_cancelled, trip_open_reminder,
+             blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue]
+
+    NotificationChannel:
+      type: string
+      description: CAM-117 -- campanita, push al navegador o email.
+      enum: [in_app, push, email]
+
+    NotificationSetting:
+      type: object
+      required: [type, label, description, audience, enabled, channels, recipientRoles, recipientUserIds,
+                 supportsLead, customized]
+      properties:
+        type:
+          $ref: "#/components/schemas/NotificationType"
+        label: { type: string }
+        description: { type: string }
+        audience:
+          type: string
+          enum: [owner, configurable]
+          description: >
+            owner: le llega a la persona involucrada (recipientDescription dice
+            a quién) y no se eligen destinatarios. configurable: a los roles y
+            usuarios elegidos.
+        recipientDescription: { type: string, nullable: true }
+        enabled: { type: boolean }
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+        recipientRoles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Role"
+        recipientUserIds:
+          type: array
+          items: { type: string }
+        supportsLead: { type: boolean, description: Solo maintenance_due_soon. }
+        leadDays: { type: integer, nullable: true }
+        leadKm: { type: integer, nullable: true }
+        customized: { type: boolean, description: false si rige el default. }
+
+    UpdateNotificationSettingRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+        recipientRoles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Role"
+        recipientUserIds:
+          type: array
+          items: { type: string }
+        leadDays: { type: integer, minimum: 1, maximum: 365 }
+        leadKm: { type: integer, minimum: 1, maximum: 100000 }
+
+    PlanNotificationSettings:
+      type: object
+      required: [planId, intervalType, custom, general]
+      properties:
+        planId: { type: string }
+        intervalType: { type: string, enum: [km, time, both] }
+        custom: { type: boolean }
+        enabled: { type: boolean, nullable: true }
+        channels:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+        leadDays: { type: integer, nullable: true }
+        leadKm: { type: integer, nullable: true }
+        general:
+          type: object
+          required: [dueSoonEnabled, overdueEnabled, channels]
+          properties:
+            dueSoonEnabled: { type: boolean }
+            overdueEnabled: { type: boolean }
+            channels:
+              type: array
+              items:
+                $ref: "#/components/schemas/NotificationChannel"
+            leadDays: { type: integer, nullable: true }
+            leadKm: { type: integer, nullable: true }
+
+    UpdatePlanNotificationSettingsRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+        leadDays: { type: integer, minimum: 1, maximum: 365 }
+        leadKm: { type: integer, minimum: 1, maximum: 100000 }
+
+    Notification:
+      type: object
+      required: [id, type, title, message, createdAt]
+      properties:
+        id: { type: string }
+        type:
+          $ref: "#/components/schemas/NotificationType"
+        title: { type: string, description: Una línea, por ejemplo "Te asignaron una orden de trabajo". }
+        message: { type: string, description: El detalle, ya armado por el backend. }
+        link:
+          type: string
+          nullable: true
+          description: >
+            Ruta del front a la que lleva tocar el aviso ("/vehiculos/{id}",
+            "/"). null si no lleva a ningún lado.
+        createdAt: { type: string, format: date-time }
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Cuándo se marcó como leído. null mientras no se leyó.
+
+    PushSubscriptionRequest:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint:
+          type: string
+          description: >
+            URL https del servicio de push del navegador, hasta 1000 caracteres.
+            Solo se aceptan los de Google (fcm.googleapis.com), Mozilla
+            (push.services.mozilla.com), Microsoft (notify.windows.com) y Apple
+            (push.apple.com), o subdominios, en el puerto 443.
+        expirationTime: { type: number, nullable: true, description: Se ignora. }
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh: { type: string, description: Clave P-256 sin comprimir (65 bytes) en base64url. }
+            auth: { type: string, description: Secreto de 16 bytes en base64url. }

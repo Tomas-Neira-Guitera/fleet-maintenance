@@ -14,7 +14,9 @@ import org.fleetguard.exception.MaintenanceConflictException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.exception.VehicleValidationException;
 import org.fleetguard.mapper.VehicleMapper;
+import org.fleetguard.repository.DefectRepository;
 import org.fleetguard.repository.TripRepository;
+import org.fleetguard.repository.UserRepository;
 import org.fleetguard.repository.VehicleMaintenanceAssignmentRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,8 +49,8 @@ class FleetStatusServiceTest {
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final VehicleMaintenanceAssignmentRepository assignmentRepository = mock(VehicleMaintenanceAssignmentRepository.class);
-    private final VehicleService service =
-            new VehicleService(vehicleRepository, tripRepository, assignmentRepository, new VehicleMapper());
+    private final VehicleService service = new VehicleService(vehicleRepository, tripRepository, assignmentRepository,
+            mock(DefectRepository.class), new UserNameService(mock(UserRepository.class)), new VehicleMapper(), event -> { });
 
     private final List<Vehicle> fleet = new ArrayList<>();
     private final List<VehicleMaintenanceAssignment> assignments = new ArrayList<>();

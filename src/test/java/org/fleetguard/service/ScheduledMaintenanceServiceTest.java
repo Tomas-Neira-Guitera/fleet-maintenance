@@ -19,8 +19,10 @@ import org.fleetguard.repository.UserRepository;
 import org.fleetguard.repository.VehicleMaintenanceAssignmentRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderRepository;
+import org.fleetguard.event.WorkOrderCancelledEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Field;
 import java.time.Instant;
@@ -49,9 +51,10 @@ class ScheduledMaintenanceServiceTest {
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final WorkOrderRepository workOrderRepository = mock(WorkOrderRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final ScheduledMaintenanceService service = new ScheduledMaintenanceService(scheduleRepository,
             mock(VehicleMaintenanceAssignmentRepository.class), mock(DefectRepository.class), vehicleRepository,
-            workOrderRepository, userRepository);
+            workOrderRepository, userRepository, eventPublisher);
 
     private final UUID vehicleId = UUID.randomUUID();
     private final UUID technicianId = UUID.randomUUID();
@@ -107,6 +110,20 @@ class ScheduledMaintenanceServiceTest {
         assertEquals(ScheduleStatus.CANCELLED, schedule.getStatus());
         assertEquals(WorkOrderStatus.CANCELADA, workOrder.getStatus());
         verify(workOrderRepository).save(workOrder);
+        // CAM-100: al técnico se le avisa, igual que si la cancelaran desde la OT.
+        verify(eventPublisher).publishEvent(new WorkOrderCancelledEvent(workOrder.getId(), technicianId));
+    }
+
+    @Test
+    void cancellingAWorkOrderWithoutTechnicianPublishesNothing() {
+        WorkOrder workOrder = new WorkOrder(vehicleId, WorkOrderSourceType.SCHEDULED_MAINTENANCE, schedule.getId(), null,
+                null, schedule.getTitle(), null, WorkOrderExecutionType.EXTERNO, "Taller Norte", null, null);
+        workOrders.add(workOrder);
+
+        service.update(schedule.getId().toString(), cancel(null));
+
+        assertEquals(WorkOrderStatus.CANCELADA, workOrder.getStatus());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

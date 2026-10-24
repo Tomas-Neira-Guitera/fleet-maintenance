@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "FleetGuard — CAM-11 DVIR API",
-    "description": "Colección para probar los 3 endpoints del contrato de inspecciones (CAM-11): GET /api/vehicles, POST /api/photos, POST /api/inspections/{vehicleId}. Corresponde a docs/api/openapi.yaml del repo fleet-maintenance.\n\n## Antes de arrancar\n1. Levantá el backend: `./gradlew bootRun` (o `./gradlew run` según quede el script) — por defecto en `http://localhost:8080`.\n2. Todavía no hay endpoint para crear vehículos (fuera de alcance de CAM-11), así que necesitás al menos una fila en la tabla `vehicle` para poder probar. Ejemplo de insert directo en Postgres (ajustá según tus nombres de columna reales):\n   ```sql\n   insert into vehicle (id, plate, brand, model)\n   values (gen_random_uuid(), 'AB123CD', 'Mercedes-Benz', 'Sprinter');\n   ```\n3. Importá también el archivo de entorno `FleetGuard-Local.postman_environment.json` y seleccionalo arriba a la derecha en Postman.\n\n## Orden recomendado (carpeta \"Flujo feliz\")\n1. **Vehicles → Listar vehículos** — guarda automáticamente el primer vehículo encontrado en `vehicleId`/`vehiclePlate`.\n2. **Photos → Subir foto de defecto** — adjuntá cualquier imagen; guarda `photoUrl`/`photoId`.\n3. **Inspections → Pre-trip con defecto bloqueante** (o la de éxito sin defectos) — abre un viaje para `vehicleId`.\n4. **Inspections → Post-trip éxito** — cierra ese viaje.\n\nLas carpetas \"Casos de error\" tienen ejemplos de 409 y 422 para verificar las reglas de validación del contrato.\n\n## Auth (CAM-43)\nCorré antes `docs/db/seed-users.sql` contra tu Postgres local (crea `admin`/`admin123` y `chofer`/`chofer123`, ver docs/API.md). Las requests de la carpeta **Auth** guardan el token devuelto en `adminToken`/`choferToken` por si lo necesitás más adelante — hoy ningún otro endpoint lo valida todavía, conviven con `X-Driver-Id` (ver CAM-45).",
+    "description": "Colección para probar el contrato de inspecciones (CAM-11): GET /api/vehicles, POST /api/photos, POST /api/inspections/{vehicleId}; más gastos (CAM-52), usuarios (CAM-23, CAM-91) y notificaciones (CAM-96, CAM-117, CAM-118). Corresponde a docs/api/openapi.yaml del repo fleet-maintenance.\n\n## Antes de arrancar\n1. Levantá el backend: `./gradlew bootRun` (o `./gradlew run` según quede el script) — por defecto en `http://localhost:8080`.\n2. Todavía no hay endpoint para crear vehículos (fuera de alcance de CAM-11), así que necesitás al menos una fila en la tabla `vehicle` para poder probar. Ejemplo de insert directo en Postgres (ajustá según tus nombres de columna reales):\n   ```sql\n   insert into vehicle (id, plate, brand, model)\n   values (gen_random_uuid(), 'AB123CD', 'Mercedes-Benz', 'Sprinter');\n   ```\n3. Importá también el archivo de entorno `FleetGuard-Local.postman_environment.json` y seleccionalo arriba a la derecha en Postman.\n\n## Orden recomendado (carpeta \"Flujo feliz\")\n1. **Auth → Login — chofer** y **Login — admin** — guardan `choferToken` y `adminToken`. Las inspecciones exigen el token de un chofer (CAM-85); gastos y usuarios, el de un admin.\n2. **Vehicles → Listar vehículos** — guarda en `vehicleId`/`vehiclePlate` el primer vehículo disponible y sin bloqueo.\n3. **Photos → Subir foto de defecto** — adjuntá cualquier imagen; guarda `photoUrl`/`photoId`.\n4. **Inspections → Pre-trip — sin defectos** — abre un viaje para `vehicleId`, a nombre del chofer del token.\n5. **Inspections → Post-trip — cierra el viaje** — cierra ese viaje.\n\n**Pre-trip — con defecto bloqueante** no abre un viaje (CAM-86): guarda la inspección y deja el vehículo bloqueado, así que después hay que volver a correr **Listar vehículos** para tomar otro.\n\nLas carpetas \"Casos de error\" tienen ejemplos de 401, 409 y 422 para verificar las reglas del contrato.\n\n## Auth (CAM-43)\nCorré antes `docs/db/seed-users.sql` contra tu Postgres local (crea `admin`/`admin123` y `chofer`/`chofer123`), o los datos demo de `docs/db/seed-demo.sql`. El token dura 12 horas. Hoy lo validan las inspecciones (rol CHOFER), `/api/expenses` y `/api/users` (rol ADMIN); el resto de los endpoints todavía no (CAM-73).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -191,16 +191,7 @@
           "name": "Listar vehículos",
           "request": {
             "method": "GET",
-            "header": [
-              {
-                "key": "X-Driver-Id",
-                "value": "{{driverId}}"
-              },
-              {
-                "key": "X-Driver-Name",
-                "value": "{{driverName}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/vehicles",
               "host": [
@@ -222,13 +213,14 @@
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "pm.test('devuelve un array', () => Array.isArray(body));",
-                  "if (Array.isArray(body) && body.length > 0) {",
-                  "  const v = body[0];",
+                  "// CAM-89: se elige uno que pueda salir (disponible y sin defecto bloqueante abierto).",
+                  "const v = Array.isArray(body) ? body.find((x) => x.status === 'available' && !x.blocked) : null;",
+                  "if (v) {",
                   "  pm.environment.set('vehicleId', v.id);",
                   "  pm.environment.set('vehiclePlate', v.plate);",
-                  "  console.log('vehicleId guardado:', v.id, v.plate, v.status);",
+                  "  console.log('vehicleId guardado:', v.id, v.plate);",
                   "} else {",
-                  "  console.warn('No hay vehículos en la base — insertá al menos uno (ver descripción de la colección) antes de seguir.');",
+                  "  console.warn('No hay ningún vehículo disponible y sin bloqueo — cargá los datos demo (docs/db/seed-demo.sql) o resolvé un defecto.');",
                   "}"
                 ]
               }
@@ -244,16 +236,7 @@
           "name": "Subir foto de defecto",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Driver-Id",
-                "value": "{{driverId}}"
-              },
-              {
-                "key": "X-Driver-Name",
-                "value": "{{driverName}}"
-              }
-            ],
+            "header": [],
             "body": {
               "mode": "formdata",
               "formdata": [
@@ -328,12 +311,8 @@
                 "value": "application/json"
               },
               {
-                "key": "X-Driver-Id",
-                "value": "{{driverId}}"
-              },
-              {
-                "key": "X-Driver-Name",
-                "value": "{{driverName}}"
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
               }
             ],
             "body": {
@@ -351,7 +330,7 @@
                 "{{vehicleId}}"
               ]
             },
-            "description": "Abre un viaje para {{vehicleId}}. Requiere haber corrido antes 'Listar vehículos' para tener vehicleId seteado, y que ese vehículo esté 'available' (sin viaje abierto)."
+            "description": "Abre un viaje para {{vehicleId}} a nombre del chofer del token (CAM-85, CAM-87). Requiere haber corrido antes 'Login — chofer' y 'Listar vehículos'."
           },
           "event": [
             {
@@ -362,6 +341,7 @@
                   "pm.test('201 Created', () => pm.response.to.have.status(201));",
                   "const body = pm.response.json();",
                   "pm.test('abre el viaje (trip.status = open)', () => body.trip && body.trip.status === 'open');",
+                  "pm.test('el viaje dice quién lo abrió', () => body.trip.openedBy && body.trip.openedBy.name);",
                   "pm.test('sin defectos bloqueantes', () => body.inspection.hasBlockingDefect === false);",
                   "if (body.trip) pm.environment.set('tripId', body.trip.id);"
                 ]
@@ -379,12 +359,8 @@
                 "value": "application/json"
               },
               {
-                "key": "X-Driver-Id",
-                "value": "{{driverId}}"
-              },
-              {
-                "key": "X-Driver-Name",
-                "value": "{{driverName}}"
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
               }
             ],
             "body": {
@@ -402,7 +378,7 @@
                 "{{vehicleId}}"
               ]
             },
-            "description": "Igual que 'Pre-trip — sin defectos' pero reporta Neumáticos como defecto bloqueante. Corré antes 'Subir foto de defecto' para tener {{photoUrl}} seteada. Usa un vehicleId que esté 'available' (si ya corriste la request anterior sobre el mismo vehículo, va a dar 409 — probá con otro vehículo o mirá la carpeta de errores)."
+            "description": "Reporta Neumáticos como defecto bloqueante. Corré antes 'Subir foto de defecto' para tener {{photoUrl}} seteada, sobre un vehículo 'available'. CAM-86: la inspección y el defecto se guardan, pero el vehículo no queda en viaje (el trip vuelve cerrado) y pasa a estar bloqueado: para volver a usarlo en esta colección, corré de nuevo 'Listar vehículos' (elige otro)."
           },
           "event": [
             {
@@ -413,7 +389,7 @@
                   "pm.test('201 Created', () => pm.response.to.have.status(201));",
                   "const body = pm.response.json();",
                   "pm.test('hasBlockingDefect = true', () => body.inspection.hasBlockingDefect === true);",
-                  "if (body.trip) pm.environment.set('tripId', body.trip.id);"
+                  "pm.test('el vehículo no queda en viaje (trip.status = closed)', () => body.trip && body.trip.status === 'closed');"
                 ]
               }
             }
@@ -429,12 +405,8 @@
                 "value": "application/json"
               },
               {
-                "key": "X-Driver-Id",
-                "value": "{{driverId}}"
-              },
-              {
-                "key": "X-Driver-Name",
-                "value": "{{driverName}}"
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
               }
             ],
             "body": {
@@ -452,7 +424,7 @@
                 "{{vehicleId}}"
               ]
             },
-            "description": "Requiere que {{vehicleId}} tenga un viaje abierto (corré primero alguna de las dos requests de Pre-trip de esta misma carpeta)."
+            "description": "Requiere que {{vehicleId}} tenga un viaje abierto (corré primero 'Pre-trip — sin defectos'). Lo puede cerrar un chofer distinto del que lo abrió: queda registrado en trip.closedBy (CAM-87)."
           },
           "event": [
             {
@@ -462,7 +434,8 @@
                 "exec": [
                   "pm.test('201 Created', () => pm.response.to.have.status(201));",
                   "const body = pm.response.json();",
-                  "pm.test('cierra el viaje (trip.status = closed)', () => body.trip && body.trip.status === 'closed');"
+                  "pm.test('cierra el viaje (trip.status = closed)', () => body.trip && body.trip.status === 'closed');",
+                  "pm.test('el viaje dice quién lo cerró', () => body.trip.closedBy && body.trip.closedBy.name);"
                 ]
               }
             }
@@ -474,21 +447,13 @@
       "name": "Inspections — Casos de error",
       "item": [
         {
-          "name": "409 — Pre-trip sobre vehículo ya en viaje",
+          "name": "401 — Sin token",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Driver-Id",
-                "value": "{{driverId}}"
-              },
-              {
-                "key": "X-Driver-Name",
-                "value": "{{driverName}}"
               }
             ],
             "body": {
@@ -506,7 +471,51 @@
                 "{{vehicleId}}"
               ]
             },
-            "description": "Corré esta request DESPUÉS de cualquiera de las pre-trip de 'Flujo feliz' sobre el mismo vehicleId (que le dejó un viaje abierto), sin correr antes el post-trip. Debería dar 409 VEHICLE_ON_TRIP."
+            "description": "CAM-85: las inspecciones exigen el JWT de un chofer. Sin el header Authorization responde 401 UNAUTHORIZED; con el token de un admin o un técnico, 403 FORBIDDEN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));",
+                  "pm.test('error = UNAUTHORIZED', () => pm.response.json().error === 'UNAUTHORIZED');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 — Pre-trip sobre vehículo ya en viaje",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    { \"itemId\": \"ext-luces\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-neumaticos\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-carroceria\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-km\", \"numberValue\": 82430 },\n    { \"itemId\": \"int-documentacion\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-testigos\", \"outcome\": \"ok\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
+            },
+            "description": "Corré esta request DESPUÉS de 'Pre-trip — sin defectos' sobre el mismo vehicleId (que le dejó un viaje abierto), sin correr antes el post-trip. Debería dar 409 VEHICLE_ON_TRIP."
           },
           "event": [
             {
@@ -532,12 +541,8 @@
                 "value": "application/json"
               },
               {
-                "key": "X-Driver-Id",
-                "value": "{{driverId}}"
-              },
-              {
-                "key": "X-Driver-Name",
-                "value": "{{driverName}}"
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
               }
             ],
             "body": {
@@ -572,6 +577,50 @@
           ]
         },
         {
+          "name": "409 — Pre-trip sobre vehículo bloqueado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    { \"itemId\": \"ext-luces\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-neumaticos\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-carroceria\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-km\", \"numberValue\": 82430 },\n    { \"itemId\": \"int-documentacion\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-testigos\", \"outcome\": \"ok\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
+            },
+            "description": "CAM-89: corré esta request DESPUÉS de 'Pre-trip — con defecto bloqueante' sobre el mismo vehicleId. El vehículo quedó con un defecto bloqueante abierto, así que el servidor no lo deja salir: 409 VEHICLE_BLOCKED. Vuelve a aceptar un pre-trip cuando se finaliza la orden de trabajo del defecto."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+                  "pm.test('error = VEHICLE_BLOCKED', () => pm.response.json().error === 'VEHICLE_BLOCKED');"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "422 — Defecto bloqueante sin foto",
           "request": {
             "method": "POST",
@@ -581,12 +630,8 @@
                 "value": "application/json"
               },
               {
-                "key": "X-Driver-Id",
-                "value": "{{driverId}}"
-              },
-              {
-                "key": "X-Driver-Name",
-                "value": "{{driverName}}"
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
               }
             ],
             "body": {
@@ -630,12 +675,8 @@
                 "value": "application/json"
               },
               {
-                "key": "X-Driver-Id",
-                "value": "{{driverId}}"
-              },
-              {
-                "key": "X-Driver-Name",
-                "value": "{{driverName}}"
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
               }
             ],
             "body": {
@@ -678,16 +719,7 @@
           "name": "Listar defectos",
           "request": {
             "method": "GET",
-            "header": [
-              {
-                "key": "X-Driver-Id",
-                "value": "{{driverId}}"
-              },
-              {
-                "key": "X-Driver-Name",
-                "value": "{{driverName}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/defects",
               "host": [
@@ -709,6 +741,774 @@
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "pm.test('devuelve un array', () => Array.isArray(body));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Expenses (CAM-52)",
+      "item": [
+        {
+          "name": "Listar gastos del año",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses?from=2026-01-01&to=2026-12-31",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "expenses"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-01-01"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-12-31"
+                }
+              ]
+            },
+            "description": "GET /api/expenses — gastos de todas las órdenes de trabajo, del más reciente al más antiguo. Solo ADMIN: corré antes 'Login — admin'. Filtros opcionales: vehicleId, category (repuesto | mano_de_obra | otro), from y to. Ver docs/api/CAM-52-expenses-contract.md."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('devuelve items', () => Array.isArray(body.items));",
+                  "const total = body.items.reduce((sum, e) => sum + e.amount, 0);",
+                  "console.log(body.items.length + ' gastos, total ' + total);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar gastos de mano de obra",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses?category=mano_de_obra",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "expenses"
+              ],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "mano_de_obra"
+                }
+              ]
+            },
+            "description": "Mismo listado, filtrado por categoría y sin período."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('todos son mano de obra', () => pm.response.json().items.every((e) => e.category === 'mano_de_obra'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 — Con token de chofer",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "expenses"
+              ]
+            },
+            "description": "Los gastos son solo del admin: con el token de un chofer responde 403 FORBIDDEN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users (CAM-23, CAM-91)",
+      "item": [
+        {
+          "name": "Listar usuarios",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users"
+              ]
+            },
+            "description": "GET /api/users — todos los usuarios. Solo ADMIN. Guarda en userId el primer chofer, para 'Renombrar usuario'."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const chofer = pm.response.json().items.find((u) => u.role === 'CHOFER');",
+                  "if (chofer) pm.environment.set('userId', chofer.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Actividad por usuario",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/stats?from=2026-01-01&to=2026-12-31",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "stats"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-01-01"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-12-31"
+                }
+              ]
+            },
+            "description": "GET /api/users/stats (CAM-91) — viajes, inspecciones y defectos de cada chofer, y órdenes de trabajo, tiempo de resolución y gastos de cada técnico, en el período."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('trae choferes y técnicos', () => Array.isArray(body.drivers) && Array.isArray(body.technicians));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Renombrar usuario",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"Chofer Renombrado\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "description": "PATCH /api/users/{id} (CAM-91) — se puede cambiar username, password y active. Ese usuario pasa a entrar con el nombre nuevo, y sus inspecciones y viajes muestran el nombre nuevo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('devuelve el nombre nuevo', () => pm.response.json().username === 'Chofer Renombrado');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 — Cambiar el rol",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"ADMIN\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "description": "CAM-91: el rol de un usuario queda como se dio de alta. Pedir uno distinto responde 422 con details[].field = role."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 Unprocessable Entity', () => pm.response.to.have.status(422));",
+                  "pm.test('el detalle es del campo role', () => pm.response.json().details[0].field === 'role');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Notificaciones (CAM-96, CAM-117, CAM-118)",
+      "item": [
+        {
+          "name": "Mis avisos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications?limit=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "GET /api/notifications (CAM-96) — los últimos avisos sin descartar del usuario del token. Guarda en notificationId el primero."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const items = pm.response.json().items;",
+                  "if (items.length) pm.environment.set('notificationId', items[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cantidad sin leer",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/unread-count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "unread-count"
+              ]
+            },
+            "description": "GET /api/notifications/unread-count — el numerito de la campanita."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('trae count', () => typeof pm.response.json().count === 'number');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Marcar aviso como leído",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/{{notificationId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "{{notificationId}}",
+                "read"
+              ]
+            },
+            "description": "PATCH /api/notifications/{id}/read — idempotente."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Descartar aviso",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/{{notificationId}}/dismiss",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "{{notificationId}}",
+                "dismiss"
+              ]
+            },
+            "description": "PATCH /api/notifications/{id}/dismiss (CAM-96) — la X del panel: lo saca de la campanita sin borrarlo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Marcar todos como leídos",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "read-all"
+              ]
+            },
+            "description": "PATCH /api/notifications/read-all"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Configuración de avisos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notification-settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notification-settings"
+              ]
+            },
+            "description": "GET /api/notification-settings (CAM-117) — un item por tipo de aviso. Solo ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('8 tipos', () => pm.expect(pm.response.json().items.length).to.eql(8));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Configurar 'OT finalizada' por email",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notification-settings/work_order_finalized",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notification-settings",
+                "work_order_finalized"
+              ]
+            },
+            "description": "PUT /api/notification-settings/{type} (CAM-117) — reemplaza la configuración del tipo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"channels\": [\n    \"in_app\",\n    \"email\"\n  ],\n  \"recipientRoles\": [\n    \"ADMIN\"\n  ],\n  \"recipientUserIds\": []\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('guardada', () => pm.expect(pm.response.json().customized).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Configuración inválida (422)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notification-settings/work_order_assigned",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notification-settings",
+                "work_order_assigned"
+              ]
+            },
+            "description": "Un aviso 'owner' (le llega al técnico de la OT) no acepta destinatarios.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"channels\": [\n    \"in_app\"\n  ],\n  \"recipientRoles\": [\n    \"ADMIN\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Volver al default",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/notification-settings/work_order_finalized",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notification-settings",
+                "work_order_finalized"
+              ]
+            },
+            "description": "DELETE /api/notification-settings/{type} — vuelve a la configuración por defecto."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('default', () => pm.expect(pm.response.json().customized).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Avisos de un plan",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans/{{planId}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "maintenance-plans",
+                "{{planId}}",
+                "notifications"
+              ]
+            },
+            "description": "GET /api/maintenance-plans/{id}/notifications (CAM-118). planId: un plan de GET /api/maintenance-plans."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Anticipación propia del plan",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans/{{planId}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "maintenance-plans",
+                "{{planId}}",
+                "notifications"
+              ]
+            },
+            "description": "PUT /api/maintenance-plans/{id}/notifications (CAM-118) — leadDays solo en planes por tiempo, leadKm solo en planes por km; ajustar al tipo del plan.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"channels\": [\n    \"in_app\",\n    \"email\"\n  ],\n  \"leadDays\": 15\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK o 422 según el tipo del plan', () => pm.expect([200, 422]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "El plan vuelve a lo general",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-plans/{{planId}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "maintenance-plans",
+                "{{planId}}",
+                "notifications"
+              ]
+            },
+            "description": "DELETE /api/maintenance-plans/{id}/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
                 ]
               }
             }

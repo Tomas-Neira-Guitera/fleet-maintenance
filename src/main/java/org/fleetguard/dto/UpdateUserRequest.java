@@ -1,12 +1,15 @@
 package org.fleetguard.dto;
 
 /**
- * Body de PATCH /api/users/{id} (CAM-23) -- campos parciales: cambiar el rol, resetear la
- * contraseña (password) y activar o desactivar (active). El username no se edita.
+ * Body de PATCH /api/users/{id} -- campos parciales: renombrar (username), resetear la contraseña
+ * (password) y activar o desactivar (active). El rol no se edita (CAM-91): pedir uno distinto es un 422.
  */
 public record UpdateUserRequest(
-        String role,
+        String username,
         String password,
-        Boolean active
+        Boolean active,
+        String role,
+        // CAM-117: null no lo toca, "" lo borra.
+        String email
 ) {
 }

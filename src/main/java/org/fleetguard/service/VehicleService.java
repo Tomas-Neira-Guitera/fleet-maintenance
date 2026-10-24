@@ -1,14 +1,19 @@
 package org.fleetguard.service;
 
 import org.fleetguard.dto.CreateVehicleRequest;
+import org.fleetguard.event.OdometerChangedEvent;
+import org.springframework.context.ApplicationEventPublisher;
+import org.fleetguard.dto.CurrentTripDto;
 import org.fleetguard.dto.FieldValidationErrorDetail;
 import org.fleetguard.dto.FleetStatusRowDto;
 import org.fleetguard.dto.NextMaintenanceDto;
 import org.fleetguard.dto.OdometerResultDto;
 import org.fleetguard.dto.PagedResponse;
 import org.fleetguard.dto.UpdateVehicleRequest;
+import org.fleetguard.dto.UserRefDto;
 import org.fleetguard.dto.VehicleSummaryDto;
 import org.fleetguard.entity.MaintenanceStatus;
+import org.fleetguard.entity.Trip;
 import org.fleetguard.entity.TripStatus;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleMaintenanceAssignment;
@@ -17,6 +22,7 @@ import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.exception.VehicleValidationException;
 import org.fleetguard.mapper.VehicleMapper;
+import org.fleetguard.repository.DefectRepository;
 import org.fleetguard.repository.TripRepository;
 import org.fleetguard.repository.VehicleMaintenanceAssignmentRepository;
 import org.fleetguard.repository.VehicleRepository;
@@ -30,6 +36,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -40,23 +48,40 @@ public class VehicleService {
     private final VehicleRepository vehicleRepository;
     private final TripRepository tripRepository;
     private final VehicleMaintenanceAssignmentRepository assignmentRepository;
+    private final DefectRepository defectRepository;
+    private final UserNameService userNameService;
     private final VehicleMapper vehicleMapper;
 
     private static final int MIN_YEAR = 1980;
 
+    private final ApplicationEventPublisher eventPublisher;
+
     public VehicleService(VehicleRepository vehicleRepository, TripRepository tripRepository,
-                           VehicleMaintenanceAssignmentRepository assignmentRepository, VehicleMapper vehicleMapper) {
+                           VehicleMaintenanceAssignmentRepository assignmentRepository,
+                           DefectRepository defectRepository, UserNameService userNameService,
+                           VehicleMapper vehicleMapper, ApplicationEventPublisher eventPublisher) {
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.assignmentRepository = assignmentRepository;
+        this.defectRepository = defectRepository;
+        this.userNameService = userNameService;
         this.vehicleMapper = vehicleMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     /** CAM-15: orden alfabético por patente, no el orden de inserción en la base. */
     public List<VehicleSummaryDto> listVehicles(boolean active) {
+        // Viajes abiertos, bloqueos y nombres se traen de una vez, no con una consulta por vehículo.
+        Map<UUID, Trip> openTripByVehicle = tripRepository.findByStatusWithVehicle(TripStatus.OPEN).stream()
+                .collect(Collectors.toMap(trip -> trip.getVehicle().getId(), trip -> trip, (first, second) -> first));
+        Set<UUID> blockedIds = Set.copyOf(defectRepository.findVehicleIdsWithOpenBlockingDefect());
+        Map<String, String> names = userNameService.currentNames(openTripByVehicle.values().stream()
+                .map(Trip::getOpenedById).filter(Objects::nonNull).map(UUID::toString).toList());
+
         return vehicleRepository.findByActive(active).stream()
                 .sorted(Comparator.comparing(Vehicle::getPlate, String.CASE_INSENSITIVE_ORDER))
-                .map(vehicle -> vehicleMapper.toSummary(vehicle, hasOpenTrip(vehicle.getId())))
+                .map(vehicle -> vehicleMapper.toSummary(vehicle,
+                        currentTrip(openTripByVehicle.get(vehicle.getId()), names), blockedIds.contains(vehicle.getId())))
                 .toList();
     }
 
@@ -70,7 +95,28 @@ public class VehicleService {
         }
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new VehicleNotFoundException(id));
-        return vehicleMapper.toSummary(vehicle, hasOpenTrip(vehicle.getId()));
+        return toSummary(vehicle);
+    }
+
+    private VehicleSummaryDto toSummary(Vehicle vehicle) {
+        Trip openTrip = tripRepository.findFirstByVehicle_IdAndStatus(vehicle.getId(), TripStatus.OPEN).orElse(null);
+        Map<String, String> names = openTrip == null || openTrip.getOpenedById() == null ? Map.of()
+                : userNameService.currentNames(List.of(openTrip.getOpenedById().toString()));
+        return vehicleMapper.toSummary(vehicle, currentTrip(openTrip, names),
+                defectRepository.existsOpenBlockingByVehicleId(vehicle.getId()));
+    }
+
+    /** CAM-87: quién tiene el vehículo y desde cuándo. openedBy es null en viajes sin chofer cargado. */
+    private static CurrentTripDto currentTrip(Trip openTrip, Map<String, String> currentNames) {
+        if (openTrip == null) {
+            return null;
+        }
+        UserRefDto openedBy = null;
+        if (openTrip.getOpenedById() != null) {
+            String id = openTrip.getOpenedById().toString();
+            openedBy = new UserRefDto(id, currentNames.getOrDefault(id, openTrip.getOpenedByName()));
+        }
+        return new CurrentTripDto(openTrip.getStartedAt() == null ? null : openTrip.getStartedAt().toString(), openedBy);
     }
 
     private boolean hasOpenTrip(UUID vehicleId) {
@@ -197,6 +243,7 @@ public class VehicleService {
         }
         vehicle.setOdometerKm(odometerKm);
         vehicleRepository.save(vehicle);
+        eventPublisher.publishEvent(new OdometerChangedEvent(vehicle.getId()));
         return new OdometerResultDto(vehicle.getId().toString(), vehicle.getOdometerKm(), Instant.now().toString());
     }
 
@@ -231,7 +278,7 @@ public class VehicleService {
             vehicle.setOdometerKm(request.odometerKm());
         }
         vehicle = vehicleRepository.save(vehicle);
-        return vehicleMapper.toSummary(vehicle, false);
+        return vehicleMapper.toSummary(vehicle, null, false);
     }
 
     /** PATCH /api/vehicles/{id} -- CAM-25. Campos ausentes no se modifican. */
@@ -287,7 +334,7 @@ public class VehicleService {
         }
 
         vehicle = vehicleRepository.save(vehicle);
-        return vehicleMapper.toSummary(vehicle, hasOpenTrip(vehicle.getId()));
+        return toSummary(vehicle);
     }
 
     /** DELETE /api/vehicles/{id} -- baja lógica (CAM-25), mismo patrón que las asignaciones de mantenimiento. */

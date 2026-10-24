@@ -31,15 +31,18 @@ public class MaintenanceCompletionService {
     private final VehicleMaintenanceAssignmentService assignmentService;
     private final MaintenanceCompletionMapper mapper;
     private final ScheduledMaintenanceService scheduledMaintenanceService;
+    private final OdometerReadings odometerReadings;
 
     public MaintenanceCompletionService(MaintenanceCompletionRepository completionRepository,
                                          VehicleMaintenanceAssignmentService assignmentService,
                                          MaintenanceCompletionMapper mapper,
-                                         ScheduledMaintenanceService scheduledMaintenanceService) {
+                                         ScheduledMaintenanceService scheduledMaintenanceService,
+                                         OdometerReadings odometerReadings) {
         this.completionRepository = completionRepository;
         this.assignmentService = assignmentService;
         this.mapper = mapper;
         this.scheduledMaintenanceService = scheduledMaintenanceService;
+        this.odometerReadings = odometerReadings;
     }
 
     public List<CompletionDto> list(String vehicleId, String assignmentId) {
@@ -97,6 +100,9 @@ public class MaintenanceCompletionService {
 
         if (request.completedKm() != null) {
             assignment.setLastDoneKm(request.completedKm());
+            // CAM-90: el km del mantenimiento hecho (a mano o al finalizar una OT de un plan) avanza el
+            // del vehículo. Va antes de calcular el estado de abajo, que ya lo usa.
+            odometerReadings.apply(vehicle, request.completedKm());
         }
         assignment.setLastDoneDate(completedAt);
         assignment.recalculateNextDue();

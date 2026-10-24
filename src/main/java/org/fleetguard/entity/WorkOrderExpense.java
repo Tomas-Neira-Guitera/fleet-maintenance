@@ -14,7 +14,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Línea de gasto (repuesto, mano de obra, etc.) de una orden de trabajo -- CAM-63. */
+/** Línea de gasto (repuesto, mano de obra, etc.) de una orden de trabajo -- CAM-63. Comprobante opcional, número y foto (CAM-107). */
 @Entity
 @Table(name = "work_order_expenses")
 public class WorkOrderExpense {
@@ -40,15 +40,30 @@ public class WorkOrderExpense {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /** Número de la factura o el ticket, tal como figura; null si no se cargó (CAM-107). */
+    @Column(name = "receipt_number", length = 50)
+    private String receiptNumber;
+
+    /** URL de POST /api/photos con la foto de la factura o el ticket; null si no se adjuntó (CAM-107). */
+    @Column(name = "receipt_photo_url", columnDefinition = "text")
+    private String receiptPhotoUrl;
+
     protected WorkOrderExpense() {
         // JPA
     }
 
     public WorkOrderExpense(WorkOrder workOrder, WorkOrderExpenseCategory category, String description, BigDecimal amount) {
+        this(workOrder, category, description, amount, null, null);
+    }
+
+    public WorkOrderExpense(WorkOrder workOrder, WorkOrderExpenseCategory category, String description, BigDecimal amount,
+                            String receiptNumber, String receiptPhotoUrl) {
         this.workOrder = workOrder;
         this.category = category;
         this.description = description;
         this.amount = amount;
+        this.receiptNumber = receiptNumber;
+        this.receiptPhotoUrl = receiptPhotoUrl;
         this.createdAt = Instant.now();
     }
 
@@ -74,5 +89,13 @@ public class WorkOrderExpense {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public String getReceiptNumber() {
+        return receiptNumber;
+    }
+
+    public String getReceiptPhotoUrl() {
+        return receiptPhotoUrl;
     }
 }

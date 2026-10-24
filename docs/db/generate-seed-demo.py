@@ -737,7 +737,7 @@ assert not too_long, f"Títulos de más de 30 caracteres: {sorted(set(too_long))
 KNOWN_COLUMNS = {
     "users": "id username password_hash role",
     "vehicles": "id plate brand model vehicle_type odometer_km year chassis_number active",
-    "trips": "id vehicle_id status started_at ended_at",
+    "trips": "id vehicle_id status started_at ended_at opened_by_id opened_by_name closed_by_id closed_by_name",
     "inspections": "id trip_id vehicle_id driver_id driver_name type timestamp odometer_km notes has_blocking_defect",
     "inspection_answers": "id inspection_id item_id item_label outcome number_value",
     "defects": "id inspection_answer_id severity description details photo_url created_at status",
@@ -828,15 +828,20 @@ insert("vehicle_maintenance_assignments",
          str(a["next_km"]) if a["next_km"] is not None else "null",
          dt(a["next_day"]) if a["next_day"] is not None else "null", "true"] for a in assignments])
 w("-- Viajes")
-insert("trips", ["id", "vehicle_id", "status", "started_at", "ended_at"],
+# CAM-87: cada viaje guarda quién lo abrió y quién lo cerró (acá, siempre su chofer).
+insert("trips", ["id", "vehicle_id", "status", "started_at", "ended_at", "opened_by_id", "opened_by_name",
+                 "closed_by_id", "closed_by_name"],
        [[q(t["id"]), q(VBY[t["vehicle"]]["id"]), "'OPEN'" if t["open"] else "'CLOSED'",
          ts(t["start"], t["inspections"]["PRE_TRIP"]["hh"], t["inspections"]["PRE_TRIP"]["mm"]),
-         "null" if t["open"] else ts(t["end"], t["inspections"]["POST_TRIP"]["hh"], t["inspections"]["POST_TRIP"]["mm"])]
+         "null" if t["open"] else ts(t["end"], t["inspections"]["POST_TRIP"]["hh"], t["inspections"]["POST_TRIP"]["mm"]),
+         q(DRIVER_IDS[t["driver"]]), q(t["driver"]),
+         "null" if t["open"] else q(DRIVER_IDS[t["driver"]]), "null" if t["open"] else q(t["driver"])]
         for t in trips])
 w("-- Inspecciones DVIR")
 insert("inspections", ["id", "trip_id", "vehicle_id", "driver_id", "driver_name", "type", '"timestamp"', "odometer_km",
                        "notes", "has_blocking_defect"],
-       [[q(i["id"]), q(i["trip"]), q(VBY[i["vehicle"]]["id"]), q(i["driver"]), q(DRIVERS[i["driver"]]), q(i["type"]),
+       # CAM-85: el chofer de la inspección es el usuario (id y username), como lo guarda el backend.
+       [[q(i["id"]), q(i["trip"]), q(VBY[i["vehicle"]]["id"]), q(DRIVER_IDS[i["driver"]]), q(i["driver"]), q(i["type"]),
          ts(i["day"], i["hh"], i["mm"]), str(i["km"]), q(i["notes"]), "true" if i["blocking"] else "false"]
         for i in inspections])
 insert("inspection_answers", ["id", "inspection_id", "item_id", "item_label", "outcome", "number_value"],

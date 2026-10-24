@@ -1,10 +1,14 @@
 package org.fleetguard.controller;
 
+import org.fleetguard.dto.DriverStatsDto;
+import org.fleetguard.dto.TechnicianStatsDto;
+import org.fleetguard.dto.UserStatsDto;
 import org.fleetguard.entity.Role;
 import org.fleetguard.entity.User;
 import org.fleetguard.repository.UserRepository;
 import org.fleetguard.service.JwtService;
 import org.fleetguard.service.UserService;
+import org.fleetguard.service.UserStatsService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -15,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * CAM-23: /api/users exige un JWT de un ADMIN activo. Se prueba con el JwtService real (tokens
- * firmados de verdad) y el interceptor real; solo la base y el service están mockeados.
+ * firmados de verdad) y el interceptor real; solo la base y los services están mockeados.
  */
 @WebMvcTest(UserController.class)
 @Import(JwtService.class)
@@ -51,6 +56,9 @@ class UserControllerAuthTest {
 
     @MockBean
     private UserService userService;
+
+    @MockBean
+    private UserStatsService userStatsService;
 
     private User userInDb(String username, Role role, boolean active) throws Exception {
         User user = new User(username, "hash", role);
@@ -143,6 +151,26 @@ class UserControllerAuthTest {
                         .content("{\"active\":false}"))
                 .andExpect(status().isOk());
         verify(userService).update(eq(targetId), any(), eq(admin.getId()));
+    }
+
+    @Test
+    void laActividadPorUsuarioTambienEsSoloDelAdmin() throws Exception {
+        User admin = userInDb("admin", Role.ADMIN, true);
+        User tecnico = userInDb("tecnico", Role.TECNICO, true);
+        when(userStatsService.stats("2026-01-01", null)).thenReturn(new UserStatsDto(
+                List.of(new DriverStatsDto("u-1", "chofer1", true, 12, 24, 3, 1)),
+                List.of(new TechnicianStatsDto("u-2", "tecnico", true, 2, 5, 36.5, new BigDecimal("150000.00")))));
+
+        // CAM-91: /users/stats queda bajo la misma protección que el resto de /users.
+        mvc.perform(get("/users/stats").param("from", "2026-01-01").header(HttpHeaders.AUTHORIZATION, bearer(tecnico)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/users/stats").param("from", "2026-01-01").header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.drivers[0].trips").value(12))
+                .andExpect(jsonPath("$.drivers[0].blockingDefects").value(1))
+                .andExpect(jsonPath("$.technicians[0].finalizedWorkOrders").value(5))
+                .andExpect(jsonPath("$.technicians[0].avgResolutionHours").value(36.5))
+                .andExpect(jsonPath("$.technicians[0].expensesTotal").value(150000.00));
     }
 
     @Test

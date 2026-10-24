@@ -11,6 +11,7 @@ import org.fleetguard.entity.Trip;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.mapper.DefectMapper;
 import org.fleetguard.repository.DefectRepository;
+import org.fleetguard.repository.UserRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.junit.jupiter.api.Test;
 
@@ -27,7 +28,8 @@ class DefectServiceTest {
     private final DefectRepository defectRepository = mock(DefectRepository.class);
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final DefectMapper defectMapper = mock(DefectMapper.class);
-    private final DefectService service = new DefectService(defectRepository, vehicleRepository, defectMapper);
+    private final DefectService service = new DefectService(defectRepository, vehicleRepository,
+            new UserNameService(mock(UserRepository.class)), defectMapper);
 
     /** Los ids de las entidades son @GeneratedValue; en el test se setean por reflexión, sin persistencia real. */
     private static void setId(Object entity, UUID id) throws Exception {
@@ -63,7 +65,7 @@ class DefectServiceTest {
         when(defectRepository.findAllWithInspection())
                 .thenReturn(List.of(nonBlockingReciente, blockingViejo, blockingReciente));
         when(vehicleRepository.findAllById(any())).thenReturn(List.of());
-        when(defectMapper.toDto(any(), any(), any())).thenAnswer(invocation -> {
+        when(defectMapper.toDto(any(), any(), any(), any())).thenAnswer(invocation -> {
             Defect d = invocation.getArgument(0);
             return new DefectDto(d.getId() == null ? d.getDescription() : d.getId().toString(),
                     d.getSeverity().toJson(), d.getDescription(), null, d.getCreatedAt().toString(),

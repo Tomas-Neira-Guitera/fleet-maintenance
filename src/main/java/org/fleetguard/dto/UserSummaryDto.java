@@ -6,6 +6,8 @@ public record UserSummaryDto(
         String username,
         String role,
         // CAM-23: false = desactivado (no puede loguearse).
-        boolean active
+        boolean active,
+        // CAM-117: null si no tiene.
+        String email
 ) {
 }

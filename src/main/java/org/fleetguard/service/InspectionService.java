@@ -1,13 +1,16 @@
 package org.fleetguard.service;
 
-import org.fleetguard.auth.Driver;
+import org.fleetguard.auth.AuthenticatedUser;
 import org.fleetguard.entity.CheckOutcome;
 import org.fleetguard.entity.Inspection;
 import org.fleetguard.entity.InspectionAnswer;
 import org.fleetguard.entity.InspectionType;
 import org.fleetguard.mapper.InspectionMapper;
+import org.fleetguard.repository.DefectRepository;
 import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.entity.Defect;
+import org.fleetguard.event.BlockingDefectReportedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.fleetguard.entity.DefectSeverity;
 import org.fleetguard.exception.InspectionValidationException;
 import org.fleetguard.dto.ValidationErrorDetail;
@@ -40,25 +43,35 @@ public class InspectionService {
     private final VehicleRepository vehicleRepository;
     private final TripRepository tripRepository;
     private final InspectionRepository inspectionRepository;
+    private final DefectRepository defectRepository;
     private final InspectionValidator validator;
     private final InspectionMapper inspectionMapper;
     private final TripMapper tripMapper;
     private final VehicleChecklistService checklistService;
+    private final OdometerReadings odometerReadings;
+
+    private final ApplicationEventPublisher eventPublisher;
 
     public InspectionService(VehicleRepository vehicleRepository, TripRepository tripRepository,
-                              InspectionRepository inspectionRepository, InspectionMapper inspectionMapper,
-                              TripMapper tripMapper, VehicleChecklistService checklistService) {
+                              InspectionRepository inspectionRepository, DefectRepository defectRepository,
+                              InspectionMapper inspectionMapper, TripMapper tripMapper,
+                              VehicleChecklistService checklistService, OdometerReadings odometerReadings,
+                              ApplicationEventPublisher eventPublisher) {
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.inspectionRepository = inspectionRepository;
+        this.defectRepository = defectRepository;
         this.validator = new InspectionValidator();
         this.inspectionMapper = inspectionMapper;
         this.tripMapper = tripMapper;
         this.checklistService = checklistService;
+        this.odometerReadings = odometerReadings;
+        this.eventPublisher = eventPublisher;
     }
 
+    /** driver: el chofer del JWT (CAM-85); queda en la inspección y en el viaje que abre o cierra (CAM-87). */
     @Transactional
-    public InspectionResultDto submit(String vehicleIdRaw, InspectionSubmissionDto submission, Driver driver) {
+    public InspectionResultDto submit(String vehicleIdRaw, InspectionSubmissionDto submission, AuthenticatedUser driver) {
         UUID vehicleId = parseVehicleId(vehicleIdRaw);
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new VehicleNotFoundException(vehicleIdRaw));
@@ -71,8 +84,8 @@ public class InspectionService {
 
         Optional<Trip> openTrip = tripRepository.findFirstByVehicle_IdAndStatus(vehicleId, TripStatus.OPEN);
 
-        if (type == InspectionType.PRE_TRIP && openTrip.isPresent()) {
-            throw new VehicleStateConflictException("VEHICLE_ON_TRIP", "El vehículo ya tiene un pre-trip abierto.");
+        if (type == InspectionType.PRE_TRIP) {
+            rejectIfCannotLeave(vehicle, openTrip.isPresent());
         }
         if (type == InspectionType.POST_TRIP && openTrip.isEmpty()) {
             throw new VehicleStateConflictException("NO_OPEN_TRIP", "El vehículo no tiene un viaje abierto para cerrar.");
@@ -87,15 +100,19 @@ public class InspectionService {
         Instant now = Instant.now();
         Trip trip;
         if (type == InspectionType.PRE_TRIP) {
-            trip = new Trip(vehicle, now);
-            tripRepository.save(trip);
+            trip = new Trip(vehicle, now, driver.id(), driver.username());
+            // CAM-86: con un defecto bloqueante el vehículo no sale, así que no queda en viaje.
+            // inspections.trip_id es obligatorio: el viaje se abre y se cierra en el mismo instante.
+            if (outcome.hasBlockingDefect()) {
+                trip.close(now, driver.id(), driver.username());
+            }
         } else {
             trip = openTrip.get();
-            trip.close(now);
-            tripRepository.save(trip);
+            trip.close(now, driver.id(), driver.username());
         }
+        tripRepository.save(trip);
 
-        Inspection inspection = new Inspection(trip, vehicleId, driver.id(), driver.name(), type, now,
+        Inspection inspection = new Inspection(trip, vehicleId, driver.id().toString(), driver.username(), type, now,
                 outcome.odometerKm(), submission.notes(), outcome.hasBlockingDefect());
 
         for (ChecklistAnswerDto answerDto : outcome.recognizedAnswers()) {
@@ -116,7 +133,38 @@ public class InspectionService {
 
         inspectionRepository.save(inspection);
 
+        // CAM-97: el aviso sale después del commit (BlockingDefectNotificationListener).
+        List<String> blockingTitles = inspection.getAnswers().stream()
+                .map(InspectionAnswer::getDefect)
+                .filter(defect -> defect != null && defect.getSeverity() == DefectSeverity.BLOCKING)
+                .map(Defect::getDescription)
+                .toList();
+        if (!blockingTitles.isEmpty()) {
+            eventPublisher.publishEvent(new BlockingDefectReportedEvent(vehicleId, vehicle.getPlate(), type,
+                    driver.username(), blockingTitles));
+        }
+
+        // CAM-90: el km que cargó el chofer avanza el del vehículo (parte entera; la inspección guarda
+        // el valor tal cual). Si no pasa la regla de OdometerReadings, la inspección vale igual.
+        if (outcome.odometerKm() != null) {
+            odometerReadings.apply(vehicle, (long) Math.floor(outcome.odometerKm()));
+        }
+
         return new InspectionResultDto(inspectionMapper.toDto(inspection), tripMapper.toDto(trip));
+    }
+
+    /** CAM-89: el servidor es el que impide abrir un viaje con un vehículo que no puede salir. */
+    private void rejectIfCannotLeave(Vehicle vehicle, boolean hasOpenTrip) {
+        if (!vehicle.isActive()) {
+            throw new VehicleStateConflictException("VEHICLE_INACTIVE", "El vehículo está dado de baja.");
+        }
+        if (hasOpenTrip) {
+            throw new VehicleStateConflictException("VEHICLE_ON_TRIP", "El vehículo ya tiene un pre-trip abierto.");
+        }
+        if (defectRepository.existsOpenBlockingByVehicleId(vehicle.getId())) {
+            throw new VehicleStateConflictException("VEHICLE_BLOCKED",
+                    "El vehículo tiene un defecto bloqueante sin resolver y no puede salir.");
+        }
     }
 
     private UUID parseVehicleId(String raw) {

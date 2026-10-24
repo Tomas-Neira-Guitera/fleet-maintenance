@@ -20,6 +20,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -113,9 +114,24 @@ class WorkOrderControllerTest extends WebMvcTestBase {
     }
 
     @Test
+    void unGastoLlegaConElNumeroYLaFotoDelComprobanteYLosDevuelve() throws Exception {
+        String receipt = "http://localhost/api/photos/abc";
+        when(service.addExpense(eq("wo-1"), argThat(request -> receipt.equals(request.receiptPhotoUrl())
+                && "0001-00012345".equals(request.receiptNumber())))).thenReturn(
+                new WorkOrderExpenseDto("e-1", "otro", "Grúa", BigDecimal.TEN, "2026-10-03T00:00:00Z", "0001-00012345", receipt));
+
+        mvc.perform(post("/work-orders/wo-1/expenses").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"category\":\"otro\",\"description\":\"Grúa\",\"amount\":10,"
+                                + "\"receiptNumber\":\"0001-00012345\",\"receiptPhotoUrl\":\"" + receipt + "\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.receiptNumber").value("0001-00012345"))
+                .andExpect(jsonPath("$.receiptPhotoUrl").value(receipt));
+    }
+
+    @Test
     void gastosYFotosSeCreanCon201YSeBorranCon204() throws Exception {
         when(service.addExpense(eq("wo-1"), any())).thenReturn(
-                new WorkOrderExpenseDto("e-1", "repuesto", "Pastillas", new BigDecimal("45000.50"), "2026-10-03T00:00:00Z"));
+                new WorkOrderExpenseDto("e-1", "repuesto", "Pastillas", new BigDecimal("45000.50"), "2026-10-03T00:00:00Z", null, null));
         when(service.addPhoto(eq("wo-1"), any())).thenReturn(
                 new WorkOrderPhotoDto("p-1", "http://localhost/f.jpg", "2026-10-03T00:00:00Z"));
 

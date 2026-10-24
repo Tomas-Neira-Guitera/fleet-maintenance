@@ -3,9 +3,15 @@ package org.fleetguard.service;
 import org.fleetguard.dto.CreateWorkOrderRequest;
 import org.fleetguard.dto.UpdateWorkOrderRequest;
 import org.fleetguard.dto.WorkOrderDto;
+import org.fleetguard.entity.CheckOutcome;
 import org.fleetguard.entity.Defect;
+import org.fleetguard.entity.DefectSeverity;
+import org.fleetguard.entity.Inspection;
+import org.fleetguard.entity.InspectionAnswer;
+import org.fleetguard.entity.InspectionType;
 import org.fleetguard.entity.Role;
 import org.fleetguard.entity.ScheduledMaintenance;
+import org.fleetguard.entity.Trip;
 import org.fleetguard.entity.User;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.WorkOrder;
@@ -21,10 +27,15 @@ import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderExpenseRepository;
 import org.fleetguard.repository.WorkOrderPhotoRepository;
 import org.fleetguard.repository.WorkOrderRepository;
+import org.fleetguard.event.WorkOrderCancelledEvent;
+import org.fleetguard.event.WorkOrderFinalizedEvent;
+import org.fleetguard.event.WorkOrderTechnicianChangedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Field;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,9 +63,11 @@ class WorkOrderServiceTest {
     private final DefectRepository defectRepository = mock(DefectRepository.class);
     private final ScheduledMaintenanceRepository scheduleRepository = mock(ScheduledMaintenanceRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final WorkOrderService service = new WorkOrderService(workOrderRepository, expenseRepository, photoRepository,
             vehicleRepository, defectRepository, scheduleRepository, mock(ScheduledMaintenanceService.class),
-            mock(MaintenanceCompletionService.class), userRepository, new WorkOrderMapper(), new DefectMapper());
+            mock(MaintenanceCompletionService.class), userRepository, new WorkOrderMapper(), new DefectMapper(),
+            new OdometerReadings(5000), eventPublisher);
 
     private final UUID vehicleId = UUID.randomUUID();
     private final UUID technicianId = UUID.randomUUID();
@@ -356,8 +369,171 @@ class WorkOrderServiceTest {
 
         assertFalse(result.created());
         assertEquals(existing.getId().toString(), result.dto().id());
-        // No se pisa: el técnico que venía en el body no se aplica sobre la OT existente.
+        // No se pisa: el técnico que venía en el body no se aplica sobre la OT existente, ni se le avisa.
         assertNull(result.dto().technicianId());
         verify(workOrderRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void elDefectoDeLaOtMuestraElNombreActualDeQuienLoReporto() throws Exception {
+        // CAM-85: la inspección guarda el id del chofer; si después lo renombran, la OT muestra el nombre nuevo.
+        Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
+        Inspection inspection = new Inspection(new Trip(vehicle, Instant.now()), vehicleId, choferId.toString(),
+                "nombre.viejo", InspectionType.PRE_TRIP, Instant.now(), 1000.0, null, false);
+        InspectionAnswer answer = new InspectionAnswer("ext-luces", CheckOutcome.DEFECT, null);
+        answer.setInspection(inspection);
+        Defect defect = new Defect(DefectSeverity.NON_BLOCKING, "Foco quemado", null, Instant.now());
+        UUID defectId = UUID.randomUUID();
+        setId(defect, defectId);
+        answer.attachDefect(defect);
+        when(defectRepository.findByIdWithInspection(defectId)).thenReturn(Optional.of(defect));
+        WorkOrder workOrder = new WorkOrder(vehicleId, WorkOrderSourceType.DEFECT, null, defectId, null, "Foco quemado",
+                null, WorkOrderExecutionType.INTERNO, null, null, technicianId);
+        setId(workOrder, UUID.randomUUID());
+        when(workOrderRepository.findById(workOrder.getId())).thenReturn(Optional.of(workOrder));
+
+        assertEquals("chofer", service.get(workOrder.getId().toString()).defect().reportedBy());
+
+        // Una inspección anterior a CAM-85 no apunta a un usuario: queda el nombre con el que se guardó.
+        Inspection legacy = new Inspection(new Trip(vehicle, Instant.now()), vehicleId, "driver-demo-1",
+                "Carlos Gómez", InspectionType.PRE_TRIP, Instant.now(), 1000.0, null, false);
+        answer.setInspection(legacy);
+        assertEquals("Carlos Gómez", service.get(workOrder.getId().toString()).defect().reportedBy());
+    }
+
+    // --- Eventos para los avisos al técnico (CAM-99, CAM-100) ---
+
+    private UpdateWorkOrderRequest cancelRequest(String technician) {
+        return new UpdateWorkOrderRequest("cancelada", null, null, null, technician, null, null, null);
+    }
+
+    @Test
+    void crearUnaOtConTecnicoPublicaQueSeLaAsignaron() {
+        WorkOrderDto result = service.create(manualRequest("interno", null, technicianId.toString())).dto();
+
+        verify(eventPublisher).publishEvent(
+                new WorkOrderTechnicianChangedEvent(UUID.fromString(result.id()), null, technicianId));
+    }
+
+    @Test
+    void crearUnaOtSinTecnicoNoPublicaNada() {
+        service.create(manualRequest("interno", null, null));
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void asignarTecnicoAUnaOtQueNoTeniaPublicaQueSeLaAsignaron() throws Exception {
+        WorkOrder workOrder = new WorkOrder(vehicleId, WorkOrderSourceType.MANUAL, null, null, null, "Luces", null,
+                WorkOrderExecutionType.INTERNO, null, null, null);
+        setId(workOrder, UUID.randomUUID());
+        when(workOrderRepository.findById(workOrder.getId())).thenReturn(Optional.of(workOrder));
+
+        service.update(workOrder.getId().toString(), updateRequest(technicianId.toString(), null, null));
+
+        verify(eventPublisher).publishEvent(new WorkOrderTechnicianChangedEvent(workOrder.getId(), null, technicianId));
+    }
+
+    @Test
+    void reasignarAOtroTecnicoPublicaElAnteriorYElNuevo() throws Exception {
+        WorkOrder workOrder = existingInternalWithTechnician();
+        UUID otherId = UUID.randomUUID();
+        User other = new User("otro.tecnico", "hash", Role.TECNICO);
+        setId(other, otherId);
+        when(userRepository.findById(otherId)).thenReturn(Optional.of(other));
+
+        service.update(workOrder.getId().toString(), updateRequest(otherId.toString(), null, null));
+
+        verify(eventPublisher).publishEvent(new WorkOrderTechnicianChangedEvent(workOrder.getId(), technicianId, otherId));
+    }
+
+    @Test
+    void desasignarOPasarAExternaPublicaQueElTecnicoLaPerdio() throws Exception {
+        WorkOrder unassigned = existingInternalWithTechnician();
+        service.update(unassigned.getId().toString(), updateRequest("", null, null));
+        verify(eventPublisher).publishEvent(new WorkOrderTechnicianChangedEvent(unassigned.getId(), technicianId, null));
+
+        WorkOrder external = existingInternalWithTechnician();
+        service.update(external.getId().toString(), updateRequest(null, "externo", "Taller Norte"));
+        verify(eventPublisher).publishEvent(new WorkOrderTechnicianChangedEvent(external.getId(), technicianId, null));
+    }
+
+    @Test
+    void editarOtroCampoOReenviarElMismoTecnicoNoPublicaNada() throws Exception {
+        WorkOrder workOrder = existingInternalWithTechnician();
+
+        service.update(workOrder.getId().toString(), updateRequest(technicianId.toString(), null, null));
+        service.update(workOrder.getId().toString(),
+                new UpdateWorkOrderRequest(null, null, null, null, null, null, null, "Revisar también el ABS"));
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void cancelarUnaOtConTecnicoPublicaLaCancelacion() throws Exception {
+        WorkOrder workOrder = existingInternalWithTechnician();
+
+        service.update(workOrder.getId().toString(), cancelRequest(null));
+
+        verify(eventPublisher).publishEvent(new WorkOrderCancelledEvent(workOrder.getId(), technicianId));
+        verify(eventPublisher, never()).publishEvent(any(WorkOrderTechnicianChangedEvent.class));
+    }
+
+    @Test
+    void cambiarDeTecnicoYCancelarEnElMismoPedidoSoloLeAvisaAlQueLaTenia() throws Exception {
+        WorkOrder workOrder = existingInternalWithTechnician();
+
+        service.update(workOrder.getId().toString(), cancelRequest(""));
+
+        verify(eventPublisher).publishEvent(new WorkOrderCancelledEvent(workOrder.getId(), technicianId));
+        verify(eventPublisher, never()).publishEvent(any(WorkOrderTechnicianChangedEvent.class));
+    }
+
+    @Test
+    void finalizarYCambiarDeTecnicoEnElMismoPedidoSoloAvisaQueSeFinalizo() throws Exception {
+        WorkOrder workOrder = existingInternalWithTechnician();
+        workOrder.start();
+        when(photoRepository.countByWorkOrder_Id(workOrder.getId())).thenReturn(1L);
+
+        service.update(workOrder.getId().toString(),
+                new UpdateWorkOrderRequest("finalizada", "Pastillas cambiadas", null, null, "", null, null, null));
+
+        // CAM-98: al admin se le avisa que se finalizó; al técnico, nada.
+        verify(eventPublisher).publishEvent(new WorkOrderFinalizedEvent(workOrder.getId()));
+        verify(eventPublisher, never()).publishEvent(any(WorkOrderTechnicianChangedEvent.class));
+        verify(eventPublisher, never()).publishEvent(any(WorkOrderCancelledEvent.class));
+    }
+
+    @Test
+    void pasarAEnProcesoNoAvisaQueSeFinalizo() throws Exception {
+        WorkOrder workOrder = existingInternalWithTechnician();
+
+        service.update(workOrder.getId().toString(),
+                new UpdateWorkOrderRequest("en_proceso", null, null, null, null, null, null, null));
+
+        verify(eventPublisher, never()).publishEvent(any(WorkOrderFinalizedEvent.class));
+    }
+
+    @Test
+    void cancelarUnaOtSinTecnicoNoPublicaNada() throws Exception {
+        WorkOrder workOrder = new WorkOrder(vehicleId, WorkOrderSourceType.MANUAL, null, null, null, "Luces", null,
+                WorkOrderExecutionType.INTERNO, null, null, null);
+        setId(workOrder, UUID.randomUUID());
+        when(workOrderRepository.findById(workOrder.getId())).thenReturn(Optional.of(workOrder));
+
+        service.update(workOrder.getId().toString(), cancelRequest(null));
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void unCambioRechazadoNoPublicaNada() throws Exception {
+        WorkOrder workOrder = existingInternalWithTechnician();
+
+        assertThrows(WorkOrderValidationException.class, () -> service.update(workOrder.getId().toString(),
+                updateRequest(UUID.randomUUID().toString(), null, null)));
+
+        verify(eventPublisher, never()).publishEvent(any());
     }
 }

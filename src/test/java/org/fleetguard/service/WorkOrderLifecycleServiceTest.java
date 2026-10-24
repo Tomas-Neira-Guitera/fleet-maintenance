@@ -32,9 +32,14 @@ import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderExpenseRepository;
 import org.fleetguard.repository.WorkOrderPhotoRepository;
 import org.fleetguard.repository.WorkOrderRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
@@ -45,9 +50,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -73,7 +80,8 @@ class WorkOrderLifecycleServiceTest {
     private final MaintenanceCompletionService completionService = mock(MaintenanceCompletionService.class);
     private final WorkOrderService service = new WorkOrderService(workOrderRepository, expenseRepository, photoRepository,
             vehicleRepository, defectRepository, scheduleRepository, scheduledMaintenanceService, completionService,
-            mock(UserRepository.class), new WorkOrderMapper(), new DefectMapper());
+            mock(UserRepository.class), new WorkOrderMapper(), new DefectMapper(), new OdometerReadings(5000),
+            mock(ApplicationEventPublisher.class));
 
     private final UUID vehicleId = UUID.randomUUID();
     private final Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
@@ -306,6 +314,29 @@ class WorkOrderLifecycleServiceTest {
         assertEquals("resuelto", defect.getStatus());
     }
 
+    @Test
+    void finalizarUnaOtConKmActualizaElVehiculo() throws Exception {
+        // CAM-90: una OT de defecto o manual no pasa por MaintenanceCompletionService; el km se aplica acá.
+        vehicle.setOdometerKm(120000);
+        WorkOrder workOrder = inProgress(null, null, null);
+        withPhotos(workOrder, 1);
+
+        service.update(workOrder.getId().toString(), finalizeWith("Reparado", "120400"));
+
+        assertEquals(120400, vehicle.getOdometerKm());
+    }
+
+    @Test
+    void finalizarUnaOtSinKmNoTocaElVehiculo() throws Exception {
+        vehicle.setOdometerKm(120000);
+        WorkOrder workOrder = inProgress(null, null, null);
+        withPhotos(workOrder, 1);
+
+        service.update(workOrder.getId().toString(), finalizeWith("Reparado", null));
+
+        assertEquals(120000, vehicle.getOdometerKm());
+    }
+
     // --- Gastos y fotos ---
 
     @Test
@@ -313,7 +344,7 @@ class WorkOrderLifecycleServiceTest {
         WorkOrder workOrder = workOrder(null, null, null);
 
         WorkOrderExpenseDto expense = service.addExpense(workOrder.getId().toString(),
-                new CreateWorkOrderExpenseRequest("repuesto", "Pastillas de freno", new BigDecimal("45000.50")));
+                new CreateWorkOrderExpenseRequest("repuesto", "Pastillas de freno", new BigDecimal("45000.50"), null, null));
 
         assertEquals("repuesto", expense.category());
         assertEquals(new BigDecimal("45000.50"), expense.amount());
@@ -325,10 +356,99 @@ class WorkOrderLifecycleServiceTest {
 
         WorkOrderValidationException ex = assertThrows(WorkOrderValidationException.class,
                 () -> service.addExpense(workOrder.getId().toString(),
-                        new CreateWorkOrderExpenseRequest("combustible", " ", BigDecimal.ZERO)));
+                        new CreateWorkOrderExpenseRequest("combustible", " ", BigDecimal.ZERO, null, null)));
 
         assertEquals(List.of("category", "amount", "description"), fields(ex));
         verify(expenseRepository, never()).save(any());
+    }
+
+    /** El comprobante se compara contra el origen del pedido: se simula uno a http://localhost:8080/api. */
+    private static void withRequestTo8080() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setServerPort(8080);
+        request.setContextPath("/api");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+    }
+
+    @AfterEach
+    void clearRequest() {
+        RequestContextHolder.resetRequestAttributes();
+    }
+
+    @Test
+    void unGastoPuedeLlevarElNumeroYLaFotoDelComprobante() throws Exception {
+        withRequestTo8080();
+        WorkOrder workOrder = workOrder(null, null, null);
+        String receipt = "http://localhost:8080/api/photos/0b6f2c1e-7a3d-4f0e-9c1a-2d5b8e4f6a70";
+
+        WorkOrderExpenseDto expense = service.addExpense(workOrder.getId().toString(),
+                new CreateWorkOrderExpenseRequest("repuesto", "Pastillas de freno", BigDecimal.TEN, " 0001-00012345 ",
+                        " " + receipt + " "));
+
+        assertEquals("0001-00012345", expense.receiptNumber());
+        assertEquals(receipt, expense.receiptPhotoUrl());
+    }
+
+    @Test
+    void sinComprobanteOConUnoEnBlancoElGastoQuedaSinFoto() throws Exception {
+        WorkOrder workOrder = workOrder(null, null, null);
+
+        assertNull(service.addExpense(workOrder.getId().toString(),
+                new CreateWorkOrderExpenseRequest("otro", "Grúa", BigDecimal.TEN, null, null)).receiptPhotoUrl());
+        WorkOrderExpenseDto blank = service.addExpense(workOrder.getId().toString(),
+                new CreateWorkOrderExpenseRequest("otro", "Grúa", BigDecimal.TEN, "  ", "  "));
+        assertNull(blank.receiptNumber());
+        assertNull(blank.receiptPhotoUrl());
+    }
+
+    @Test
+    void elNumeroDeComprobanteVaSinFotoYTieneHasta50Caracteres() throws Exception {
+        WorkOrder workOrder = workOrder(null, null, null);
+        String id = workOrder.getId().toString();
+
+        WorkOrderExpenseDto onlyNumber = service.addExpense(id,
+                new CreateWorkOrderExpenseRequest("otro", "Grúa", BigDecimal.TEN, "A".repeat(50), null));
+        assertEquals("A".repeat(50), onlyNumber.receiptNumber());
+        assertNull(onlyNumber.receiptPhotoUrl());
+
+        WorkOrderValidationException ex = assertThrows(WorkOrderValidationException.class, () -> service.addExpense(id,
+                new CreateWorkOrderExpenseRequest("otro", "Grúa", BigDecimal.TEN, "A".repeat(51), null)));
+        assertEquals(List.of("receiptNumber"), fields(ex));
+    }
+
+    @Test
+    void unComprobanteDeOtroServidorSeRechazaCon422() throws Exception {
+        withRequestTo8080();
+        WorkOrder workOrder = workOrder(null, null, null);
+
+        // Misma forma que una foto nuestra, pero en otro host.
+        WorkOrderValidationException ex = assertThrows(WorkOrderValidationException.class,
+                () -> service.addExpense(workOrder.getId().toString(), new CreateWorkOrderExpenseRequest("otro",
+                        "Grúa", BigDecimal.TEN, null, "https://otro-sitio.com/api/photos/abc")));
+
+        assertEquals(List.of("receiptPhotoUrl"), fields(ex));
+        verify(expenseRepository, never()).save(any());
+    }
+
+    @Test
+    void laUrlDelComprobanteTieneQueSerUnaFotoDeEsteServidor() {
+        String base = "http://localhost:8080/api/photos/";
+        assertTrue(WorkOrderService.isUploadedPhotoUrl(base + "0b6f2c1e-7a3d-4f0e-9c1a-2d5b8e4f6a70", base));
+        assertTrue(WorkOrderService.isUploadedPhotoUrl(base + "demo_1", base));
+        // Otro host, otro puerto o userinfo que disfraza el host.
+        assertFalse(WorkOrderService.isUploadedPhotoUrl("https://otro-sitio.com/api/photos/abc", base));
+        assertFalse(WorkOrderService.isUploadedPhotoUrl("http://localhost:9999/api/photos/abc", base));
+        assertFalse(WorkOrderService.isUploadedPhotoUrl("http://otro@localhost:8080/api/photos/abc", base));
+        assertFalse(WorkOrderService.isUploadedPhotoUrl("http://localhost:8080.otro-sitio.com/api/photos/abc", base));
+        // Otra ruta, rutas que se salen del endpoint, query, fragment o sin id.
+        assertFalse(WorkOrderService.isUploadedPhotoUrl("http://localhost:8080/api/users", base));
+        assertFalse(WorkOrderService.isUploadedPhotoUrl(base + "../users", base));
+        assertFalse(WorkOrderService.isUploadedPhotoUrl(base + "%2e%2e", base));
+        assertFalse(WorkOrderService.isUploadedPhotoUrl(base + "abc/def", base));
+        assertFalse(WorkOrderService.isUploadedPhotoUrl(base + "abc?x=1", base));
+        assertFalse(WorkOrderService.isUploadedPhotoUrl(base + "abc#x", base));
+        assertFalse(WorkOrderService.isUploadedPhotoUrl(base, base));
+        assertFalse(WorkOrderService.isUploadedPhotoUrl("javascript:alert(1)", base));
     }
 
     @Test
@@ -338,7 +458,7 @@ class WorkOrderLifecycleServiceTest {
         String id = workOrder.getId().toString();
 
         assertEquals("WORK_ORDER_FINALIZED", assertThrows(WorkOrderConflictException.class, () -> service.addExpense(id,
-                new CreateWorkOrderExpenseRequest("otro", "Grúa", BigDecimal.TEN))).getErrorCode());
+                new CreateWorkOrderExpenseRequest("otro", "Grúa", BigDecimal.TEN, null, null))).getErrorCode());
         assertEquals("WORK_ORDER_FINALIZED", assertThrows(WorkOrderConflictException.class,
                 () -> service.deleteExpense(id, UUID.randomUUID().toString())).getErrorCode());
         assertEquals("WORK_ORDER_CLOSED", assertThrows(WorkOrderConflictException.class,

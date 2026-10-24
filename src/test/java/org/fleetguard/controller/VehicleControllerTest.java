@@ -1,10 +1,12 @@
 package org.fleetguard.controller;
 
 import org.fleetguard.dto.CreateVehicleRequest;
+import org.fleetguard.dto.CurrentTripDto;
 import org.fleetguard.dto.FieldValidationErrorDetail;
 import org.fleetguard.dto.FleetStatusRowDto;
 import org.fleetguard.dto.OdometerResultDto;
 import org.fleetguard.dto.PagedResponse;
+import org.fleetguard.dto.UserRefDto;
 import org.fleetguard.dto.VehicleSummaryDto;
 import org.fleetguard.exception.MaintenanceConflictException;
 import org.fleetguard.exception.VehicleNotFoundException;
@@ -42,7 +44,8 @@ class VehicleControllerTest extends WebMvcTestBase {
     private VehicleHistoryService vehicleHistoryService;
 
     private static VehicleSummaryDto summary() {
-        return new VehicleSummaryDto("v-1", "AB123CD", "Ford", "Cargo", "available", "Camión", 2020, null, 50000, true);
+        return new VehicleSummaryDto("v-1", "AB123CD", "Ford", "Cargo", "available", "Camión", 2020, null, 50000, true,
+                false, null);
     }
 
     @Test
@@ -54,6 +57,22 @@ class VehicleControllerTest extends WebMvcTestBase {
                 .andExpect(jsonPath("$[0].plate").value("AB123CD"))
                 .andExpect(jsonPath("$[0].status").value("available"))
                 .andExpect(jsonPath("$[0].odometerKm").value(50000));
+    }
+
+    @Test
+    void unVehiculoEnViajeTraeQuienLoAbrioYUnoBloqueadoLoDice() throws Exception {
+        VehicleSummaryDto onTrip = new VehicleSummaryDto("v-2", "AC456EF", "Iveco", "Daily", "on-trip", null, null, null,
+                1000, true, true, new CurrentTripDto("2026-10-07T11:15:00Z", new UserRefDto("u-1", "chofer1")));
+        when(vehicleService.listVehicles(true)).thenReturn(List.of(summary(), onTrip));
+
+        // CAM-87 y CAM-89: forma del JSON que consumen el listado del chofer y el detalle del admin.
+        mvc.perform(get("/vehicles"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].blocked").value(false))
+                .andExpect(jsonPath("$[0].currentTrip").doesNotExist())
+                .andExpect(jsonPath("$[1].blocked").value(true))
+                .andExpect(jsonPath("$[1].currentTrip.startedAt").value("2026-10-07T11:15:00Z"))
+                .andExpect(jsonPath("$[1].currentTrip.openedBy.name").value("chofer1"));
     }
 
     @Test

@@ -11,6 +11,10 @@ public record VehicleSummaryDto(
         Integer year,
         String chassisNumber,
         long odometerKm,
-        boolean active
+        boolean active,
+        // CAM-89: true si tiene un defecto bloqueante sin resolver (no puede iniciar un viaje).
+        boolean blocked,
+        // CAM-87: el viaje abierto, si status es "on-trip"; null si está disponible.
+        CurrentTripDto currentTrip
 ) {
 }

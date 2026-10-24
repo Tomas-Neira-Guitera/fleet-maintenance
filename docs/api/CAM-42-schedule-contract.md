@@ -123,6 +123,19 @@ Al hacer clic en un mantenimiento del calendario semanal se abre su detalle, con
 - Cada programación trae `workOrder` (`id`, `status`, `responsible`) con la OT abierta vinculada, o `null`,
   para mostrarla en el detalle sin pedir el listado de OTs.
 
+### 10. El calendario muestra también lo hecho y lo cancelado (CAM-65)
+`GET /api/maintenance-schedule` acepta varios estados en `status`, separados por comas
+(`status=scheduled,done,cancelled`) o repitiendo el parámetro. El calendario semanal y el
+mensual piden los tres, para que un turno marcado como hecho o cancelado siga en su día con
+su estado, en vez de desaparecer. Sin `status` sigue trayendo solo `scheduled`, así que el
+preview del modal de "Planificar" (decisión 7) no cambia. Se ignoran los espacios alrededor
+y los valores vacíos: `status=` o `status=done,` valen como si no estuvieran (antes `status=`
+era un `422`). Un estado desconocido, aunque venga junto a otros válidos, es un `422` con
+`details[].field = "status"`.
+
+"Atrasado" no es un estado del backend: el frontend lo calcula como un turno `scheduled`
+cuyo `scheduledAt` ya pasó.
+
 ## Fuera de alcance
 
 - Historial de reprogramaciones (ver decisión 3).

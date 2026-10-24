@@ -43,6 +43,11 @@ inspección "como" otro chofer, o con una fecha/hora manipulada — algo que sí
 si confiáramos en lo que manda la app. La app mobile del chofer no necesita mandar ninguno
 de los dos campos.
 
+Desde CAM-85 esto es literal: el endpoint exige el JWT de un usuario activo con rol CHOFER
+(401 sin token válido, 403 con otro rol) y el chofer de la inspección es ese usuario (su id
+y su username). Los headers temporales `X-Driver-Id` / `X-Driver-Name` se eliminaron. Ver
+`CAM-87-trips-and-blocking-contract.md`.
+
 ### 2. El servidor es dueño de la definición del checklist
 El cliente manda solo `itemId` + lo que el chofer completó (`outcome`, `numberValue`,
 `defect`). El servidor resuelve label/sección/tipo/obligatoriedad de cada ítem contra su
@@ -78,6 +83,11 @@ Espejo de los criterios de aceptación de CAM-11:
 - Un pre-trip exitoso abre un `Trip` (`status: open`) y lo asocia al vehículo.
 - Un post-trip exitoso cierra ese `Trip` (`status: closed`, `endedAt` seteado) y el
   vehículo vuelve a `available`.
+- Un pre-trip sobre un vehículo dado de baja → `409 VEHICLE_INACTIVE`; sobre uno con un
+  defecto bloqueante sin resolver → `409 VEHICLE_BLOCKED` (CAM-89). El post-trip no se
+  rechaza por estos motivos.
+- Un pre-trip que reporta un defecto bloqueante no deja el vehículo en viaje (CAM-86): el
+  `Trip` vuelve ya cerrado. Detalle en `CAM-87-trips-and-blocking-contract.md`.
 
 ### 6. Formato de error uniforme
 Todas las respuestas de error devuelven `{ error: "<CÓDIGO>", message: "<texto>" }`,
@@ -108,7 +118,7 @@ defects(id, inspection_answer_id, severity, description, photo_url, created_at, 
 
 ## Fuera de alcance de este contrato
 
-- Login/roles y el mecanismo real detrás de `Authorization: Bearer` (historia aparte).
+- El login y el alta de usuarios (CAM-43, CAM-23).
 - Órdenes de trabajo de mantenimiento y todo lo que consuma `GET /api/defects` más allá de listarlo (feature 5.3).
 - Checklist configurable por accesorios del vehículo (ítems extra por faja/traca/grúa/
   rampa): se evaluó para esta historia pero se decidió diferirlo a una historia futura;

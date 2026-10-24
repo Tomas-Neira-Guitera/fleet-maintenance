@@ -33,18 +33,19 @@ delata qué usuarios existen aunque el mensaje de error sea idéntico.
 `fleetguard.jwt.secret` (64 caracteres en el `application.yml` committeado, valor de
 desarrollo — sobreescribir en `application-local.yml` fuera de la máquina local) determina
 el algoritmo HMAC vía `Keys.hmacShaKeyFor`; con ese largo de clave firma en HS512, no
-HS256. `fleetguard.jwt.expiration-minutes` controla el vencimiento (60 min por defecto).
+HS256. `fleetguard.jwt.expiration-minutes` controla el vencimiento: 720 minutos (12 horas)
+desde CAM-85, para que un chofer no tenga que volver a entrar entre el pre-viaje y el
+post-viaje de una jornada. Antes eran 60.
 El token incluye `sub` (id de usuario), `username` y `role` como claims.
 
-### 4. Convive con el header temporal de CAM-11
-`X-Driver-Id` (stand-in de identidad del chofer para las inspecciones DVIR, ver
-`docs/api/CAM-11-dvir-contract.md`) no se reemplaza todavía por este login — conviven
-hasta que el frontend (CAM-45) esté migrado a usar el JWT en el resto de los endpoints.
+### 4. Reemplazó al header temporal de CAM-11
+`X-Driver-Id` era el stand-in de identidad del chofer para las inspecciones DVIR. Convivió
+con este login hasta CAM-85: desde entonces el chofer de una inspección es el usuario del
+JWT y el header ya no existe (ver `docs/api/CAM-87-trips-and-blocking-contract.md`).
 
 ## Fuera de alcance de este contrato
 
 - Alta y edición de usuarios (CAM-23). Invitaciones por email: sin card.
-- Autorización por rol: desde CAM-23 el JWT se valida solo en `/api/users` (exige ADMIN);
-  el resto de los endpoints todavía no lo valida (CAM-73).
-- Reemplazar `X-Driver-Id` por el JWT en los endpoints de CAM-11 (queda para cuando el
-  frontend haga esa migración).
+- Autorización por rol: el JWT se valida en `/api/users` y `/api/expenses` (exigen ADMIN,
+  CAM-23 y CAM-52) y en `POST /api/inspections/{vehicleId}` (exige CHOFER, CAM-85); el
+  resto de los endpoints todavía no lo valida (CAM-73).
