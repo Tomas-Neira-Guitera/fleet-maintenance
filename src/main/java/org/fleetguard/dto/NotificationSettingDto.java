@@ -17,6 +17,8 @@ public record NotificationSettingDto(
         List<String> recipientRoles,
         List<String> recipientUserIds,
         boolean supportsLead,
+        // CAM-127: los documentos se anticipan solo en días; los planes, en días y km.
+        boolean supportsLeadKm,
         Integer leadDays,
         Integer leadKm,
         boolean customized

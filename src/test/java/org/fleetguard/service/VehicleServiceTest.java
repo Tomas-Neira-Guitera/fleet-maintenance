@@ -1,5 +1,6 @@
 package org.fleetguard.service;
 
+import org.fleetguard.dto.BlockReasonDto;
 import org.fleetguard.dto.CreateVehicleRequest;
 import org.fleetguard.dto.UpdateVehicleRequest;
 import org.fleetguard.dto.VehicleSummaryDto;
@@ -12,7 +13,6 @@ import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.exception.VehicleValidationException;
 import org.fleetguard.mapper.VehicleMapper;
-import org.fleetguard.repository.DefectRepository;
 import org.fleetguard.repository.TripRepository;
 import org.fleetguard.repository.UserRepository;
 import org.fleetguard.repository.VehicleMaintenanceAssignmentRepository;
@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Field;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,11 +40,11 @@ class VehicleServiceTest {
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final VehicleMaintenanceAssignmentRepository assignmentRepository = mock(VehicleMaintenanceAssignmentRepository.class);
-    private final DefectRepository defectRepository = mock(DefectRepository.class);
+    private final VehicleAvailabilityService availabilityService = mock(VehicleAvailabilityService.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final VehicleMapper vehicleMapper = new VehicleMapper();
     private final VehicleService service = new VehicleService(vehicleRepository, tripRepository, assignmentRepository,
-            defectRepository, new UserNameService(userRepository), vehicleMapper, event -> { });
+            availabilityService, new UserNameService(userRepository), vehicleMapper, event -> { });
 
     /** El id es @GeneratedValue; en el test se setea por reflexión, sin persistencia real (mismo patrón que DefectServiceTest). */
     private static void setId(Object entity, UUID id) throws Exception {
@@ -153,9 +154,12 @@ class VehicleServiceTest {
         setId(vehicle, id);
         when(vehicleRepository.findById(id)).thenReturn(Optional.of(vehicle));
         when(tripRepository.findFirstByVehicle_IdAndStatus(id, TripStatus.OPEN)).thenReturn(Optional.empty());
-        when(defectRepository.existsOpenBlockingByVehicleId(id)).thenReturn(true);
+        when(availabilityService.reasons(id)).thenReturn(List.of(
+                new BlockReasonDto(BlockReasonDto.BLOCKING_DEFECT, "Defecto bloqueante: Sin frenos")));
 
-        assertTrue(service.getById(id.toString()).blocked());
+        VehicleSummaryDto result = service.getById(id.toString());
+        assertTrue(result.blocked());
+        assertEquals("Defecto bloqueante: Sin frenos", result.blockReasons().get(0).message());
     }
 
     @Test
@@ -170,7 +174,8 @@ class VehicleServiceTest {
         when(vehicleRepository.findByActive(true)).thenReturn(List.of(libre, bloqueado, enViaje));
         when(tripRepository.findByStatusWithVehicle(TripStatus.OPEN))
                 .thenReturn(List.of(new Trip(enViaje, Instant.now(), chofer.getId(), "chofer1")));
-        when(defectRepository.findVehicleIdsWithOpenBlockingDefect()).thenReturn(List.of(bloqueado.getId()));
+        when(availabilityService.reasonsFor(any())).thenReturn(Map.of(bloqueado.getId(),
+                List.of(new BlockReasonDto(BlockReasonDto.EXPIRED_DOCUMENT, "Seguro: venció el 01/10/2026"))));
 
         List<VehicleSummaryDto> result = service.listVehicles(true);
 
@@ -180,7 +185,9 @@ class VehicleServiceTest {
         assertEquals("chofer1", result.get(0).currentTrip().openedBy().name());
         assertTrue(result.get(1).blocked());
         assertEquals("available", result.get(1).status());
+        assertEquals("Seguro: venció el 01/10/2026", result.get(1).blockReasons().get(0).message());
         assertFalse(result.get(2).blocked());
+        assertEquals(List.of(), result.get(2).blockReasons());
         assertNull(result.get(2).currentTrip());
     }
 

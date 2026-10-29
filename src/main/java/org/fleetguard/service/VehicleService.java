@@ -1,5 +1,6 @@
 package org.fleetguard.service;
 
+import org.fleetguard.dto.BlockReasonDto;
 import org.fleetguard.dto.CreateVehicleRequest;
 import org.fleetguard.event.OdometerChangedEvent;
 import org.springframework.context.ApplicationEventPublisher;
@@ -22,7 +23,6 @@ import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.exception.VehicleValidationException;
 import org.fleetguard.mapper.VehicleMapper;
-import org.fleetguard.repository.DefectRepository;
 import org.fleetguard.repository.TripRepository;
 import org.fleetguard.repository.VehicleMaintenanceAssignmentRepository;
 import org.fleetguard.repository.VehicleRepository;
@@ -37,7 +37,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -48,7 +47,7 @@ public class VehicleService {
     private final VehicleRepository vehicleRepository;
     private final TripRepository tripRepository;
     private final VehicleMaintenanceAssignmentRepository assignmentRepository;
-    private final DefectRepository defectRepository;
+    private final VehicleAvailabilityService availabilityService;
     private final UserNameService userNameService;
     private final VehicleMapper vehicleMapper;
 
@@ -58,12 +57,12 @@ public class VehicleService {
 
     public VehicleService(VehicleRepository vehicleRepository, TripRepository tripRepository,
                            VehicleMaintenanceAssignmentRepository assignmentRepository,
-                           DefectRepository defectRepository, UserNameService userNameService,
+                           VehicleAvailabilityService availabilityService, UserNameService userNameService,
                            VehicleMapper vehicleMapper, ApplicationEventPublisher eventPublisher) {
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.assignmentRepository = assignmentRepository;
-        this.defectRepository = defectRepository;
+        this.availabilityService = availabilityService;
         this.userNameService = userNameService;
         this.vehicleMapper = vehicleMapper;
         this.eventPublisher = eventPublisher;
@@ -74,14 +73,16 @@ public class VehicleService {
         // Viajes abiertos, bloqueos y nombres se traen de una vez, no con una consulta por vehículo.
         Map<UUID, Trip> openTripByVehicle = tripRepository.findByStatusWithVehicle(TripStatus.OPEN).stream()
                 .collect(Collectors.toMap(trip -> trip.getVehicle().getId(), trip -> trip, (first, second) -> first));
-        Set<UUID> blockedIds = Set.copyOf(defectRepository.findVehicleIdsWithOpenBlockingDefect());
         Map<String, String> names = userNameService.currentNames(openTripByVehicle.values().stream()
                 .map(Trip::getOpenedById).filter(Objects::nonNull).map(UUID::toString).toList());
+        List<Vehicle> vehicles = vehicleRepository.findByActive(active);
+        Map<UUID, List<BlockReasonDto>> reasons = availabilityService.reasonsFor(vehicles.stream().map(Vehicle::getId).toList());
 
-        return vehicleRepository.findByActive(active).stream()
+        return vehicles.stream()
                 .sorted(Comparator.comparing(Vehicle::getPlate, String.CASE_INSENSITIVE_ORDER))
                 .map(vehicle -> vehicleMapper.toSummary(vehicle,
-                        currentTrip(openTripByVehicle.get(vehicle.getId()), names), blockedIds.contains(vehicle.getId())))
+                        currentTrip(openTripByVehicle.get(vehicle.getId()), names),
+                        reasons.getOrDefault(vehicle.getId(), List.of())))
                 .toList();
     }
 
@@ -102,8 +103,7 @@ public class VehicleService {
         Trip openTrip = tripRepository.findFirstByVehicle_IdAndStatus(vehicle.getId(), TripStatus.OPEN).orElse(null);
         Map<String, String> names = openTrip == null || openTrip.getOpenedById() == null ? Map.of()
                 : userNameService.currentNames(List.of(openTrip.getOpenedById().toString()));
-        return vehicleMapper.toSummary(vehicle, currentTrip(openTrip, names),
-                defectRepository.existsOpenBlockingByVehicleId(vehicle.getId()));
+        return vehicleMapper.toSummary(vehicle, currentTrip(openTrip, names), availabilityService.reasons(vehicle.getId()));
     }
 
     /** CAM-87: quién tiene el vehículo y desde cuándo. openedBy es null en viajes sin chofer cargado. */
@@ -132,11 +132,13 @@ public class VehicleService {
                 .filter(VehicleMaintenanceAssignment::isActive)
                 .collect(Collectors.groupingBy(VehicleMaintenanceAssignment::getVehicleId));
 
+        Map<UUID, List<BlockReasonDto>> reasons = availabilityService.reasonsFor(vehicles.stream().map(Vehicle::getId).toList());
+
         LocalDate today = LocalDate.now();
         List<FleetStatusRowDto> rows = new ArrayList<>();
         for (Vehicle vehicle : vehicles) {
             List<VehicleMaintenanceAssignment> assignments = byVehicle.getOrDefault(vehicle.getId(), List.of());
-            rows.add(buildRow(vehicle, assignments, today));
+            rows.add(buildRow(vehicle, assignments, today, reasons.getOrDefault(vehicle.getId(), List.of())));
         }
 
         if (statusFilter != null) {
@@ -156,7 +158,8 @@ public class VehicleService {
         return new PagedResponse<>(page, pageSize, total, rows.subList(fromIndex, toIndex));
     }
 
-    private FleetStatusRowDto buildRow(Vehicle vehicle, List<VehicleMaintenanceAssignment> assignments, LocalDate today) {
+    private FleetStatusRowDto buildRow(Vehicle vehicle, List<VehicleMaintenanceAssignment> assignments, LocalDate today,
+                                       List<BlockReasonDto> blockReasons) {
         long currentKm = vehicle.getOdometerKm();
 
         List<MaintenanceStatus> statuses = assignments.stream()
@@ -179,7 +182,9 @@ public class VehicleService {
                 currentKm,
                 healthScore,
                 vehicleStatus.toJson(),
-                nextMaintenance
+                nextMaintenance,
+                !blockReasons.isEmpty(),
+                blockReasons
         );
     }
 
@@ -278,7 +283,7 @@ public class VehicleService {
             vehicle.setOdometerKm(request.odometerKm());
         }
         vehicle = vehicleRepository.save(vehicle);
-        return vehicleMapper.toSummary(vehicle, null, false);
+        return vehicleMapper.toSummary(vehicle, null, List.of());
     }
 
     /** PATCH /api/vehicles/{id} -- CAM-25. Campos ausentes no se modifican. */

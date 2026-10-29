@@ -88,9 +88,14 @@ public class NotificationSettingsService {
         Integer leadKm = request.leadKm();
         if (def.supportsLead()) {
             validateLead("leadDays", leadDays, MAX_LEAD_DAYS, details);
-            validateLead("leadKm", leadKm, MAX_LEAD_KM, details);
+            if (def.supportsLeadKm()) {
+                validateLead("leadKm", leadKm, MAX_LEAD_KM, details);
+            } else if (leadKm != null) {
+                details.add(new FieldValidationErrorDetail("leadKm", "Este aviso se anticipa solo en días"));
+            }
         } else if (leadDays != null || leadKm != null) {
-            details.add(new FieldValidationErrorDetail("leadDays", "La anticipación solo se configura en \"Mantenimiento por vencer\""));
+            details.add(new FieldValidationErrorDetail("leadDays",
+                    "La anticipación solo se configura en \"Mantenimiento por vencer\" y \"Documento por vencer\""));
         }
 
         if (!details.isEmpty()) {
@@ -196,6 +201,6 @@ public class NotificationSettingsService {
                 def.ownerDescription(), setting.enabled(), channelsToJson(setting.channels()),
                 setting.recipientRoles().stream().sorted().map(Role::name).toList(),
                 setting.recipientUserIds().stream().map(UUID::toString).sorted().toList(),
-                def.supportsLead(), setting.leadDays(), setting.leadKm(), setting.customized());
+                def.supportsLead(), def.supportsLeadKm(), setting.leadDays(), setting.leadKm(), setting.customized());
     }
 }

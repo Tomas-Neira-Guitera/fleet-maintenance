@@ -66,6 +66,11 @@ fleetguard:
     # cuánto se revisa (cron de Spring: segundo minuto hora día mes día-de-semana; acá, cada hora).
     reminder-after-hours: 12
     reminder-cron: "0 0 * * * *"
+  document-alerts:
+    # CAM-127: cada día a las 08:05 (hora de Argentina) se revisan los vencimientos de los documentos y
+    # la disponibilidad de la flota. La anticipación de "por vencer" (15 días por defecto) se configura en
+    # Notificaciones, como la de los planes.
+    cron: "0 5 8 * * *"
   push:
     # CAM-119: claves VAPID con las que el servidor firma las push al navegador. Igual que el secreto
     # del JWT, este par es SOLO para desarrollo local y se commitea a propósito, para que el proyecto

@@ -1,6 +1,7 @@
 package org.fleetguard.repository;
 
 import org.fleetguard.entity.Notification;
+import org.fleetguard.entity.NotificationType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -23,4 +24,10 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     @Modifying
     @Query("update Notification n set n.readAt = :now where n.recipientId = :recipientId and n.readAt is null")
     int markAllRead(@Param("recipientId") UUID recipientId, @Param("now") Instant now);
+
+    /** CAM-103: a quiénes ya se avisó de ese tipo con ese link desde {@code since}. */
+    @Query("select distinct n.recipientId from Notification n where n.type = :type and n.link = :link "
+            + "and n.createdAt >= :since")
+    List<UUID> findRecipientIds(@Param("type") NotificationType type, @Param("link") String link,
+                                @Param("since") Instant since);
 }

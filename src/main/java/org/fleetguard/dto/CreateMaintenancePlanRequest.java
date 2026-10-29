@@ -6,6 +6,8 @@ public record CreateMaintenancePlanRequest(
         String category,
         String intervalType,
         Integer intervalKm,
-        Integer intervalDays
+        Integer intervalDays,
+        // CAM-127: opcional, solo en planes por tiempo.
+        String documentType
 ) {
 }

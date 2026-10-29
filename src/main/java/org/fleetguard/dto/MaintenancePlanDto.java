@@ -8,6 +8,8 @@ public record MaintenancePlanDto(
         String intervalType,
         Integer intervalKm,
         Integer intervalDays,
-        boolean active
+        boolean active,
+        // CAM-127: el documento que renueva este plan ("vtv", "seguro"…), o null.
+        String documentType
 ) {
 }

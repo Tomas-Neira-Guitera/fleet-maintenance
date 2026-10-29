@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -55,6 +56,11 @@ public class Vehicle {
      */
     @Column(columnDefinition = "boolean not null default true")
     private boolean active = true;
+
+    // CAM-102/103: desde cuándo está "No disponible" (null si está disponible). Lo mantiene
+    // VehicleAvailabilityService para detectar el cambio y a quién avisarle cuando vuelve.
+    @Column(name = "unavailable_since")
+    private Instant unavailableSince;
 
     protected Vehicle() {
         // JPA
@@ -132,5 +138,13 @@ public class Vehicle {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public Instant getUnavailableSince() {
+        return unavailableSince;
+    }
+
+    public void setUnavailableSince(Instant unavailableSince) {
+        this.unavailableSince = unavailableSince;
     }
 }

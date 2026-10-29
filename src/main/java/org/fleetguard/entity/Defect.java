@@ -47,6 +47,10 @@ public class Defect {
     @Column(nullable = false)
     private String status = "open";
 
+    // CAM-103: cuándo se resolvió, para avisarle a quien lo reportó cuando el vehículo vuelve.
+    @Column(name = "resolved_at")
+    private Instant resolvedAt;
+
     protected Defect() {
         // JPA
     }
@@ -102,5 +106,10 @@ public class Defect {
     /** Lo llama WorkOrderService al finalizar la orden de trabajo que lo origino -- CAM-14. */
     public void resolve() {
         this.status = "resuelto";
+        this.resolvedAt = Instant.now();
+    }
+
+    public Instant getResolvedAt() {
+        return resolvedAt;
     }
 }
