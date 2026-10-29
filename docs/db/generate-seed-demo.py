@@ -194,7 +194,7 @@ PLANS = [
     dict(key="alineacion", name="Alineación y balanceo", category="neumáticos", type="KM", km=50000, days=None),
     dict(key="engrase", name="Engrase general de chasis", category="chasis", type="BOTH", km=10000, days=30),
     dict(key="refrigerante", name="Cambio de líquido refrigerante", category="motor", type="TIME", km=None, days=730),
-    dict(key="rto", name="Revisión técnica (RTO)", category="documentación", type="TIME", km=None, days=365),
+    dict(key="rto", name="Revisión técnica (RTO)", category="documentación", type="TIME", km=None, days=365, doc="VTV"),
     dict(key="bateria", name="Batería y sistema eléctrico", category="eléctrico", type="TIME", km=None, days=90),
     dict(key="caja", name="Aceite de caja y diferencial", category="transmisión", type="BOTH", km=120000, days=730),
     dict(key="matafuegos", name="Recarga de matafuegos", category="seguridad", type="TIME", km=None, days=365),
@@ -728,6 +728,49 @@ DEFECT_DETAILS = {
     "Testigo de batería encendido": "El testigo de carga de batería queda prendido unos minutos después de arrancar.",
 }
 
+# ---- CAM-127: documentación de cada camión
+# Se genera al final y sin random, así no cambian los ids ni los escenarios de lo de arriba.
+# La VTV vence cuando vence su plan "Revisión técnica (RTO)" (vinculado): la del Cargo está vencida y lo deja
+# "No disponible". Seguro del Volvo por vencer, el del Scania renovado (con el anterior en el historial) y
+# el Accelo sin seguro cargado (obligatorio que falta).
+SEGURO_DAYS = {"scania": 345, "volvo": 10, "actros": 230, "sway": 300, "constellation": 120, "atego": 75,
+               "tector": 190, "cargo": 160, "delivery": 260}
+HABILITACION_DAYS = {"scania": 210, "volvo": 140, "actros": 95, "sway": 280}
+TITLES = {"scania", "sway", "delivery"}
+documents = []
+
+
+def new_doc(k, typ, issued, expires, number=None, name=None, file=None, replaced_by=None, created=None):
+    d = dict(id=uid("document"), vehicle=k, type=typ, name=name, number=number, issued=issued, expires=expires,
+             file=file, replaced_by=replaced_by, created=created if created is not None else (issued if issued is not None else -150))
+    documents.append(d)
+    return d
+
+
+for i, v in enumerate(VEHICLES):
+    k = v["key"]
+    rto = ABY[(k, "rto")]
+    new_doc(k, "VTV", rto["last_day"], rto["next_day"], number=f"RTO-{481200 + i * 37}")
+    if k in SEGURO_DAYS:
+        expires = SEGURO_DAYS[k]
+        current = new_doc(k, "SEGURO", expires - 365, expires, number=f"POL-{70315 + i * 11}-{expires % 7}",
+                          file=photo("demo-poliza-seguro") if k in ("scania", "volvo") else None)
+        if k == "scania":
+            new_doc(k, "SEGURO", expires - 730, expires - 365, number=f"POL-{70315 + i * 11}-0",
+                    replaced_by=current["id"], created=expires - 730)
+    if k in HABILITACION_DAYS:
+        new_doc(k, "HABILITACION_CARGA", HABILITACION_DAYS[k] - 365, HABILITACION_DAYS[k], number=f"RUTA-{9100 + i}")
+    new_doc(k, "CEDULA_VERDE", None, None, number=f"CV-{v['plate']}", created=-170)
+    if k in TITLES:
+        new_doc(k, "TITULO", None, None, created=-170)
+new_doc("atego", "CEDULA_AZUL", -165, 200, number="CA-31877", name=None)
+new_doc("delivery", "OTRO", -320, 45, name="Permiso municipal de carga", number="PM-2210")
+
+# CAM-102/103: desde cuándo está "No disponible" cada camión bloqueado (lo mantiene el backend; acá se siembra).
+UNAVAILABLE_SINCE = {"constellation": ts(D_BLOCK["day"], D_BLOCK["hh"], D_BLOCK["mm"]),
+                     "cargo": ts(ABY[("cargo", "rto")]["next_day"] + 1, 0)}
+assert ABY[("cargo", "rto")]["next_day"] < 0, "la VTV del Cargo tiene que estar vencida"
+
 # CAM-79: los títulos (planes, defectos, programaciones y OTs) no pueden superar 30 caracteres
 too_long = [x for x in [p["name"] for p in PLANS] + [d["description"] for d in defects]
             + [s["title"] for s in schedules] + [o["title"] for o in work_orders] if len(x) > 30]
@@ -736,12 +779,12 @@ assert not too_long, f"Títulos de más de 30 caracteres: {sorted(set(too_long))
 # ---------------------------------------------------------------- SQL
 KNOWN_COLUMNS = {
     "users": "id username password_hash role",
-    "vehicles": "id plate brand model vehicle_type odometer_km year chassis_number active",
+    "vehicles": "id plate brand model vehicle_type odometer_km year chassis_number active unavailable_since",
     "trips": "id vehicle_id status started_at ended_at opened_by_id opened_by_name closed_by_id closed_by_name",
     "inspections": "id trip_id vehicle_id driver_id driver_name type timestamp odometer_km notes has_blocking_defect",
     "inspection_answers": "id inspection_id item_id item_label outcome number_value",
     "defects": "id inspection_answer_id severity description details photo_url created_at status",
-    "maintenance_plans": "id name category interval_type interval_km interval_days active",
+    "maintenance_plans": "id name category interval_type interval_km interval_days active document_type",
     "vehicle_maintenance_assignments": "id vehicle_id maintenance_plan_id last_done_km last_done_date next_due_km next_due_date active",
     "maintenance_completions": "id assignment_id completed_at completed_km work_order_id notes",
     "scheduled_maintenances": "id vehicle_id source_type assignment_id defect_id title scheduled_at status notes created_at updated_at",
@@ -751,6 +794,7 @@ KNOWN_COLUMNS = {
     "work_order_photos": "id work_order_id photo_url created_at",
     "vehicle_checklist_items": "id vehicle_id label type section active created_at",
     "vehicle_disabled_checklist_items": "id vehicle_id base_item_id",
+    "vehicle_documents": "id vehicle_id type name number issued_at expires_at file_url replaced_by_id active created_at",
 }
 out = []
 w = out.append
@@ -791,7 +835,7 @@ w("  end loop;")
 w("end $$;")
 w("")
 w("truncate table work_order_photos, work_order_expenses, work_orders, scheduled_maintenances, maintenance_completions,")
-w("  vehicle_checklist_items, vehicle_disabled_checklist_items,")
+w("  vehicle_checklist_items, vehicle_disabled_checklist_items, vehicle_documents, document_alert_log,")
 w("  vehicle_maintenance_assignments, maintenance_plans, defects, inspection_answers, inspections, trips, vehicles cascade;")
 w("")
 w("-- Usuarios")
@@ -814,13 +858,16 @@ def insert(table, cols, rows_):
 
 
 w("-- Vehículos")
-insert("vehicles", ["id", "plate", "brand", "model", "vehicle_type", "odometer_km", "year", "chassis_number", "active"],
+insert("vehicles", ["id", "plate", "brand", "model", "vehicle_type", "odometer_km", "year", "chassis_number", "active",
+                    "unavailable_since"],
        [[q(v["id"]), q(v["plate"]), q(v["brand"]), q(v["model"]), "'camion'", str(v["odometer"]), str(v["year"]),
-         q(v["vin"]), "true"] for v in VEHICLES])
+         q(v["vin"]), "true", UNAVAILABLE_SINCE.get(v["key"], "null")] for v in VEHICLES])
 w("-- Catálogo de planes")
-insert("maintenance_plans", ["id", "name", "category", "interval_type", "interval_km", "interval_days", "active"],
+insert("maintenance_plans", ["id", "name", "category", "interval_type", "interval_km", "interval_days", "active",
+                             "document_type"],
        [[q(p["id"]), q(p["name"]), q(p["category"]), q(p["type"]), str(p["km"]) if p["km"] else "null",
-         str(p["days"]) if p["days"] else "null", "true" if p.get("active", True) else "false"] for p in PLANS])
+         str(p["days"]) if p["days"] else "null", "true" if p.get("active", True) else "false", q(p.get("doc"))]
+        for p in PLANS])
 w("-- Asignaciones (last/next = cache de la última completion)")
 insert("vehicle_maintenance_assignments",
        ["id", "vehicle_id", "maintenance_plan_id", "last_done_km", "last_done_date", "next_due_km", "next_due_date", "active"],
@@ -875,6 +922,12 @@ insert("work_order_expenses", ["id", "work_order_id", "category", "description",
        [[q(e["id"]), q(e["wo"]), q(e["cat"]), q(e["desc"]), f"{e['amount']:.2f}", ts(*e["created"])] for e in expenses])
 insert("work_order_photos", ["id", "work_order_id", "photo_url", "created_at"],
        [[q(p["id"]), q(p["wo"]), q(p["url"]), ts(*p["created"])] for p in wo_photos])
+w("-- Documentación de cada camión (CAM-127)")
+insert("vehicle_documents", ["id", "vehicle_id", "type", "name", "number", "issued_at", "expires_at", "file_url",
+                             "replaced_by_id", "active", "created_at"],
+       [[q(d["id"]), q(VBY[d["vehicle"]]["id"]), q(d["type"]), q(d["name"]), q(d["number"]),
+         dt(d["issued"]) if d["issued"] is not None else "null", dt(d["expires"]) if d["expires"] is not None else "null",
+         q(d["file"]), q(d["replaced_by"]), "true", ts(d["created"], 9)] for d in documents])
 w("-- Historial de mantenimientos realizados")
 insert("maintenance_completions", ["id", "assignment_id", "completed_at", "completed_km", "work_order_id", "notes"],
        [[q(c["id"]), q(c["assignment"]), dt(c["day"]), str(c["km"]), q(c["wo"]), q(c["notes"])] for c in completions])
@@ -894,6 +947,7 @@ print("assignments", len(assignments), "completions", len(completions))
 print("work orders", len(work_orders), collections.Counter(o["status"] for o in work_orders))
 print("schedules", len(schedules), collections.Counter(s["status"] for s in schedules))
 print("expenses", len(expenses), "total", sum(e["amount"] for e in expenses))
+print("documents", len(documents), collections.Counter(d["type"] for d in documents))
 for v in VEHICLES:
     sts = [a["status"] for a in assignments if a["vehicle"] == v["key"]]
     worst = "vencido" if "vencido" in sts else "por_vencer" if "por_vencer" in sts else "al_dia"
