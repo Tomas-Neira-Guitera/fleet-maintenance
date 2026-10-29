@@ -22,9 +22,14 @@ autenticación todavía (CAM-73).
 
 ## Decisiones
 
-### 1. Tipos fijos
-`vtv`, `seguro`, `cedula_azul`, `habilitacion_carga`, `cedula_verde`, `titulo` y `otro`
-(con nombre libre, hasta 60 caracteres). El número también va hasta 60.
+### 1. Nombre libre; el tipo sale del nombre
+El admin carga cada documento con el nombre que quiera (hasta 60 caracteres): "VTV", "Póliza
+La Segunda", "Permiso municipal". El backend reconoce el tipo por palabras clave del nombre
+(`VehicleDocumentType.infer`, sin tildes ni mayúsculas): `vtv` (vtv, rto, revisión técnica),
+`seguro` (seguro, póliza), `cedula_azul`, `cedula_verde`, `habilitacion_carga`, `titulo`; lo que
+no reconoce es `otro`. El tipo es lo que usan los obligatorios y el vínculo con los planes.
+`type` en el alta es opcional y lo fuerza. Corregir el nombre vuelve a reconocer el tipo. El
+número también va hasta 60.
 
 ### 2. Obligatorios que no bloquean
 VTV y seguro son obligatorios: si falta alguno vigente, `missingRequired` lo dice y la
@@ -33,8 +38,9 @@ pantalla lo marca. **No bloquea**: si bloqueara, el día del deploy toda la flot
 
 ### 3. Renovar es una fila nueva
 Renovar crea un documento nuevo y deja el anterior en el historial (`replacedById`). El
-vigente de cada tipo es el activo sin reemplazo. Cargar un tipo que ya tiene vigente es
-`409 DOCUMENT_ALREADY_LOADED` (se renueva o se corrige); `otro` admite varios. Corregir
+vigente de cada tipo es el activo sin reemplazo. Cargar un tipo reconocido que ya tiene
+vigente, o un `otro` con el mismo nombre, es `409 DOCUMENT_ALREADY_LOADED` (se renueva o se
+corrige). Corregir
 (`PATCH`) solo toca el vigente (`409 DOCUMENT_REPLACED` sobre uno del historial) y no
 cuenta como renovación. Borrar es baja lógica.
 

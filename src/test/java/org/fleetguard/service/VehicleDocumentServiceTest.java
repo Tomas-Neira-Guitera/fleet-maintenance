@@ -128,11 +128,12 @@ class VehicleDocumentServiceTest {
         VehicleMaintenanceAssignment rto = rtoAssignment();
         when(assignmentRepository.findByVehicleIdAndActive(vehicle.getId(), true)).thenReturn(List.of(rto));
 
-        VehicleDocumentDto dto = service.create(vid, new CreateVehicleDocumentRequest("vtv", "ignorado", " 0012 ", "2026-10-20",
-                "2027-10-20", "http://localhost:8080/api/photos/p1"));
+        VehicleDocumentDto dto = service.create(vid, new CreateVehicleDocumentRequest(null, " Oblea VTV 2026 ", " 0012 ",
+                "2026-10-20", "2027-10-20", "http://localhost:8080/api/photos/p1"));
 
+        // El tipo sale del nombre: "Oblea VTV" es la VTV, y por eso registra el mantenimiento de la RTO.
         assertEquals("vtv", dto.type());
-        assertNull(dto.name());
+        assertEquals("Oblea VTV 2026", dto.displayName());
         assertEquals("0012", dto.number());
         assertEquals("al_dia", dto.status());
         ArgumentCaptor<CreateCompletionRequest> completion = ArgumentCaptor.forClass(CreateCompletionRequest.class);
@@ -160,33 +161,63 @@ class VehicleDocumentServiceTest {
     }
 
     @Test
-    void validaElTipoElNombreDeOtroYLasFechas() {
+    void validaElNombreElTipoExplicitoYLasFechas() {
         VehicleValidationException ex = assertThrows(VehicleValidationException.class, () ->
-                service.create(vid, new CreateVehicleDocumentRequest("licencia", null, null, null, null, null)));
+                service.create(vid, new CreateVehicleDocumentRequest("licencia", "Licencia", null, null, null, null)));
         assertEquals("type", ex.getDetails().get(0).field());
 
         ex = assertThrows(VehicleValidationException.class, () ->
-                service.create(vid, new CreateVehicleDocumentRequest("otro", " ", null, "2026-10-10", "2026-01-01", null)));
+                service.create(vid, new CreateVehicleDocumentRequest(null, " ", null, "2026-10-10", "2026-01-01", null)));
         assertEquals(List.of("name", "expiresAt"), ex.getDetails().stream().map(FieldValidationErrorDetail::field).toList());
 
         ex = assertThrows(VehicleValidationException.class, () ->
-                service.create(vid, new CreateVehicleDocumentRequest("otro", "x".repeat(61), null, null, null, null)));
+                service.create(vid, new CreateVehicleDocumentRequest(null, "x".repeat(61), null, null, null, null)));
         assertEquals("name", ex.getDetails().get(0).field());
         verify(writer, never()).renew(any(), any(), any(), any());
     }
 
     @Test
-    void unTipoYaCargadoSeRenuevaNoSeCargaDosVecesPeroOtroSePuedeRepetir() throws Exception {
-        when(documentRepository.findFirstByVehicleIdAndTypeAndActiveTrueAndReplacedByIdIsNull(vehicle.getId(), VehicleDocumentType.SEGURO))
-                .thenReturn(Optional.of(doc(VehicleDocumentType.SEGURO, TODAY.plusDays(100))));
+    void unTipoONombreYaCargadoSeRenuevaNoSeCargaDosVeces() throws Exception {
+        VehicleDocument permiso = doc(VehicleDocumentType.OTRO, null);
+        permiso.setName("Permiso municipal");
+        when(documentRepository.findByVehicleIdAndActiveTrue(vehicle.getId()))
+                .thenReturn(List.of(doc(VehicleDocumentType.SEGURO, TODAY.plusDays(100)), permiso));
 
+        // "Póliza La Segunda" se reconoce como el seguro, que ya está cargado.
         VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class, () ->
-                service.create(vid, new CreateVehicleDocumentRequest("seguro", null, null, null, "2027-01-01", null)));
+                service.create(vid, new CreateVehicleDocumentRequest(null, "Póliza La Segunda", null, null, "2027-01-01", null)));
         assertEquals("DOCUMENT_ALREADY_LOADED", ex.getErrorCode());
+        assertThrows(VehicleStateConflictException.class, () ->
+                service.create(vid, new CreateVehicleDocumentRequest(null, "PERMISO  municipal", null, null, null, null)));
 
-        VehicleDocumentDto otro = service.create(vid, new CreateVehicleDocumentRequest("otro", "Permiso municipal", null, null, null, null));
-        assertEquals("Permiso municipal", otro.displayName());
+        VehicleDocumentDto otro = service.create(vid, new CreateVehicleDocumentRequest(null, "Habilitación bromatológica",
+                null, null, null, null));
+        assertEquals("otro", otro.type());
+        assertEquals("Habilitación bromatológica", otro.displayName());
         assertEquals("sin_vencimiento", otro.status());
+    }
+
+    @Test
+    void conElTipoExplicitoYSinNombreUsaElNombreDelTipo() {
+        VehicleDocumentDto dto = service.create(vid, new CreateVehicleDocumentRequest("titulo", null, null, null, null, null));
+
+        assertEquals("titulo", dto.type());
+        assertEquals("Título del automotor", dto.displayName());
+    }
+
+    @Test
+    void corregirElNombrePuedeCambiarElTipo() throws Exception {
+        VehicleDocument typo = doc(VehicleDocumentType.OTRO, TODAY.plusDays(200));
+        typo.setName("Segruo");
+        when(documentRepository.findByIdAndVehicleIdAndActiveTrue(typo.getId(), vehicle.getId())).thenReturn(Optional.of(typo));
+        when(documentRepository.findByVehicleIdAndActiveTrue(vehicle.getId())).thenReturn(List.of(typo));
+
+        VehicleDocumentDto dto = service.update(vid, typo.getId().toString(),
+                new UpdateVehicleDocumentRequest("Seguro Federación Patronal", null, null, null, null));
+
+        assertEquals("seguro", dto.type());
+        verify(writer).afterChange(vehicle.getId(), VehicleDocumentType.SEGURO);
+        verify(writer).afterChange(vehicle.getId(), VehicleDocumentType.OTRO);
     }
 
     @Test

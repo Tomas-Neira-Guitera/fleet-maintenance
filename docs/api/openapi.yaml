@@ -496,7 +496,8 @@ paths:
     post:
       summary: Cargar un documento (CAM-127)
       description: >
-        Si el tipo ya tiene un documento vigente (salvo "otro") devuelve 409
+        Nombre libre; el tipo sale del nombre. Si ya hay un vigente del mismo
+        tipo reconocido (o un "otro" con el mismo nombre) devuelve 409
         DOCUMENT_ALREADY_LOADED: se renueva o se corrige. Si un plan de
         mantenimiento del vehículo renueva este tipo de documento, registra
         su mantenimiento hecho con la fecha de emisión (o hoy). Solo ADMIN.
@@ -2301,7 +2302,7 @@ components:
         type:
           $ref: "#/components/schemas/VehicleDocumentType"
         typeLabel: { type: string, example: "VTV / RTO" }
-        name: { type: string, nullable: true, description: "Solo en el tipo \"otro\"." }
+        name: { type: string, nullable: true, description: "El nombre que le puso el admin; null en filas viejas." }
         displayName: { type: string }
         number: { type: string, nullable: true, maxLength: 60 }
         issuedAt: { type: string, format: date, nullable: true }
@@ -2338,11 +2339,14 @@ components:
 
     CreateVehicleDocumentRequest:
       type: object
-      required: [type]
+      required: [name]
+      description: >
+        El nombre es libre y el tipo sale de ahí ("Póliza La Segunda" es el
+        seguro). type es opcional y lo fuerza; con type, name puede faltar.
       properties:
+        name: { type: string, maxLength: 60 }
         type:
           $ref: "#/components/schemas/VehicleDocumentType"
-        name: { type: string, maxLength: 60, description: "Obligatorio en \"otro\"; se ignora en los demás." }
         number: { type: string, maxLength: 60 }
         issuedAt: { type: string, format: date }
         expiresAt: { type: string, format: date, description: "Sin vencimiento no bloquea ni avisa." }

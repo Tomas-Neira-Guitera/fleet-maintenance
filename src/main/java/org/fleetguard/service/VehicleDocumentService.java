@@ -88,22 +88,21 @@ public class VehicleDocumentService {
     public VehicleDocumentDto create(String vehicleId, CreateVehicleDocumentRequest request) {
         Vehicle vehicle = findActiveVehicle(vehicleId);
         List<FieldValidationErrorDetail> details = new ArrayList<>();
-        VehicleDocumentType type = VehicleDocumentType.fromJson(request.type());
-        if (type == null) {
+        // El nombre es libre; el tipo sale de ahí, salvo que venga explícito (por ejemplo desde Postman).
+        VehicleDocumentType explicit = request.type() == null || request.type().isBlank() ? null
+                : VehicleDocumentType.fromJson(request.type());
+        if (request.type() != null && !request.type().isBlank() && explicit == null) {
             details.add(new FieldValidationErrorDetail("type",
                     "Debe ser 'vtv', 'seguro', 'cedula_azul', 'habilitacion_carga', 'cedula_verde', 'titulo' u 'otro'"));
         }
-        String name = validateName(type, request.name(), true, details);
+        String name = validateName(request.name(), explicit, details);
+        VehicleDocumentType type = explicit != null ? explicit : VehicleDocumentType.infer(name);
         VehicleDocumentWriter.Fields fields = VehicleDocumentWriter.parse("", request.number(), request.issuedAt(),
                 request.expiresAt(), request.fileUrl(), false, details);
         if (!details.isEmpty()) {
             throw new VehicleValidationException("Datos inválidos para cargar el documento", details);
         }
-        if (type != VehicleDocumentType.OTRO && documentRepository
-                .findFirstByVehicleIdAndTypeAndActiveTrueAndReplacedByIdIsNull(vehicle.getId(), type).isPresent()) {
-            throw new VehicleStateConflictException("DOCUMENT_ALREADY_LOADED",
-                    "El vehículo ya tiene cargado el documento " + type.getLabel() + ": renovalo o corregilo");
-        }
+        rejectIfAlreadyLoaded(vehicle.getId(), type, name, null);
 
         VehicleDocument saved = writer.renew(vehicle.getId(), type, name, fields);
         registerLinkedMaintenance(vehicle, type, fields.issuedAt());
@@ -133,7 +132,10 @@ public class VehicleDocumentService {
         Vehicle vehicle = findVehicle(vehicleId);
         VehicleDocument document = findCurrent(vehicle.getId(), documentId);
         List<FieldValidationErrorDetail> details = new ArrayList<>();
-        String name = request.name() == null ? document.getName() : validateName(document.getType(), request.name(), true, details);
+        String name = request.name() == null ? document.getName() : validateName(request.name(), null, details);
+        // Corregir el nombre puede cambiar el tipo: "Segruo" -> "Seguro" pasa a contar como el seguro.
+        VehicleDocumentType previousType = document.getType();
+        VehicleDocumentType type = request.name() == null || name == null ? previousType : VehicleDocumentType.infer(name);
         VehicleDocumentWriter.Fields fields = VehicleDocumentWriter.parse("",
                 request.number() == null ? document.getNumber() : request.number(),
                 request.issuedAt() == null ? str(document.getIssuedAt()) : request.issuedAt(),
@@ -142,14 +144,21 @@ public class VehicleDocumentService {
         if (!details.isEmpty()) {
             throw new VehicleValidationException("Datos inválidos para corregir el documento", details);
         }
+        if (request.name() != null) {
+            rejectIfAlreadyLoaded(vehicle.getId(), type, name, document.getId());
+        }
 
         document.setName(name);
+        document.setType(type);
         document.setNumber(fields.number());
         document.setIssuedAt(fields.issuedAt());
         document.setExpiresAt(fields.expiresAt());
         document.setFileUrl(fields.fileUrl());
         documentRepository.save(document);
-        writer.afterChange(vehicle.getId(), document.getType());
+        writer.afterChange(vehicle.getId(), type);
+        if (type != previousType) {
+            writer.afterChange(vehicle.getId(), previousType);
+        }
         return toDto(document, availabilityService.today(), leadDays());
     }
 
@@ -189,18 +198,36 @@ public class VehicleDocumentService {
         }
     }
 
-    private String validateName(VehicleDocumentType type, String raw, boolean required,
-                                List<FieldValidationErrorDetail> details) {
-        if (type != VehicleDocumentType.OTRO) {
-            return null;
-        }
+    /** Obligatorio, salvo que venga el tipo explícito: ahí se usa el nombre del tipo. */
+    private static String validateName(String raw, VehicleDocumentType explicit, List<FieldValidationErrorDetail> details) {
         String name = VehicleDocumentWriter.blankToNull(raw);
-        if (name == null && required) {
+        if (name == null) {
+            if (explicit != null) {
+                return explicit.getLabel();
+            }
             details.add(new FieldValidationErrorDetail("name", "Decí qué documento es"));
-        } else if (name != null && name.length() > VehicleDocumentWriter.TEXT_MAX_LENGTH) {
+        } else if (name.length() > VehicleDocumentWriter.TEXT_MAX_LENGTH) {
             details.add(new FieldValidationErrorDetail("name", "Hasta " + VehicleDocumentWriter.TEXT_MAX_LENGTH + " caracteres"));
         }
         return name;
+    }
+
+    /**
+     * Un documento vigente por tipo reconocido (una sola VTV), y por nombre en los demás. El que ya está se
+     * renueva o se corrige. exceptId: el que se está corrigiendo.
+     */
+    private void rejectIfAlreadyLoaded(UUID vehicleId, VehicleDocumentType type, String name, UUID exceptId) {
+        String normalized = VehicleDocumentType.normalize(name);
+        documentRepository.findByVehicleIdAndActiveTrue(vehicleId).stream()
+                .filter(VehicleDocument::isCurrent)
+                .filter(d -> !d.getId().equals(exceptId))
+                .filter(d -> type != VehicleDocumentType.OTRO ? d.getType() == type
+                        : VehicleDocumentType.normalize(d.getDisplayName()).equals(normalized))
+                .findFirst()
+                .ifPresent(d -> {
+                    throw new VehicleStateConflictException("DOCUMENT_ALREADY_LOADED",
+                            "El vehículo ya tiene cargado " + d.getDisplayName() + ": renovalo o corregilo");
+                });
     }
 
     private int leadDays() {

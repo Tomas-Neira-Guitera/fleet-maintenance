@@ -31,7 +31,7 @@ public class VehicleDocument {
     @Column(nullable = false, length = 30)
     private VehicleDocumentType type;
 
-    // Solo para el tipo "otro": qué documento es.
+    // Nombre que le puso el admin; el tipo sale de acá (VehicleDocumentType.infer). Null en filas viejas.
     @Column(length = 60)
     private String name;
 
@@ -98,9 +98,13 @@ public class VehicleDocument {
         this.name = name;
     }
 
-    /** Lo que se muestra: el nombre cargado en "otro", o el del tipo. */
+    /** Lo que se muestra: el nombre cargado, o el del tipo si no tiene. */
     public String getDisplayName() {
-        return type == VehicleDocumentType.OTRO && name != null && !name.isBlank() ? name : type.getLabel();
+        return name != null && !name.isBlank() ? name : type.getLabel();
+    }
+
+    public void setType(VehicleDocumentType type) {
+        this.type = type;
     }
 
     public String getNumber() {

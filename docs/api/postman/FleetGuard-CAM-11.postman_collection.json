@@ -1597,10 +1597,10 @@
                 "documents"
               ]
             },
-            "description": "POST — carga la VTV. Si el vehículo tiene un plan vinculado a la VTV, registra su mantenimiento. Guarda documentId.",
+            "description": "POST — nombre libre; \"VTV\" se reconoce como la VTV. Si el vehículo tiene un plan vinculado a la VTV, registra su mantenimiento. Guarda documentId.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"vtv\",\n  \"number\": \"RTO-000123\",\n  \"issuedAt\": \"2026-10-20\",\n  \"expiresAt\": \"2027-10-20\",\n  \"fileUrl\": \"{{documentFileUrl}}\"\n}"
+              "raw": "{\n  \"name\": \"VTV\",\n  \"number\": \"RTO-000123\",\n  \"issuedAt\": \"2026-10-20\",\n  \"expiresAt\": \"2027-10-20\",\n  \"fileUrl\": \"{{documentFileUrl}}\"\n}"
             }
           },
           "event": [
@@ -1771,10 +1771,10 @@
                 "documents"
               ]
             },
-            "description": "POST — ya hay una VTV vigente: 409 DOCUMENT_ALREADY_LOADED.",
+            "description": "POST — \"Oblea RTO\" también es la VTV, que ya está vigente: 409 DOCUMENT_ALREADY_LOADED.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"vtv\",\n  \"expiresAt\": \"2027-01-01\"\n}"
+              "raw": "{\n  \"name\": \"Oblea RTO\",\n  \"expiresAt\": \"2027-01-01\"\n}"
             }
           },
           "event": [
