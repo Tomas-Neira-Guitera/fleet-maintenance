@@ -11,7 +11,8 @@ public enum NotificationType {
     BLOCKING_DEFECT_REPORTED("blocking_defect_reported"),
     WORK_ORDER_FINALIZED("work_order_finalized"),
     MAINTENANCE_DUE_SOON("maintenance_due_soon"),
-    MAINTENANCE_OVERDUE("maintenance_overdue");
+    MAINTENANCE_OVERDUE("maintenance_overdue"),
+    RECURRING_DEFECT("recurring_defect");
 
     private final String json;
 

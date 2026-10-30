@@ -41,6 +41,17 @@ public interface DefectRepository extends JpaRepository<Defect, UUID> {
             + "where d.status = 'open' and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING")
     List<UUID> findVehicleIdsWithOpenBlockingDefect();
 
+    /** Defectos reportados desde {@code from}, con su respuesta e inspección -- CAM-135, todos los vehículos. */
+    @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i "
+            + "where d.createdAt >= :from")
+    List<Defect> findReportedSinceWithInspection(@Param("from") Instant from);
+
+    /** Igual que {@link #findReportedSinceWithInspection}, de un solo vehículo -- CAM-135. */
+    @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i "
+            + "where i.vehicleId = :vehicleId and d.createdAt >= :from")
+    List<Defect> findReportedSinceByVehicleIdWithInspection(@Param("vehicleId") UUID vehicleId,
+                                                            @Param("from") Instant from);
+
     /** Defectos de esa gravedad reportados en [from, to), por chofer -- CAM-91. */
     @Query("select new org.fleetguard.repository.DriverCount(i.driverId, count(d)) from Defect d "
             + "join d.inspectionAnswer a join a.inspection i "

@@ -10,6 +10,7 @@ import org.fleetguard.repository.DefectRepository;
 import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.entity.Defect;
 import org.fleetguard.event.BlockingDefectReportedEvent;
+import org.fleetguard.event.DefectsReportedEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.fleetguard.entity.DefectSeverity;
 import org.fleetguard.exception.InspectionValidationException;
@@ -142,6 +143,15 @@ public class InspectionService {
         if (!blockingTitles.isEmpty()) {
             eventPublisher.publishEvent(new BlockingDefectReportedEvent(vehicleId, vehicle.getPlate(), type,
                     driver.username(), blockingTitles));
+        }
+
+        // CAM-135: con cualquier defecto, después del commit se revisa si el control se volvió recurrente.
+        List<String> failedItemIds = inspection.getAnswers().stream()
+                .filter(answer -> answer.getDefect() != null)
+                .map(InspectionAnswer::getItemId)
+                .toList();
+        if (!failedItemIds.isEmpty()) {
+            eventPublisher.publishEvent(new DefectsReportedEvent(vehicleId, vehicle.getPlate(), failedItemIds));
         }
 
         // CAM-90: el km que cargó el chofer avanza el del vehículo (parte entera; la inspección guarda
