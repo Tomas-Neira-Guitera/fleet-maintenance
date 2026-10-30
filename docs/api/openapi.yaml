@@ -677,6 +677,53 @@ paths:
                 items:
                   $ref: "#/components/schemas/DefectSummary"
 
+  /api/downtime:
+    get:
+      summary: Tiempo fuera de servicio y tiempo promedio de reparación (CAM-134)
+      description: >
+        Solo ADMIN, solo lectura. Para el período [from, to), cortado en el
+        momento actual: cuánto tiempo estuvo cada vehículo con al menos un
+        defecto bloqueante abierto (sin contar dos veces los solapados), cuántas
+        veces paró, su disponibilidad, y el promedio de horas entre la creación
+        y la finalización de las OTs finalizadas en el período. Sin vehicleId,
+        toda la flota activa; con vehicleId, ese vehículo (aunque esté dado de
+        baja). Ver CAM-134-downtime-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Inicio del período (incluido). Instante ISO o fecha sola (YYYY-MM-DD, UTC).
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: true
+          description: Fin del período (excluido). Instante ISO, o fecha sola que incluye ese día entero.
+          schema:
+            type: string
+        - name: vehicleId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Downtime"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND -- vehicleId no existe o no es un UUID
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
   /api/defects/recurring:
     get:
       summary: Controles con fallos recurrentes en un mismo vehículo (CAM-135)
@@ -2908,6 +2955,64 @@ components:
           type: number
           nullable: true
           description: totalAmount / kmDriven, redondeado a 2 decimales; null cuando kmDriven es null.
+
+    Downtime:
+      type: object
+      description: Disponibilidad y reparaciones de GET /api/downtime (CAM-134).
+      required: [from, to, fleet, vehicles]
+      properties:
+        from: { type: string, format: date-time }
+        to:
+          type: string
+          format: date-time
+          description: Fin efectivo del período, cortado en el momento actual.
+        fleet:
+          type: object
+          description: Totales de los vehículos de `vehicles` (con vehicleId, de ese solo).
+          required: [availabilityPct, downtimeHours, stops, repairs]
+          properties:
+            availabilityPct:
+              type: number
+              nullable: true
+              description: Porcentaje del tiempo disponible, con un decimal; null si el período todavía no empezó.
+            downtimeHours: { type: number, description: Horas fuera de servicio sumadas, con un decimal. }
+            stops: { type: integer, description: Paradas sumadas. }
+            repairs:
+              $ref: "#/components/schemas/RepairTimes"
+        vehicles:
+          type: array
+          description: De más horas fuera de servicio a menos; a igual tiempo, por patente.
+          items:
+            type: object
+            required: [vehicleId, plate, availabilityPct, downtimeHours, stops, repairs]
+            properties:
+              vehicleId: { type: string, format: uuid }
+              plate: { type: string }
+              availabilityPct: { type: number, nullable: true }
+              downtimeHours: { type: number }
+              stops: { type: integer, description: Veces que estuvo fuera de servicio dentro del período. }
+              repairs:
+                $ref: "#/components/schemas/RepairTimes"
+
+    RepairTimes:
+      type: object
+      description: Promedio de horas entre la creación y la finalización de las OTs finalizadas en el período.
+      required: [avgHours, count, internal, external]
+      properties:
+        avgHours: { type: number, nullable: true, description: Con un decimal; null si no hay OTs finalizadas. }
+        count: { type: integer }
+        internal:
+          type: object
+          required: [avgHours, count]
+          properties:
+            avgHours: { type: number, nullable: true }
+            count: { type: integer }
+        external:
+          type: object
+          required: [avgHours, count]
+          properties:
+            avgHours: { type: number, nullable: true }
+            count: { type: integer }
 
     RecurringDefects:
       type: object

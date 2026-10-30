@@ -310,8 +310,10 @@ class WorkOrderLifecycleServiceTest {
 
         service.update(workOrder.getId().toString(), finalizeWith("Neumático reemplazado", null));
 
-        // Un defecto resuelto deja de bloquear al vehículo (CAM-49).
+        // Un defecto resuelto deja de bloquear al vehículo (CAM-49), y guarda cuándo (CAM-134).
         assertEquals("resuelto", defect.getStatus());
+        assertEquals(workOrder.getFinalizedAt(), defect.getResolvedAt());
+        assertNotNull(defect.getResolvedAt());
     }
 
     @Test

@@ -443,7 +443,8 @@ public class WorkOrderService {
         }
 
         if (workOrder.getDefectId() != null) {
-            defectRepository.findById(workOrder.getDefectId()).ifPresent(Defect::resolve);
+            defectRepository.findById(workOrder.getDefectId())
+                    .ifPresent(defect -> defect.resolve(workOrder.getFinalizedAt()));
         }
 
         // CAM-90: el km de cierre avanza el del vehículo. Si la OT venía de un plan, el completion de
