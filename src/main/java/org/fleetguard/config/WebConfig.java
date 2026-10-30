@@ -34,12 +34,13 @@ public class WebConfig implements WebMvcConfigurer {
     }
 
     // Rutas que ya exigen JWT, cada una con su rol: usuarios (CAM-23), gastos (CAM-52) y costos de
-    // un vehículo (CAM-105) son del admin; las inspecciones (CAM-85), del chofer; las push al
-    // navegador (CAM-119) y la campanita (CAM-96), de cualquiera que esté logueado. CAM-73 suma el resto.
+    // un vehículo (CAM-105) y los defectos recurrentes (CAM-135) son del admin; las inspecciones (CAM-85),
+    // del chofer; las push al navegador (CAM-119) y la campanita (CAM-96), de cualquiera que esté logueado.
+    // CAM-73 suma el resto.
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(requiring(Role.ADMIN))
-                .addPathPatterns("/users", "/users/**", "/expenses", "/vehicles/*/costs");
+                .addPathPatterns("/users", "/users/**", "/expenses", "/vehicles/*/costs", "/defects/recurring");
         registry.addInterceptor(requiring(Role.CHOFER)).addPathPatterns("/inspections/**");
         registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER, Role.TECNICO))
                 .addPathPatterns("/push/**", "/notifications", "/notifications/**");

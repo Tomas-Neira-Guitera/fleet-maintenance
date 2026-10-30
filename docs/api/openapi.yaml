@@ -677,6 +677,39 @@ paths:
                 items:
                   $ref: "#/components/schemas/DefectSummary"
 
+  /api/defects/recurring:
+    get:
+      summary: Controles con fallos recurrentes en un mismo vehículo (CAM-135)
+      description: >
+        Solo ADMIN, solo lectura. Un control es recurrente cuando falló en el
+        mismo vehículo al menos `threshold` veces en los últimos `windowDays`
+        días, contados hasta ahora. Cuentan todos los defectos, bloqueantes o
+        no y resueltos o no. Ordenado por cantidad de fallas, más primero, y
+        después por la falla más reciente. Ver CAM-135-recurring-defects-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: vehicleId
+          in: query
+          required: false
+          description: >
+            Solo los controles de ese vehículo (el detalle del vehículo). Un id
+            que no es un UUID devuelve la lista vacía, y uno vacío o en blanco,
+            toda la flota, igual que GET /api/defects.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecurringDefects"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/maintenance-plans:
     get:
       summary: Listar el catálogo de planes de mantenimiento
@@ -2876,6 +2909,42 @@ components:
           nullable: true
           description: totalAmount / kmDriven, redondeado a 2 decimales; null cuando kmDriven es null.
 
+    RecurringDefects:
+      type: object
+      description: Controles recurrentes, de GET /api/defects/recurring (CAM-135).
+      required: [threshold, windowDays, items]
+      properties:
+        threshold: { type: integer, description: Fallas a partir de las cuales un control es recurrente (por defecto 3). }
+        windowDays: { type: integer, description: Días hacia atrás que se miran (por defecto 30). }
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecurringDefect"
+
+    RecurringDefect:
+      type: object
+      description: Un control de un vehículo que falló al menos `threshold` veces en la ventana.
+      required: [vehicleId, plate, itemId, itemLabel, count, lastReportedAt, occurrences]
+      properties:
+        vehicleId: { type: string, format: uuid }
+        plate: { type: string }
+        itemId: { type: string, description: Id del control del checklist. }
+        itemLabel: { type: string, description: Nombre del control en la falla más reciente (o el id, si no se guardó). }
+        count: { type: integer, description: Fallas en la ventana. }
+        lastReportedAt: { type: string, format: date-time }
+        occurrences:
+          type: array
+          description: Cada falla de la ventana, más reciente primero.
+          items:
+            type: object
+            required: [defectId, reportedAt, severity, status, description]
+            properties:
+              defectId: { type: string, format: uuid }
+              reportedAt: { type: string, format: date-time }
+              severity: { type: string, enum: [blocking, non-blocking] }
+              status: { type: string, description: "open o resuelto, igual que en DefectSummary." }
+              description: { type: string, description: Título del defecto. }
+
     CreateWorkOrderExpenseRequest:
       type: object
       required: [category, description, amount]
@@ -3032,7 +3101,8 @@ components:
         Qué pasó. Cada card de aviso suma el suyo (CAM-97 a CAM-103); el
         front no depende del tipo para mostrar el aviso, solo del texto.
       enum: [work_order_assigned, work_order_unassigned, work_order_cancelled, trip_open_reminder,
-             blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue]
+             blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue,
+             recurring_defect]
 
     NotificationChannel:
       type: string

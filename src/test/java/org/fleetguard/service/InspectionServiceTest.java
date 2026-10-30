@@ -28,6 +28,7 @@ import org.fleetguard.repository.TripRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.fleetguard.event.BlockingDefectReportedEvent;
+import org.fleetguard.event.DefectsReportedEvent;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.ArgumentCaptor;
@@ -38,6 +39,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -309,6 +311,33 @@ class InspectionServiceTest {
         service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", answers, null), driver);
 
         verify(eventPublisher, never()).publishEvent(any(BlockingDefectReportedEvent.class));
+    }
+
+    @Test
+    void cualquierDefectoPublicaLosControlesQueFallaronParaVerSiSonRecurrentes() {
+        noOpenTrip();
+        List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-neumaticos", "defect", null,
+                new DefectDetailDto("blocking", "Neumático cortado", "http://localhost/foto.jpg")));
+        answers = withAnswer(answers, new ChecklistAnswerDto("ext-luces", "defect", null,
+                new DefectDetailDto("non-blocking", "Foco trasero tenue", null)));
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", answers, null), driver);
+
+        // CAM-135: bloqueantes y no bloqueantes, en un solo evento por inspección.
+        ArgumentCaptor<DefectsReportedEvent> event = ArgumentCaptor.forClass(DefectsReportedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertEquals(vehicle.getId(), event.getValue().vehicleId());
+        assertEquals(vehicle.getPlate(), event.getValue().plate());
+        assertEquals(Set.of("ext-neumaticos", "ext-luces"), Set.copyOf(event.getValue().itemIds()));
+    }
+
+    @Test
+    void sinDefectosNoPublicaElEventoDeRecurrentes() {
+        noOpenTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver);
+
+        verify(eventPublisher, never()).publishEvent(any(DefectsReportedEvent.class));
     }
 
     @Test

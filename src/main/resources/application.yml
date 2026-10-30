@@ -81,6 +81,11 @@ fleetguard:
     from: "FleetMaintenance <avisos@fleetguard.local>"
   # Base de los links de los emails (el link de un aviso es una ruta del front).
   frontend-url: http://localhost:5173
+  recurring-defects:
+    # CAM-135: un control del checklist es recurrente cuando falla en el mismo vehículo esta cantidad
+    # de veces en los últimos window-days días. Se avisa al admin una sola vez por ventana.
+    threshold: 3
+    window-days: 30
   maintenance-alerts:
     # CAM-118: revisión diaria de vencimientos por fecha, a las 8 de Argentina (los de km se revisan
     # además cada vez que sube el km del vehículo).

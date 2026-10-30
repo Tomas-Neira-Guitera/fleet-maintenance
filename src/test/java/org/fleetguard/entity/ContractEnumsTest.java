@@ -90,7 +90,8 @@ class ContractEnumsTest {
                         NotificationType.BLOCKING_DEFECT_REPORTED, "blocking_defect_reported",
                         NotificationType.WORK_ORDER_FINALIZED, "work_order_finalized",
                         NotificationType.MAINTENANCE_DUE_SOON, "maintenance_due_soon",
-                        NotificationType.MAINTENANCE_OVERDUE, "maintenance_overdue"));
+                        NotificationType.MAINTENANCE_OVERDUE, "maintenance_overdue",
+                        NotificationType.RECURRING_DEFECT, "recurring_defect"));
     }
 
     @Test
