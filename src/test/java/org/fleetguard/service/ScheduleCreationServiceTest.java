@@ -179,7 +179,7 @@ class ScheduleCreationServiceTest {
     @Test
     void noSeProgramaUnDefectoYaResuelto() throws Exception {
         Defect defect = defect();
-        defect.resolve();
+        defect.resolve(Instant.now());
 
         assertEquals("DEFECT_RESOLVED", assertThrows(MaintenanceConflictException.class,
                 () -> service.create(new CreateScheduleRequest("defect", defect.getId().toString(),

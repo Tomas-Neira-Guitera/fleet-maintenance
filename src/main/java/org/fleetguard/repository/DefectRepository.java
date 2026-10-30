@@ -41,6 +41,16 @@ public interface DefectRepository extends JpaRepository<Defect, UUID> {
             + "where d.status = 'open' and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING")
     List<UUID> findVehicleIdsWithOpenBlockingDefect();
 
+    /**
+     * Bloqueantes reportados antes de {@code before} que pueden tocar un período que empieza en {@code after}:
+     * abiertos, resueltos después de {@code after}, o resueltos antes de CAM-134 (sin fecha, la decide el servicio).
+     * Con su inspección, de donde sale el vehículo -- tiempo fuera de servicio, CAM-134.
+     */
+    @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i "
+            + "where d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING and d.createdAt < :before "
+            + "and (d.status = 'open' or d.resolvedAt is null or d.resolvedAt > :after)")
+    List<Defect> findBlockingInPeriodWithInspection(@Param("after") Instant after, @Param("before") Instant before);
+
     /** Defectos reportados desde {@code from}, con su respuesta e inspección -- CAM-135, todos los vehículos. */
     @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i "
             + "where d.createdAt >= :from")

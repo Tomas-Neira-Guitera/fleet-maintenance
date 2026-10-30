@@ -47,6 +47,10 @@ public class Defect {
     @Column(nullable = false)
     private String status = "open";
 
+    /** CAM-134: cuándo se finalizó la OT que lo resolvió; null si sigue abierto o se resolvió antes de CAM-134. */
+    @Column(name = "resolved_at")
+    private Instant resolvedAt;
+
     protected Defect() {
         // JPA
     }
@@ -99,8 +103,19 @@ public class Defect {
         return status;
     }
 
-    /** Lo llama WorkOrderService al finalizar la orden de trabajo que lo origino -- CAM-14. */
-    public void resolve() {
+    public Instant getResolvedAt() {
+        return resolvedAt;
+    }
+
+    /**
+     * Lo llama WorkOrderService al finalizar la orden de trabajo que lo origino -- CAM-14; at, desde CAM-134. Solo la
+     * primera resolución guarda la fecha: una segunda OT del mismo defecto (una programación vieja que se terminó
+     * después) no la adelanta ni la atrasa.
+     */
+    public void resolve(Instant at) {
+        if ("open".equals(status)) {
+            this.resolvedAt = at;
+        }
         this.status = "resuelto";
     }
 }
