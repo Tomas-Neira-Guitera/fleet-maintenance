@@ -3,6 +3,9 @@
 Acompaña a `openapi.yaml` (mismo directorio) con las decisiones que el spec no
 expresa por sí solo.
 
+> Desde CAM-109 los totales y el costo por km también suman los gastos operativos: ya no son
+> solo de mantenimiento. Ver `CAM-109-operating-expenses-contract.md`, decisión 6.
+
 ## Motivación
 
 La pestaña Gastos (CAM-52) ya muestra el gasto de un vehículo si se lo filtra, pero

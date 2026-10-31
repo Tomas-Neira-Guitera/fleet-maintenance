@@ -8,6 +8,7 @@ import org.fleetguard.entity.WorkOrderExpense;
 import org.fleetguard.entity.WorkOrderExpenseCategory;
 import org.fleetguard.entity.WorkOrderSourceType;
 import org.fleetguard.exception.WorkOrderValidationException;
+import org.fleetguard.repository.VehicleExpenseRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderExpenseRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,8 +37,10 @@ import static org.mockito.Mockito.when;
 class ExpenseServiceTest {
 
     private final WorkOrderExpenseRepository expenseRepository = mock(WorkOrderExpenseRepository.class);
+    private final VehicleExpenseRepository vehicleExpenseRepository = mock(VehicleExpenseRepository.class);
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
-    private final ExpenseService service = new ExpenseService(expenseRepository, vehicleRepository);
+    private final ExpenseService service = new ExpenseService(expenseRepository, vehicleExpenseRepository,
+            vehicleRepository);
 
     private Vehicle truck;
     private Vehicle van;
@@ -94,7 +97,7 @@ class ExpenseServiceTest {
 
     @Test
     void cadaGastoTraeSuVehiculoSuOtYElOrigenDeEsaOt() {
-        List<ExpenseDto> result = service.list(null, null, null, null);
+        List<ExpenseDto> result = service.list(null, null, null, null, null);
 
         assertEquals(3, result.size());
         ExpenseDto first = result.get(0);
@@ -121,7 +124,7 @@ class ExpenseServiceTest {
         setField(aceite, "receiptNumber", "0001-00012345");
         setField(aceite, "receiptPhotoUrl", "http://localhost:8080/api/photos/ticket-1");
 
-        List<ExpenseDto> result = service.list(null, null, null, null);
+        List<ExpenseDto> result = service.list(null, null, null, null, null);
 
         assertNull(result.get(0).receiptNumber());
         assertNull(result.get(0).receiptPhotoUrl());
@@ -131,43 +134,43 @@ class ExpenseServiceTest {
 
     @Test
     void elFiltroPorVehiculoDejaSoloSusGastos() {
-        List<ExpenseDto> result = service.list(van.getId().toString(), null, null, null);
+        List<ExpenseDto> result = service.list(van.getId().toString(), null, null, null, null);
 
         assertEquals(List.of("Grúa", "Taller externo"), result.stream().map(ExpenseDto::description).toList());
     }
 
     @Test
     void unVehiculoInexistenteOMalformadoDaListaVaciaYNoError() {
-        assertTrue(service.list(UUID.randomUUID().toString(), null, null, null).isEmpty());
-        assertTrue(service.list("no-es-un-uuid", null, null, null).isEmpty());
+        assertTrue(service.list(UUID.randomUUID().toString(), null, null, null, null).isEmpty());
+        assertTrue(service.list("no-es-un-uuid", null, null, null, null).isEmpty());
     }
 
     @Test
     void elFiltroPorCategoriaDejaSoloEsaCategoria() {
-        List<ExpenseDto> result = service.list(null, "repuesto", null, null);
+        List<ExpenseDto> result = service.list(null, "repuesto", null, null, null);
 
         assertEquals(1, result.size());
         assertEquals("Aceite 10W40", result.get(0).description());
-        assertTrue(service.list(null, "viaticos", null, null).isEmpty());
+        assertTrue(service.list(null, "viaticos", null, null, null).isEmpty());
     }
 
     @Test
     void losFiltrosSeCombinan() {
-        assertEquals(List.of("Taller externo"), service.list(van.getId().toString(), "mano_de_obra", null, null)
+        assertEquals(List.of("Taller externo"), service.list(van.getId().toString(), "mano_de_obra", null, null, null)
                 .stream().map(ExpenseDto::description).toList());
-        assertTrue(service.list(truck.getId().toString(), "mano_de_obra", null, null).isEmpty());
+        assertTrue(service.list(truck.getId().toString(), "mano_de_obra", null, null, null).isEmpty());
     }
 
     @Test
     void sinFechasElPeriodoQuedaAbierto() {
-        service.list(null, null, null, " ");
+        service.list(null, null, null, null, " ");
 
         verify(expenseRepository).findInRangeWithWorkOrder(Instant.EPOCH, Instant.parse("9999-01-01T00:00:00Z"));
     }
 
     @Test
     void conFechasSolasElHastaIncluyeEseDiaEntero() {
-        service.list(null, null, "2026-01-01", "2026-12-31");
+        service.list(null, null, null, "2026-01-01", "2026-12-31");
 
         verify(expenseRepository).findInRangeWithWorkOrder(
                 Instant.parse("2026-01-01T00:00:00Z"), Instant.parse("2027-01-01T00:00:00Z"));
@@ -176,7 +179,7 @@ class ExpenseServiceTest {
     @Test
     void conInstantesCompletosElPeriodoEsExactoYElHastaNoSeIncluye() {
         // Así lo manda el frontend: la medianoche local (UTC-3) como instante, no como fecha.
-        service.list(null, null, "2026-01-01T03:00:00Z", "2027-01-01T03:00:00Z");
+        service.list(null, null, null, "2026-01-01T03:00:00Z", "2027-01-01T03:00:00Z");
 
         verify(expenseRepository).findInRangeWithWorkOrder(
                 Instant.parse("2026-01-01T03:00:00Z"), Instant.parse("2027-01-01T03:00:00Z"));
@@ -185,7 +188,7 @@ class ExpenseServiceTest {
     @Test
     void unaFechaInvalidaDevuelve422ConElCampo() {
         WorkOrderValidationException ex = assertThrows(WorkOrderValidationException.class,
-                () -> service.list(null, null, "ayer", "2026-13-40"));
+                () -> service.list(null, null, null, "ayer", "2026-13-40"));
 
         assertEquals(List.of("from", "to"), ex.getDetails().stream().map(d -> d.field()).toList());
         verifyNoInteractions(expenseRepository);
@@ -195,6 +198,6 @@ class ExpenseServiceTest {
     void sinGastosEnElPeriodoDevuelveListaVacia() {
         when(expenseRepository.findInRangeWithWorkOrder(any(), any())).thenReturn(List.of());
 
-        assertTrue(service.list(null, null, "2020-01-01", "2020-12-31").isEmpty());
+        assertTrue(service.list(null, null, null, "2020-01-01", "2020-12-31").isEmpty());
     }
 }

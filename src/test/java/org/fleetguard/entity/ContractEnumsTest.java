@@ -91,6 +91,7 @@ class ContractEnumsTest {
                         Map.entry(NotificationType.WORK_ORDER_FINALIZED, "work_order_finalized"),
                         Map.entry(NotificationType.MAINTENANCE_DUE_SOON, "maintenance_due_soon"),
                         Map.entry(NotificationType.MAINTENANCE_OVERDUE, "maintenance_overdue"),
+                        Map.entry(NotificationType.RECURRING_DEFECT, "recurring_defect"),
                         Map.entry(NotificationType.DOCUMENT_DUE_SOON, "document_due_soon"),
                         Map.entry(NotificationType.DOCUMENT_EXPIRED, "document_expired"),
                         Map.entry(NotificationType.VEHICLE_UNAVAILABLE, "vehicle_unavailable"),

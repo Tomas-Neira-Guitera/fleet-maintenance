@@ -16,6 +16,7 @@ reparten, dónde se guardan, cómo los lee cada usuario y la campanita del heade
 | Tipo | Card | A quién | Link |
 |---|---|---|---|
 | `blocking_defect_reported` | CAM-97 | Configurable (por defecto, admins) | `/vehiculos/{id}` |
+| `recurring_defect` | CAM-135 | Configurable (por defecto, admins) | `/vehiculos/{id}` |
 | `work_order_finalized` | CAM-98 | Configurable (por defecto, admins) | `/ordenes-trabajo/{id}` |
 | `maintenance_due_soon`, `maintenance_overdue` | CAM-118 | Configurable (por defecto, admins) | `/vehiculos/{id}` |
 | `work_order_assigned`, `work_order_unassigned`, `work_order_cancelled` | CAM-99, CAM-100 | El técnico de la OT | `/` |

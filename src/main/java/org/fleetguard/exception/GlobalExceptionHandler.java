@@ -125,6 +125,12 @@ public class GlobalExceptionHandler {
                 .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
     }
 
+    @ExceptionHandler(ExpenseNotFoundException.class)
+    public ResponseEntity<ApiError> handleExpenseNotFound(ExpenseNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("EXPENSE_NOT_FOUND", ex.getMessage()));
+    }
+
     @ExceptionHandler(WorkOrderNotFoundException.class)
     public ResponseEntity<ApiError> handleWorkOrderNotFound(WorkOrderNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

@@ -43,4 +43,14 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, UUID> {
             + "and w.status = org.fleetguard.entity.WorkOrderStatus.FINALIZADA "
             + "and w.finalizedAt >= :from and w.finalizedAt < :to")
     List<WorkOrder> findFinalizedWithTechnician(@Param("from") Instant from, @Param("to") Instant to);
+
+    /** OTs finalizadas en [from, to), con o sin técnico -- tiempo promedio de reparación, CAM-134. */
+    @Query("select w from WorkOrder w where w.status = org.fleetguard.entity.WorkOrderStatus.FINALIZADA "
+            + "and w.finalizedAt >= :from and w.finalizedAt < :to")
+    List<WorkOrder> findFinalizedBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+    /** OTs finalizadas de esos defectos -- fecha de resolución de los defectos anteriores a CAM-134. */
+    @Query("select w from WorkOrder w where w.status = org.fleetguard.entity.WorkOrderStatus.FINALIZADA "
+            + "and w.defectId in :defectIds")
+    List<WorkOrder> findFinalizedByDefectIds(@Param("defectIds") Collection<UUID> defectIds);
 }

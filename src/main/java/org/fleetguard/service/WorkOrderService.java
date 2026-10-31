@@ -449,7 +449,7 @@ public class WorkOrderService {
 
         if (workOrder.getDefectId() != null) {
             defectRepository.findById(workOrder.getDefectId()).ifPresent(defect -> {
-                defect.resolve();
+                defect.resolve(workOrder.getFinalizedAt());
                 defectRepository.saveAndFlush(defect);
                 // CAM-103: si era el último bloqueante, el vehículo vuelve a estar disponible.
                 vehicleRepository.findById(workOrder.getVehicleId())
