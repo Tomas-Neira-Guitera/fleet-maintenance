@@ -1515,6 +1515,319 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Documentación del vehículo (CAM-127)",
+      "description": "Documentos de un vehículo con su vencimiento. Solo ADMIN (adminToken). Usa vehicleId del environment. Ver docs/api/CAM-127-vehicle-documents-contract.md.",
+      "item": [
+        {
+          "name": "Subir comprobante (PDF)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/photos?purpose=document",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "photos"
+              ],
+              "query": [
+                {
+                  "key": "purpose",
+                  "value": "document"
+                }
+              ]
+            },
+            "description": "POST /api/photos?purpose=document — acepta JPG, PNG o PDF. Guarda la URL en documentFileUrl.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('documentFileUrl', pm.response.json().photoUrl);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cargar VTV",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "documents"
+              ]
+            },
+            "description": "POST — nombre libre; \"VTV\" se reconoce como la VTV. Si el vehículo tiene un plan vinculado a la VTV, registra su mantenimiento. Guarda documentId.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"VTV\",\n  \"number\": \"RTO-000123\",\n  \"issuedAt\": \"2026-10-20\",\n  \"expiresAt\": \"2027-10-20\",\n  \"fileUrl\": \"{{documentFileUrl}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('documentId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar documentación",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "documents"
+              ]
+            },
+            "description": "GET — vigentes por vencimiento, historial y obligatorios que faltan."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('trae missingRequired', () => pm.expect(pm.response.json()).to.have.property('missingRequired'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Corregir vencimiento",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/documents/{{documentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "documents",
+                "{{documentId}}"
+              ]
+            },
+            "description": "PATCH — corrige un dato del vigente sin renovarlo. \"\" borra.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expiresAt\": \"2027-10-21\",\n  \"number\": \"\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Renovar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/documents/{{documentId}}/renewals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "documents",
+                "{{documentId}}",
+                "renewals"
+              ]
+            },
+            "description": "POST — el documento nuevo; el anterior pasa al historial.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"number\": \"RTO-000456\",\n  \"issuedAt\": \"2027-10-15\",\n  \"expiresAt\": \"2028-10-15\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('documentId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cargar dos veces el mismo tipo (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "documents"
+              ]
+            },
+            "description": "POST — \"Oblea RTO\" también es la VTV, que ya está vigente: 409 DOCUMENT_ALREADY_LOADED.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Oblea RTO\",\n  \"expiresAt\": \"2027-01-01\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));",
+                  "pm.test('DOCUMENT_ALREADY_LOADED', () => pm.expect(pm.response.json().error).to.eql('DOCUMENT_ALREADY_LOADED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dar de baja",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/documents/{{documentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "documents",
+                "{{documentId}}"
+              ]
+            },
+            "description": "DELETE — baja lógica; deja de bloquear."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

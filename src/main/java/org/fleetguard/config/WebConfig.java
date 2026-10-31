@@ -48,6 +48,8 @@ public class WebConfig implements WebMvcConfigurer {
         // CAM-117/CAM-118: configuración de avisos, solo el admin.
         registry.addInterceptor(requiring(Role.ADMIN))
                 .addPathPatterns("/notification-settings", "/notification-settings/**", "/maintenance-plans/*/notifications");
+        // CAM-127: documentación de los vehículos, solo el admin.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/vehicles/*/documents", "/vehicles/*/documents/**");
     }
 
     private JwtAuthInterceptor requiring(Role... roles) {

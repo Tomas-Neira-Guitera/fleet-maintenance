@@ -12,7 +12,11 @@ public enum NotificationType {
     WORK_ORDER_FINALIZED("work_order_finalized"),
     MAINTENANCE_DUE_SOON("maintenance_due_soon"),
     MAINTENANCE_OVERDUE("maintenance_overdue"),
-    RECURRING_DEFECT("recurring_defect");
+    RECURRING_DEFECT("recurring_defect"),
+    DOCUMENT_DUE_SOON("document_due_soon"),
+    DOCUMENT_EXPIRED("document_expired"),
+    VEHICLE_UNAVAILABLE("vehicle_unavailable"),
+    VEHICLE_AVAILABLE("vehicle_available");
 
     private final String json;
 

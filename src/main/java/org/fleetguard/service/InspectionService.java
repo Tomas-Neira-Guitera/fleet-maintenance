@@ -6,7 +6,6 @@ import org.fleetguard.entity.Inspection;
 import org.fleetguard.entity.InspectionAnswer;
 import org.fleetguard.entity.InspectionType;
 import org.fleetguard.mapper.InspectionMapper;
-import org.fleetguard.repository.DefectRepository;
 import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.entity.Defect;
 import org.fleetguard.event.BlockingDefectReportedEvent;
@@ -17,6 +16,7 @@ import org.fleetguard.exception.InspectionValidationException;
 import org.fleetguard.dto.ValidationErrorDetail;
 import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.VehicleStateConflictException;
+import org.fleetguard.dto.BlockReasonDto;
 import org.fleetguard.dto.ChecklistAnswerDto;
 import org.fleetguard.dto.InspectionResultDto;
 import org.fleetguard.dto.InspectionSubmissionDto;
@@ -44,29 +44,29 @@ public class InspectionService {
     private final VehicleRepository vehicleRepository;
     private final TripRepository tripRepository;
     private final InspectionRepository inspectionRepository;
-    private final DefectRepository defectRepository;
     private final InspectionValidator validator;
     private final InspectionMapper inspectionMapper;
     private final TripMapper tripMapper;
     private final VehicleChecklistService checklistService;
     private final OdometerReadings odometerReadings;
+    private final VehicleAvailabilityService availabilityService;
 
     private final ApplicationEventPublisher eventPublisher;
 
     public InspectionService(VehicleRepository vehicleRepository, TripRepository tripRepository,
-                              InspectionRepository inspectionRepository, DefectRepository defectRepository,
+                              InspectionRepository inspectionRepository,
                               InspectionMapper inspectionMapper, TripMapper tripMapper,
                               VehicleChecklistService checklistService, OdometerReadings odometerReadings,
-                              ApplicationEventPublisher eventPublisher) {
+                              VehicleAvailabilityService availabilityService, ApplicationEventPublisher eventPublisher) {
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.inspectionRepository = inspectionRepository;
-        this.defectRepository = defectRepository;
         this.validator = new InspectionValidator();
         this.inspectionMapper = inspectionMapper;
         this.tripMapper = tripMapper;
         this.checklistService = checklistService;
         this.odometerReadings = odometerReadings;
+        this.availabilityService = availabilityService;
         this.eventPublisher = eventPublisher;
     }
 
@@ -143,6 +143,8 @@ public class InspectionService {
         if (!blockingTitles.isEmpty()) {
             eventPublisher.publishEvent(new BlockingDefectReportedEvent(vehicleId, vehicle.getPlate(), type,
                     driver.username(), blockingTitles));
+            // CAM-102/103: registra desde cuándo no está disponible, para avisar cuando vuelva.
+            availabilityService.sync(vehicle, null);
         }
 
         // CAM-135: con cualquier defecto, después del commit se revisa si el control se volvió recurrente.
@@ -171,9 +173,11 @@ public class InspectionService {
         if (hasOpenTrip) {
             throw new VehicleStateConflictException("VEHICLE_ON_TRIP", "El vehículo ya tiene un pre-trip abierto.");
         }
-        if (defectRepository.existsOpenBlockingByVehicleId(vehicle.getId())) {
+        // CAM-127: un defecto bloqueante abierto o un documento vencido.
+        List<BlockReasonDto> reasons = availabilityService.reasons(vehicle.getId());
+        if (!reasons.isEmpty()) {
             throw new VehicleStateConflictException("VEHICLE_BLOCKED",
-                    "El vehículo tiene un defecto bloqueante sin resolver y no puede salir.");
+                    VehicleAvailabilityService.blockedMessage(vehicle.getPlate(), reasons));
         }
     }
 

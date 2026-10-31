@@ -54,13 +54,21 @@ info:
     docs/api/CAM-117-118-notification-settings-contract.md.
 
 
+    Y la documentación de cada vehículo con sus vencimientos (CAM-127): un
+    documento vencido deja al vehículo "No disponible", igual que un defecto
+    bloqueante, y avisa antes de vencer; y los avisos al chofer cuando su
+    vehículo deja de estar disponible o vuelve a estarlo (CAM-102, CAM-103).
+    Ver docs/api/CAM-127-vehicle-documents-contract.md.
+
+
     Autenticación: hoy validan el JWT (bearerAuth) /api/users y
     /api/expenses y /api/vehicles/{id}/costs (rol ADMIN) y POST /api/inspections/{vehicleId} (rol
     CHOFER, CAM-85), /api/notifications y /api/push (cualquier rol,
     CAM-96 y CAM-119), y /api/notification-settings y
-    /api/maintenance-plans/{id}/notifications (rol ADMIN, CAM-117 y CAM-118). El resto de los endpoints todavía no lo valida aunque
+    /api/maintenance-plans/{id}/notifications (rol ADMIN, CAM-117 y CAM-118), y
+    /api/vehicles/{id}/documents (rol ADMIN, CAM-127). El resto de los endpoints todavía no lo valida aunque
     el esquema global lo declare (CAM-73).
-  version: "1.13"
+  version: "1.14"
 
 servers:
   - url: http://localhost:8080
@@ -461,6 +469,154 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /api/vehicles/{vehicleId}/documents:
+    parameters:
+      - name: vehicleId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Documentación del vehículo (CAM-127)
+      description: >
+        Los documentos vigentes ordenados por vencimiento (los que no vencen
+        al final), los renovados (historial) y los obligatorios que faltan
+        (VTV y seguro; se marcan pero no bloquean). Solo ADMIN.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleDocuments"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+    post:
+      summary: Cargar un documento (CAM-127)
+      description: >
+        Nombre libre; el tipo sale del nombre. Si ya hay un vigente del mismo
+        tipo reconocido (o un "otro" con el mismo nombre) devuelve 409
+        DOCUMENT_ALREADY_LOADED: se renueva o se corrige. Si un plan de
+        mantenimiento del vehículo renueva este tipo de documento, registra
+        su mantenimiento hecho con la fecha de emisión (o hoy). Solo ADMIN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVehicleDocumentRequest"
+      responses:
+        "201":
+          description: Documento cargado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "409":
+          description: DOCUMENT_ALREADY_LOADED o VEHICLE_INACTIVE
+        "422":
+          description: Tipo inválido, nombre faltante en "otro", fechas inválidas o vencimiento anterior a la emisión.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  /api/vehicles/{vehicleId}/documents/{documentId}:
+    parameters:
+      - name: vehicleId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: documentId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      summary: Corregir un dato del documento vigente (CAM-127)
+      description: >
+        No cuenta como renovación. Ausente no cambia nada; "" borra número,
+        fechas o archivo. 409 DOCUMENT_REPLACED si ya se renovó. Solo ADMIN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVehicleDocumentRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleDocument"
+        "404":
+          description: DOCUMENT_NOT_FOUND
+        "409":
+          description: DOCUMENT_REPLACED
+        "422":
+          description: Datos inválidos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+    delete:
+      summary: Dar de baja un documento (CAM-127)
+      description: Baja lógica -- deja de contar y de bloquear. Solo ADMIN.
+      responses:
+        "204":
+          description: Dado de baja
+        "404":
+          description: DOCUMENT_NOT_FOUND
+
+  /api/vehicles/{vehicleId}/documents/{documentId}/renewals:
+    parameters:
+      - name: vehicleId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: documentId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      summary: Renovar el documento vigente (CAM-127)
+      description: >
+        Carga el documento nuevo; el anterior queda en el historial
+        (replacedById). Igual que al cargar, registra el mantenimiento del
+        plan vinculado. Solo ADMIN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenewVehicleDocumentRequest"
+      responses:
+        "201":
+          description: Documento renovado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleDocument"
+        "404":
+          description: DOCUMENT_NOT_FOUND
+        "409":
+          description: DOCUMENT_REPLACED o VEHICLE_INACTIVE
+        "422":
+          description: Datos inválidos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
   /api/photos:
     post:
       summary: Subir la foto de un defecto (paso 1 de 2)
@@ -469,7 +625,16 @@ paths:
         cuanto está lista, antes de enviar la inspección completa — así una
         conexión inestable no obliga a reintentar todo el formulario. La URL
         devuelta se referencia luego en el campo defect.photoUrl del envío
-        de la inspección.
+        de la inspección. Con purpose=document (CAM-127) es el comprobante de
+        un documento del vehículo y también acepta PDF.
+      parameters:
+        - name: purpose
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [document]
+          description: CAM-127 -- "document" acepta además application/pdf.
       requestBody:
         required: true
         content:
@@ -481,7 +646,7 @@ paths:
                 file:
                   type: string
                   format: binary
-                  description: image/jpeg o image/png, máx. 8MB.
+                  description: image/jpeg o image/png (o application/pdf con purpose=document), máx. 8MB.
       responses:
         "201":
           description: Foto subida
@@ -516,6 +681,10 @@ paths:
                 type: string
                 format: binary
             image/png:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
               schema:
                 type: string
                 format: binary
@@ -2258,15 +2427,128 @@ components:
         blocked:
           type: boolean
           description: >
-            CAM-89 -- true si tiene al menos un defecto bloqueante sin
-            resolver. Un vehículo bloqueado no puede iniciar un viaje (409
-            VEHICLE_BLOCKED en el pre-trip); vuelve a false cuando la orden
-            de trabajo del defecto se finaliza.
+            CAM-89 / CAM-127 -- true si tiene al menos un defecto bloqueante
+            sin resolver o un documento vigente vencido. Un vehículo bloqueado
+            no puede iniciar un viaje (409 VEHICLE_BLOCKED en el pre-trip, con
+            los motivos en el mensaje); vuelve a false cuando se finaliza la
+            orden de trabajo del defecto o se renueva el documento.
+        blockReasons:
+          type: array
+          description: CAM-127 -- por qué está bloqueado; vacío si puede salir.
+          items:
+            $ref: "#/components/schemas/BlockReason"
         currentTrip:
           allOf:
             - $ref: "#/components/schemas/CurrentTrip"
           nullable: true
           description: CAM-87 -- el viaje abierto, si `status` es "on-trip"; null si está disponible.
+
+    BlockReason:
+      type: object
+      required: [type, message]
+      properties:
+        type:
+          type: string
+          enum: [blocking_defect, expired_document]
+        message:
+          type: string
+          example: "VTV / RTO: venció el 12/10/2026"
+
+    VehicleDocumentType:
+      type: string
+      description: >
+        CAM-127. Obligatorios (se marcan si faltan, no bloquean): vtv y seguro.
+        Se pueden vincular a un plan: vtv, seguro, cedula_azul, habilitacion_carga.
+      enum: [vtv, seguro, cedula_azul, habilitacion_carga, cedula_verde, titulo, otro]
+
+    VehicleDocument:
+      type: object
+      required: [id, vehicleId, type, typeLabel, displayName, status, current]
+      properties:
+        id: { type: string }
+        vehicleId: { type: string }
+        type:
+          $ref: "#/components/schemas/VehicleDocumentType"
+        typeLabel: { type: string, example: "VTV / RTO" }
+        name: { type: string, nullable: true, description: "El nombre que le puso el admin; null en filas viejas." }
+        displayName: { type: string }
+        number: { type: string, nullable: true, maxLength: 60 }
+        issuedAt: { type: string, format: date, nullable: true }
+        expiresAt: { type: string, format: date, nullable: true }
+        fileUrl: { type: string, nullable: true, description: "URL de POST /api/photos?purpose=document." }
+        status:
+          type: string
+          enum: [al_dia, por_vencer, vencido, sin_vencimiento]
+          description: >
+            vencido desde el día siguiente a expiresAt; por_vencer si faltan
+            hasta leadDays días (la anticipación de "Documento por vencer").
+        daysToExpiry: { type: integer, nullable: true, description: "Negativo si venció." }
+        current: { type: boolean, description: "false si ya se renovó (historial)." }
+        replacedById: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    VehicleDocuments:
+      type: object
+      required: [items, history, missingRequired, leadDays]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VehicleDocument"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/VehicleDocument"
+        missingRequired:
+          type: array
+          items:
+            $ref: "#/components/schemas/VehicleDocumentType"
+        leadDays: { type: integer, example: 15 }
+
+    CreateVehicleDocumentRequest:
+      type: object
+      required: [name]
+      description: >
+        El nombre es libre y el tipo sale de ahí ("Póliza La Segunda" es el
+        seguro). type es opcional y lo fuerza; con type, name puede faltar.
+      properties:
+        name: { type: string, maxLength: 60 }
+        type:
+          $ref: "#/components/schemas/VehicleDocumentType"
+        number: { type: string, maxLength: 60 }
+        issuedAt: { type: string, format: date }
+        expiresAt: { type: string, format: date, description: "Sin vencimiento no bloquea ni avisa." }
+        fileUrl: { type: string }
+
+    UpdateVehicleDocumentRequest:
+      type: object
+      description: Ausente no cambia nada; "" borra.
+      properties:
+        name: { type: string, maxLength: 60 }
+        number: { type: string, maxLength: 60 }
+        issuedAt: { type: string }
+        expiresAt: { type: string }
+        fileUrl: { type: string }
+
+    RenewVehicleDocumentRequest:
+      type: object
+      properties:
+        number: { type: string, maxLength: 60 }
+        issuedAt: { type: string, format: date }
+        expiresAt: { type: string, format: date }
+        fileUrl: { type: string }
+
+    DocumentInput:
+      type: object
+      required: [expiresAt]
+      description: >
+        CAM-127 -- el documento renovado que se carga junto con el
+        mantenimiento de un plan vinculado. Se emite en la fecha del
+        mantenimiento y su vencimiento pasa a ser el del plan.
+      properties:
+        number: { type: string, maxLength: 60 }
+        expiresAt: { type: string, format: date }
+        fileUrl: { type: string }
 
     UserRef:
       type: object
@@ -2630,6 +2912,11 @@ components:
           $ref: "#/components/schemas/MaintenanceStatus"
         nextMaintenance:
           $ref: "#/components/schemas/NextMaintenanceSummary"
+        blocked: { type: boolean, description: "CAM-127 -- no puede salir." }
+        blockReasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/BlockReason"
 
     FleetStatusPage:
       type: object
@@ -2655,6 +2942,13 @@ components:
         intervalKm: { type: integer, nullable: true }
         intervalDays: { type: integer, nullable: true }
         active: { type: boolean }
+        documentType:
+          allOf:
+            - $ref: "#/components/schemas/VehicleDocumentType"
+          nullable: true
+          description: >
+            CAM-127 -- el documento que renueva este plan. Si el vehículo lo
+            tiene cargado, el plan vence cuando vence el documento.
 
     CreateMaintenancePlanRequest:
       type: object
@@ -2669,6 +2963,9 @@ components:
           $ref: "#/components/schemas/IntervalType"
         intervalKm: { type: integer }
         intervalDays: { type: integer }
+        documentType:
+          type: string
+          description: CAM-127 -- opcional; solo planes "time" y tipos vtv, seguro, cedula_azul o habilitacion_carga.
 
     UpdateMaintenancePlanRequest:
       type: object
@@ -2681,6 +2978,7 @@ components:
         intervalKm: { type: integer }
         intervalDays: { type: integer }
         active: { type: boolean }
+        documentType: { type: string, description: "CAM-127 -- \"\" quita el vínculo." }
 
     MaintenanceAssignment:
       type: object
@@ -2699,6 +2997,10 @@ components:
         status:
           $ref: "#/components/schemas/MaintenanceStatus"
         active: { type: boolean }
+        documentType: { type: string, nullable: true, description: "CAM-127 -- el del plan." }
+        dueDateFromDocument:
+          type: boolean
+          description: CAM-127 -- true si nextDueDate sale del documento cargado y no del intervalo.
 
     CreateAssignmentRequest:
       type: object
@@ -2742,6 +3044,8 @@ components:
         completedKm: { type: integer }
         workOrderId: { type: string }
         notes: { type: string }
+        document:
+          $ref: "#/components/schemas/DocumentInput"
 
     AssignmentSummary:
       type: object
@@ -2987,6 +3291,12 @@ components:
           $ref: "#/components/schemas/WorkOrderExecutionType"
         externalProvider: { type: string }
         description: { type: string }
+        document:
+          allOf:
+            - $ref: "#/components/schemas/DocumentInput"
+          description: >
+            CAM-127 -- al finalizar una OT de un plan que renueva un documento;
+            422 en "document" si la OT no viene de un plan.
 
     WorkOrderExpense:
       type: object
@@ -3330,7 +3640,7 @@ components:
         front no depende del tipo para mostrar el aviso, solo del texto.
       enum: [work_order_assigned, work_order_unassigned, work_order_cancelled, trip_open_reminder,
              blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue,
-             recurring_defect]
+             recurring_defect, document_due_soon, document_expired, vehicle_unavailable, vehicle_available]
 
     NotificationChannel:
       type: string
@@ -3366,7 +3676,8 @@ components:
         recipientUserIds:
           type: array
           items: { type: string }
-        supportsLead: { type: boolean, description: Solo maintenance_due_soon. }
+        supportsLead: { type: boolean, description: "maintenance_due_soon y document_due_soon." }
+        supportsLeadKm: { type: boolean, description: "CAM-127 -- solo maintenance_due_soon; los documentos se anticipan en días." }
         leadDays: { type: integer, nullable: true }
         leadKm: { type: integer, nullable: true }
         customized: { type: boolean, description: false si rige el default. }

@@ -3,6 +3,7 @@ package org.fleetguard.service;
 import org.fleetguard.dto.CreateCompletionRequest;
 import org.fleetguard.dto.CreateWorkOrderExpenseRequest;
 import org.fleetguard.dto.CreateWorkOrderPhotoRequest;
+import org.fleetguard.dto.DocumentInputDto;
 import org.fleetguard.dto.FieldValidationErrorDetail;
 import org.fleetguard.dto.UpdateScheduleRequest;
 import org.fleetguard.dto.UpdateWorkOrderRequest;
@@ -78,10 +79,11 @@ class WorkOrderLifecycleServiceTest {
     private final ScheduledMaintenanceRepository scheduleRepository = mock(ScheduledMaintenanceRepository.class);
     private final ScheduledMaintenanceService scheduledMaintenanceService = mock(ScheduledMaintenanceService.class);
     private final MaintenanceCompletionService completionService = mock(MaintenanceCompletionService.class);
+    private final VehicleAvailabilityService availabilityService = mock(VehicleAvailabilityService.class);
     private final WorkOrderService service = new WorkOrderService(workOrderRepository, expenseRepository, photoRepository,
             vehicleRepository, defectRepository, scheduleRepository, scheduledMaintenanceService, completionService,
             mock(UserRepository.class), new WorkOrderMapper(), new DefectMapper(), new OdometerReadings(5000),
-            mock(ApplicationEventPublisher.class));
+            mock(ApplicationEventPublisher.class), availabilityService);
 
     private final UUID vehicleId = UUID.randomUUID();
     private final Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
@@ -128,12 +130,12 @@ class WorkOrderLifecycleServiceTest {
     }
 
     private static UpdateWorkOrderRequest status(String status) {
-        return new UpdateWorkOrderRequest(status, null, null, null, null, null, null, null);
+        return new UpdateWorkOrderRequest(status, null, null, null, null, null, null, null, null);
     }
 
     private static UpdateWorkOrderRequest finalizeWith(String closingDescription, String completedKm) {
         return new UpdateWorkOrderRequest("finalizada", closingDescription,
-                completedKm == null ? null : new BigDecimal(completedKm), null, null, null, null, null);
+                completedKm == null ? null : new BigDecimal(completedKm), null, null, null, null, null, null);
     }
 
     private static List<String> fields(WorkOrderValidationException ex) {
@@ -190,7 +192,7 @@ class WorkOrderLifecycleServiceTest {
         WorkOrder finalized = inProgress(null, null, null);
         finalized.finalizeOrder("Hecho");
         UpdateWorkOrderRequest edit = new UpdateWorkOrderRequest(null, null, null, null, null,
-                "externo", "Taller Pérez", "Otra descripción");
+                "externo", "Taller Pérez", "Otra descripción", null);
 
         for (WorkOrder closed : List.of(cancelled, finalized)) {
             assertEquals("WORK_ORDER_CLOSED", assertThrows(WorkOrderConflictException.class,
@@ -314,6 +316,36 @@ class WorkOrderLifecycleServiceTest {
         assertEquals("resuelto", defect.getStatus());
         assertEquals(workOrder.getFinalizedAt(), defect.getResolvedAt());
         assertNotNull(defect.getResolvedAt());
+        // CAM-103: se revisa la disponibilidad, con la OT que lo liberó para el aviso al chofer.
+        verify(availabilityService).sync(vehicle, workOrder.getId());
+    }
+
+    @Test
+    void elDocumentoRenovadoVaConElMantenimientoDelPlan() throws Exception {
+        UUID assignmentId = UUID.randomUUID();
+        WorkOrder workOrder = inProgress(UUID.randomUUID(), null, assignmentId);
+        withPhotos(workOrder, 1);
+        DocumentInputDto document = new DocumentInputDto("0012", "2027-10-29", null);
+
+        service.update(workOrder.getId().toString(), new UpdateWorkOrderRequest("finalizada", "VTV aprobada", null,
+                null, null, null, null, null, document));
+
+        // CAM-127: el documento viaja en el completion, que es el que lo guarda.
+        ArgumentCaptor<CreateCompletionRequest> captor = ArgumentCaptor.forClass(CreateCompletionRequest.class);
+        verify(completionService).create(eq(vehicleId.toString()), eq(assignmentId.toString()), captor.capture());
+        assertEquals(document, captor.getValue().document());
+    }
+
+    @Test
+    void unaOtSinPlanNoPuedeRenovarUnDocumento() throws Exception {
+        WorkOrder workOrder = inProgress(null, null, null);
+        withPhotos(workOrder, 1);
+
+        WorkOrderValidationException ex = assertThrows(WorkOrderValidationException.class, () ->
+                service.update(workOrder.getId().toString(), new UpdateWorkOrderRequest("finalizada", "Listo", null,
+                        null, null, null, null, null, new DocumentInputDto(null, "2027-01-01", null))));
+
+        assertEquals("document", ex.getDetails().get(0).field());
     }
 
     @Test

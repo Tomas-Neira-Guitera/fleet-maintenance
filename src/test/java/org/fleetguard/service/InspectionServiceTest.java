@@ -1,6 +1,7 @@
 package org.fleetguard.service;
 
 import org.fleetguard.auth.AuthenticatedUser;
+import org.fleetguard.dto.BlockReasonDto;
 import org.fleetguard.dto.ChecklistAnswerDto;
 import org.fleetguard.dto.DefectDetailDto;
 import org.fleetguard.dto.InspectionResultDto;
@@ -22,7 +23,6 @@ import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.mapper.InspectionMapper;
 import org.fleetguard.mapper.TripMapper;
-import org.fleetguard.repository.DefectRepository;
 import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.repository.TripRepository;
 import org.fleetguard.repository.VehicleRepository;
@@ -65,11 +65,12 @@ class InspectionServiceTest {
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final InspectionRepository inspectionRepository = mock(InspectionRepository.class);
-    private final DefectRepository defectRepository = mock(DefectRepository.class);
+    private final VehicleAvailabilityService availabilityService = mock(VehicleAvailabilityService.class);
     private final VehicleChecklistService checklistService = mock(VehicleChecklistService.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final InspectionService service = new InspectionService(vehicleRepository, tripRepository,
-            inspectionRepository, defectRepository, new InspectionMapper(), new TripMapper(), checklistService, new OdometerReadings(5000), eventPublisher);
+            inspectionRepository, new InspectionMapper(), new TripMapper(), checklistService, new OdometerReadings(5000),
+            availabilityService, eventPublisher);
 
     private final AuthenticatedUser driver = new AuthenticatedUser(UUID.randomUUID(), "chofer1", Role.CHOFER);
     private final AuthenticatedUser otherDriver = new AuthenticatedUser(UUID.randomUUID(), "chofer2", Role.CHOFER);
@@ -234,13 +235,18 @@ class InspectionServiceTest {
     @Test
     void unPreTripSobreUnVehiculoBloqueadoSeRechazaSinAbrirViaje() {
         noOpenTrip();
-        when(defectRepository.existsOpenBlockingByVehicleId(vehicle.getId())).thenReturn(true);
+        when(availabilityService.reasons(vehicle.getId())).thenReturn(List.of(
+                new BlockReasonDto(BlockReasonDto.BLOCKING_DEFECT, "Defecto bloqueante: Sin frenos"),
+                new BlockReasonDto(BlockReasonDto.EXPIRED_DOCUMENT, "VTV / RTO: venció el 12/10/2026")));
 
         VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class,
                 () -> service.submit(vehicle.getId().toString(),
                         new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver));
 
         assertEquals("VEHICLE_BLOCKED", ex.getErrorCode());
+        // CAM-127: el motivo viaja en el mensaje, para mostrárselo al chofer tal cual.
+        assertEquals(vehicle.getPlate() + " no puede salir: Defecto bloqueante: Sin frenos; VTV / RTO: venció el 12/10/2026.",
+                ex.getMessage());
         verify(tripRepository, never()).save(any());
         verify(inspectionRepository, never()).save(any());
     }
@@ -261,7 +267,8 @@ class InspectionServiceTest {
     @Test
     void unPostTripSeAceptaAunqueElVehiculoEsteBloqueado() throws Exception {
         Trip trip = openTrip();
-        when(defectRepository.existsOpenBlockingByVehicleId(vehicle.getId())).thenReturn(true);
+        when(availabilityService.reasons(vehicle.getId())).thenReturn(List.of(
+                new BlockReasonDto(BlockReasonDto.EXPIRED_DOCUMENT, "VTV / RTO: venció el 12/10/2026")));
 
         service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("post-trip", postTripAllOk(), null), driver);
 

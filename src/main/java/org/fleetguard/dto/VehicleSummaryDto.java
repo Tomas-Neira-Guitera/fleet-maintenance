@@ -1,5 +1,7 @@
 package org.fleetguard.dto;
 
+import java.util.List;
+
 /** Coincide con components.schemas.VehicleSummary de openapi.yaml. */
 public record VehicleSummaryDto(
         String id,
@@ -12,8 +14,10 @@ public record VehicleSummaryDto(
         String chassisNumber,
         long odometerKm,
         boolean active,
-        // CAM-89: true si tiene un defecto bloqueante sin resolver (no puede iniciar un viaje).
+        // CAM-89/CAM-127: true si no puede iniciar un viaje (defecto bloqueante abierto o documento vencido).
         boolean blocked,
+        // CAM-127: por qué, si blocked; vacío si puede salir.
+        List<BlockReasonDto> blockReasons,
         // CAM-87: el viaje abierto, si status es "on-trip"; null si está disponible.
         CurrentTripDto currentTrip
 ) {

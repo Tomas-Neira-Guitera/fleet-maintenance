@@ -15,6 +15,9 @@ import java.util.Set;
 public class PhotoService {
 
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of("image/jpeg", "image/png");
+    // CAM-127: el comprobante de un documento (póliza, cédula) también puede ser un PDF.
+    private static final Set<String> DOCUMENT_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "application/pdf");
+    public static final String PURPOSE_DOCUMENT = "document";
 
     private final PhotoStorage photoStorage;
 
@@ -23,12 +26,20 @@ public class PhotoService {
     }
 
     public PhotoUploadResultDto upload(MultipartFile file) {
+        return upload(file, null);
+    }
+
+    /** purpose "document": acepta también PDF (CAM-127). */
+    public PhotoUploadResultDto upload(MultipartFile file, String purpose) {
         if (file.isEmpty()) {
             throw new UnsupportedPhotoTypeException("El archivo está vacío.");
         }
+        boolean document = PURPOSE_DOCUMENT.equals(purpose);
+        Set<String> allowed = document ? DOCUMENT_CONTENT_TYPES : ALLOWED_CONTENT_TYPES;
         // Set.of(...).contains(null) tira NullPointerException: sin tipo de contenido sería un 500.
-        if (file.getContentType() == null || !ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
-            throw UnsupportedPhotoTypeException.wrongType(file.getContentType());
+        if (file.getContentType() == null || !allowed.contains(file.getContentType())) {
+            throw document ? UnsupportedPhotoTypeException.wrongDocumentType(file.getContentType())
+                    : UnsupportedPhotoTypeException.wrongType(file.getContentType());
         }
 
         PhotoStorage.StoredPhoto stored = photoStorage.store(file);

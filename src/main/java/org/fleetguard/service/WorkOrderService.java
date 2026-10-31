@@ -84,6 +84,7 @@ public class WorkOrderService {
     private final DefectMapper defectMapper;
     private final OdometerReadings odometerReadings;
     private final ApplicationEventPublisher eventPublisher;
+    private final VehicleAvailabilityService availabilityService;
 
     public WorkOrderService(WorkOrderRepository workOrderRepository, WorkOrderExpenseRepository expenseRepository,
                              WorkOrderPhotoRepository photoRepository, VehicleRepository vehicleRepository,
@@ -91,7 +92,7 @@ public class WorkOrderService {
                              ScheduledMaintenanceService scheduledMaintenanceService,
                              MaintenanceCompletionService completionService, UserRepository userRepository,
                              WorkOrderMapper mapper, DefectMapper defectMapper, OdometerReadings odometerReadings,
-                             ApplicationEventPublisher eventPublisher) {
+                             ApplicationEventPublisher eventPublisher, VehicleAvailabilityService availabilityService) {
         this.workOrderRepository = workOrderRepository;
         this.expenseRepository = expenseRepository;
         this.photoRepository = photoRepository;
@@ -105,6 +106,7 @@ public class WorkOrderService {
         this.defectMapper = defectMapper;
         this.odometerReadings = odometerReadings;
         this.eventPublisher = eventPublisher;
+        this.availabilityService = availabilityService;
     }
 
     /** created=false si ya había una OT abierta para el mismo origen y se devolvió esa. */
@@ -423,6 +425,9 @@ public class WorkOrderService {
             details.add(new FieldValidationErrorDetail("photos", "Hace falta al menos una foto para finalizar la orden de trabajo"));
         }
         Long completedKm = validateCompletedKm(workOrder, request.completedKm(), details);
+        if (request.document() != null && workOrder.getAssignmentId() == null) {
+            details.add(new FieldValidationErrorDetail("document", "Solo una orden de un plan de mantenimiento renueva un documento"));
+        }
         if (!details.isEmpty()) {
             throw new WorkOrderValidationException("Datos inválidos para finalizar la orden de trabajo", details);
         }
@@ -432,7 +437,7 @@ public class WorkOrderService {
         if (workOrder.getAssignmentId() != null) {
             CreateCompletionRequest completionRequest = new CreateCompletionRequest(
                     LocalDate.now().toString(), completedKm, workOrder.getId().toString(),
-                    "Registrado automáticamente al finalizar la orden de trabajo");
+                    "Registrado automáticamente al finalizar la orden de trabajo", request.document());
             completionService.create(workOrder.getVehicleId().toString(), workOrder.getAssignmentId().toString(), completionRequest);
         } else if (workOrder.getScheduledMaintenanceId() != null) {
             scheduleRepository.findById(workOrder.getScheduledMaintenanceId()).ifPresent(schedule -> {
@@ -443,8 +448,13 @@ public class WorkOrderService {
         }
 
         if (workOrder.getDefectId() != null) {
-            defectRepository.findById(workOrder.getDefectId())
-                    .ifPresent(defect -> defect.resolve(workOrder.getFinalizedAt()));
+            defectRepository.findById(workOrder.getDefectId()).ifPresent(defect -> {
+                defect.resolve(workOrder.getFinalizedAt());
+                defectRepository.saveAndFlush(defect);
+                // CAM-103: si era el último bloqueante, el vehículo vuelve a estar disponible.
+                vehicleRepository.findById(workOrder.getVehicleId())
+                        .ifPresent(vehicle -> availabilityService.sync(vehicle, workOrder.getId()));
+            });
         }
 
         // CAM-90: el km de cierre avanza el del vehículo. Si la OT venía de un plan, el completion de

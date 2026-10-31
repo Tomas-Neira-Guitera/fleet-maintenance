@@ -21,6 +21,9 @@ reparten, dónde se guardan, cómo los lee cada usuario y la campanita del heade
 | `maintenance_due_soon`, `maintenance_overdue` | CAM-118 | Configurable (por defecto, admins) | `/vehiculos/{id}` |
 | `work_order_assigned`, `work_order_unassigned`, `work_order_cancelled` | CAM-99, CAM-100 | El técnico de la OT | `/` |
 | `trip_open_reminder` | CAM-101 | El chofer que abrió el viaje | `/` |
+| `document_due_soon`, `document_expired` | CAM-127 | Configurable (por defecto, admins) | `/vehiculos/{id}/documentacion` |
+| `vehicle_unavailable` | CAM-102 | El chofer que tiene el vehículo en viaje (solo si lo bloqueó un documento vencido) | `/inspeccion/{vehicleId}` |
+| `vehicle_available` | CAM-103 | Quienes reportaron los bloqueantes resueltos y a quienes se avisó del bloqueo | `/inspeccion/{vehicleId}` |
 
 Cómo se configura cada uno (activo, canales, destinatarios): ver
 `CAM-117-118-notification-settings-contract.md`.

@@ -74,4 +74,19 @@ class PhotoServiceTest {
 
         assertTrue(ex.getMessage().contains("de un formato que no reconocemos"));
     }
+
+    @Test
+    void elComprobanteDeUnDocumentoPuedeSerPdfPeroUnaFotoNo() {
+        when(storage.store(any())).thenReturn(new PhotoStorage.StoredPhoto("doc-1", "/photos/doc-1"));
+        MockMultipartFile pdf = new MockMultipartFile("file", "poliza.pdf", "application/pdf", new byte[]{1});
+
+        // CAM-127: ?purpose=document acepta PDF (pólizas, cédulas).
+        assertEquals("doc-1", service.upload(pdf, PhotoService.PURPOSE_DOCUMENT).photoId());
+        UnsupportedPhotoTypeException photo = assertThrows(UnsupportedPhotoTypeException.class, () -> service.upload(pdf));
+        assertTrue(photo.getMessage().startsWith("La foto tiene que ser JPG o PNG"));
+        UnsupportedPhotoTypeException doc = assertThrows(UnsupportedPhotoTypeException.class, () -> service.upload(
+                new MockMultipartFile("file", "f.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        new byte[]{1}), PhotoService.PURPOSE_DOCUMENT));
+        assertTrue(doc.getMessage().startsWith("El archivo tiene que ser JPG, PNG o PDF"));
+    }
 }

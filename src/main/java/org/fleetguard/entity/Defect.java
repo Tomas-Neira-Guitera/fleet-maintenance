@@ -47,7 +47,10 @@ public class Defect {
     @Column(nullable = false)
     private String status = "open";
 
-    /** CAM-134: cuándo se finalizó la OT que lo resolvió; null si sigue abierto o se resolvió antes de CAM-134. */
+    /**
+     * CAM-134: cuándo se finalizó la OT que lo resolvió; null si sigue abierto o se resolvió antes de CAM-134.
+     * CAM-103 lo usa para avisarle a quien lo reportó cuando el vehículo vuelve a estar disponible.
+     */
     @Column(name = "resolved_at")
     private Instant resolvedAt;
 

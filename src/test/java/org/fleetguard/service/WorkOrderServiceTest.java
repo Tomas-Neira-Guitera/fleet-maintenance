@@ -67,7 +67,7 @@ class WorkOrderServiceTest {
     private final WorkOrderService service = new WorkOrderService(workOrderRepository, expenseRepository, photoRepository,
             vehicleRepository, defectRepository, scheduleRepository, mock(ScheduledMaintenanceService.class),
             mock(MaintenanceCompletionService.class), userRepository, new WorkOrderMapper(), new DefectMapper(),
-            new OdometerReadings(5000), eventPublisher);
+            new OdometerReadings(5000), eventPublisher, mock(VehicleAvailabilityService.class));
 
     private final UUID vehicleId = UUID.randomUUID();
     private final UUID technicianId = UUID.randomUUID();
@@ -109,7 +109,7 @@ class WorkOrderServiceTest {
     }
 
     private UpdateWorkOrderRequest updateRequest(String technician, String executionType, String externalProvider) {
-        return new UpdateWorkOrderRequest(null, null, null, null, technician, executionType, externalProvider, null);
+        return new UpdateWorkOrderRequest(null, null, null, null, technician, executionType, externalProvider, null, null);
     }
 
     private WorkOrder existingInternalWithTechnician() throws Exception {
@@ -405,7 +405,7 @@ class WorkOrderServiceTest {
     // --- Eventos para los avisos al técnico (CAM-99, CAM-100) ---
 
     private UpdateWorkOrderRequest cancelRequest(String technician) {
-        return new UpdateWorkOrderRequest("cancelada", null, null, null, technician, null, null, null);
+        return new UpdateWorkOrderRequest("cancelada", null, null, null, technician, null, null, null, null);
     }
 
     @Test
@@ -465,7 +465,7 @@ class WorkOrderServiceTest {
 
         service.update(workOrder.getId().toString(), updateRequest(technicianId.toString(), null, null));
         service.update(workOrder.getId().toString(),
-                new UpdateWorkOrderRequest(null, null, null, null, null, null, null, "Revisar también el ABS"));
+                new UpdateWorkOrderRequest(null, null, null, null, null, null, null, "Revisar también el ABS", null));
 
         verify(eventPublisher, never()).publishEvent(any());
     }
@@ -497,7 +497,7 @@ class WorkOrderServiceTest {
         when(photoRepository.countByWorkOrder_Id(workOrder.getId())).thenReturn(1L);
 
         service.update(workOrder.getId().toString(),
-                new UpdateWorkOrderRequest("finalizada", "Pastillas cambiadas", null, null, "", null, null, null));
+                new UpdateWorkOrderRequest("finalizada", "Pastillas cambiadas", null, null, "", null, null, null, null));
 
         // CAM-98: al admin se le avisa que se finalizó; al técnico, nada.
         verify(eventPublisher).publishEvent(new WorkOrderFinalizedEvent(workOrder.getId()));
@@ -510,7 +510,7 @@ class WorkOrderServiceTest {
         WorkOrder workOrder = existingInternalWithTechnician();
 
         service.update(workOrder.getId().toString(),
-                new UpdateWorkOrderRequest("en_proceso", null, null, null, null, null, null, null));
+                new UpdateWorkOrderRequest("en_proceso", null, null, null, null, null, null, null, null));
 
         verify(eventPublisher, never()).publishEvent(any(WorkOrderFinalizedEvent.class));
     }
