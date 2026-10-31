@@ -5,6 +5,8 @@ import org.fleetguard.entity.Inspection;
 import org.fleetguard.entity.InspectionType;
 import org.fleetguard.entity.MaintenanceCompletion;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.VehicleExpense;
+import org.fleetguard.entity.VehicleExpenseCategory;
 import org.fleetguard.entity.WorkOrder;
 import org.fleetguard.entity.WorkOrderExecutionType;
 import org.fleetguard.entity.WorkOrderExpense;
@@ -13,6 +15,7 @@ import org.fleetguard.entity.WorkOrderSourceType;
 import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.repository.MaintenanceCompletionRepository;
+import org.fleetguard.repository.VehicleExpenseRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderExpenseRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,10 +47,11 @@ class VehicleCostsServiceTest {
 
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final WorkOrderExpenseRepository expenseRepository = mock(WorkOrderExpenseRepository.class);
+    private final VehicleExpenseRepository vehicleExpenseRepository = mock(VehicleExpenseRepository.class);
     private final InspectionRepository inspectionRepository = mock(InspectionRepository.class);
     private final MaintenanceCompletionRepository completionRepository = mock(MaintenanceCompletionRepository.class);
     private final VehicleCostsService service = new VehicleCostsService(vehicleRepository, expenseRepository,
-            inspectionRepository, completionRepository);
+            vehicleExpenseRepository, inspectionRepository, completionRepository);
 
     private Vehicle truck;
     private String truckId;
@@ -103,6 +107,31 @@ class VehicleCostsServiceTest {
         assertEquals(new BigDecimal("400000.50"), costs.totalAmount());
         assertEquals(new BigDecimal("370000.50"), costs.last12MonthsAmount());
         assertEquals(3, costs.expenseCount());
+    }
+
+    @Test
+    void losGastosOperativosSumanAlTotalAlUltimoAnioYAlCostoPorKm() throws Exception {
+        WorkOrder brakes = new WorkOrder(truck.getId(), WorkOrderSourceType.MANUAL, null, null, null,
+                "Frenos", null, WorkOrderExecutionType.EXTERNO, null, null, null);
+        when(expenseRepository.findByVehicleId(truck.getId())).thenReturn(List.of(
+                expense(brakes, "100000.00", "2026-09-20T12:00:00Z")));
+        when(inspectionRepository.findByVehicleIdOrderByTimestampDesc(truck.getId()))
+                .thenReturn(List.of(inspection("2026-01-01T12:00:00Z", 50000.0)));
+        when(vehicleExpenseRepository.findByVehicle_Id(truck.getId())).thenReturn(List.of(
+                new VehicleExpense(truck, LocalDate.parse("2026-10-01"), VehicleExpenseCategory.COMBUSTIBLE, "Gasoil",
+                        new BigDecimal("50000.00")),
+                // El primer día de la ventana todavía entra; el anterior, no.
+                new VehicleExpense(truck, LocalDate.parse("2025-10-14"), VehicleExpenseCategory.SEGURO, "Seguro",
+                        new BigDecimal("30000.00")),
+                new VehicleExpense(truck, LocalDate.parse("2025-10-13"), VehicleExpenseCategory.PATENTE, "Patente",
+                        new BigDecimal("20000.00"))));
+
+        VehicleCostsDto costs = service.getCosts(truckId, NOW);
+
+        assertEquals(new BigDecimal("200000.00"), costs.totalAmount());
+        assertEquals(new BigDecimal("180000.00"), costs.last12MonthsAmount());
+        assertEquals(4, costs.expenseCount());
+        assertEquals(new BigDecimal("20.00"), costs.costPerKm());
     }
 
     @Test

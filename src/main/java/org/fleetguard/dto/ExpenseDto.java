@@ -3,8 +3,9 @@ package org.fleetguard.dto;
 import java.math.BigDecimal;
 
 /**
- * Un gasto de mantenimiento con el vehículo y la OT de la que sale -- GET /api/expenses (CAM-52).
- * origin: "plan" (preventivo), "defect" (correctivo) o "manual", según de dónde nació la OT.
+ * Un gasto con su vehículo y, si sale de una, su OT -- GET /api/expenses (CAM-52, CAM-109).
+ * origin: "plan" (preventivo), "defect" (correctivo) o "manual", según de dónde nació la OT, u
+ * "operating" si es un gasto operativo: ahí los campos de la OT, executionType y el comprobante van en null.
  */
 public record ExpenseDto(
         String id,

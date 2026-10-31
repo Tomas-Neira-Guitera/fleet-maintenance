@@ -182,11 +182,12 @@ paths:
 
   /api/vehicles/{id}/costs:
     get:
-      summary: Costo de mantenimiento de un vehículo (CAM-105)
+      summary: Costo total de un vehículo (CAM-105, CAM-109)
       description: >
         Solo ADMIN, solo lectura. Suma los gastos cargados en todas las OTs del
-        vehículo (los mismos de GET /api/expenses), sin importar el estado de
-        la OT. Funciona también para un vehículo dado de baja. El costo por km
+        vehículo, sin importar el estado de la OT, y sus gastos operativos
+        (los mismos de GET /api/expenses). Funciona también para un vehículo
+        dado de baja. El costo por km
         divide el total histórico por los km recorridos desde el primer
         registro de odómetro conocido (el más antiguo de sus inspecciones y de
         sus mantenimientos hechos); si no hay registros, o el km actual no supera
@@ -1637,14 +1638,17 @@ paths:
 
   /api/expenses:
     get:
-      summary: Gastos de mantenimiento de toda la flota (CAM-52)
+      summary: Gastos de toda la flota (CAM-52, CAM-109)
       description: >
-        Solo ADMIN, solo lectura. Lista los gastos que se cargan dentro de
-        cada orden de trabajo (POST /api/work-orders/{id}/expenses), de todas
-        las OTs sin importar su estado, del más reciente al más antiguo. La
-        fecha de un gasto es la de su carga. No trae totales: el cliente los
-        calcula sobre el listado ya filtrado. Un `vehicleId` o `category` que
-        no existe devuelve una lista vacía, no un error.
+        Solo ADMIN. Lista los dos tipos de gasto, del más reciente al más
+        antiguo: los que se cargan dentro de cada orden de trabajo (POST
+        /api/work-orders/{id}/expenses), de todas las OTs sin importar su
+        estado, y los gastos operativos del vehículo (CAM-109). La fecha de
+        un gasto de OT es la de su carga; la de un gasto operativo, la que
+        se le cargó. No trae totales: el cliente los calcula sobre el listado
+        ya filtrado. Un `vehicleId`, `category` u `origin` que no existe
+        devuelve una lista vacía, no un error. Ver
+        CAM-109-operating-expenses-contract.md.
       security:
         - bearerAuth: []
       parameters:
@@ -1654,7 +1658,13 @@ paths:
         - name: category
           in: query
           schema:
-            $ref: "#/components/schemas/WorkOrderExpenseCategory"
+            $ref: "#/components/schemas/ExpenseCategory"
+        - name: origin
+          in: query
+          description: Separa los gastos operativos (`operating`) de los de OT (`plan`, `defect`, `manual`).
+          schema:
+            type: string
+            enum: [plan, defect, manual, operating]
         - $ref: "#/components/parameters/PeriodFrom"
         - $ref: "#/components/parameters/PeriodTo"
       responses:
@@ -1676,6 +1686,84 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
+    post:
+      summary: Cargar un gasto operativo (CAM-109)
+      description: >
+        Solo ADMIN. Un gasto del vehículo que no sale de una orden de trabajo:
+        combustible, seguro, patente, VTV, peajes u otro. Admite un vehículo
+        dado de baja y una fecha pasada, no una futura.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VehicleExpenseRequest"
+      responses:
+        "201":
+          description: Creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/expenses/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Editar un gasto operativo (CAM-109)
+      description: >
+        Solo ADMIN. Reemplaza todos los campos. Un gasto de OT no se edita
+        acá: su id da 404, porque se maneja desde la orden de trabajo.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VehicleExpenseRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: EXPENSE_NOT_FOUND o VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Borrar un gasto operativo (CAM-109)
+      description: Solo ADMIN. Un gasto de OT no se borra acá; su id da 404.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Borrado
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: EXPENSE_NOT_FOUND
 
   /api/notifications:
     get:
@@ -2783,6 +2871,27 @@ components:
       type: string
       enum: [repuesto, mano_de_obra, otro]
 
+    VehicleExpenseCategory:
+      type: string
+      enum: [combustible, seguro, patente, vtv, peajes, otro]
+
+    ExpenseCategory:
+      type: string
+      description: Las categorías de los dos tipos de gasto. `otro` es el mismo valor en los dos.
+      enum: [repuesto, mano_de_obra, combustible, seguro, patente, vtv, peajes, otro]
+
+    VehicleExpenseRequest:
+      type: object
+      description: Alta o edición de un gasto operativo (CAM-109).
+      required: [vehicleId, date, category, description, amount]
+      properties:
+        vehicleId: { type: string }
+        date: { type: string, format: date, description: Día del gasto. No puede ser futuro (hora argentina). }
+        category:
+          $ref: "#/components/schemas/VehicleExpenseCategory"
+        description: { type: string }
+        amount: { type: number, description: "Mayor a 0, con hasta 2 decimales y hasta 9.999.999.999,99." }
+
     WorkOrder:
       type: object
       required: [id, vehicleId, sourceType, title, executionType, status, expenses, totalExpenses, photos, createdAt, updatedAt]
@@ -2900,31 +3009,45 @@ components:
 
     Expense:
       type: object
-      description: Un gasto de GET /api/expenses (CAM-52), con el vehículo y la OT de la que sale.
+      description: >
+        Un gasto de GET /api/expenses (CAM-52, CAM-109), con su vehículo y, si
+        sale de una orden de trabajo, con esa OT. En un gasto operativo
+        (`origin: operating`) los campos de la OT, `executionType` y el
+        comprobante vienen en null.
       required: [id, date, vehicleId, category, description, amount, workOrderId, workOrderTitle, workOrderStatus, origin, executionType, receiptNumber, receiptPhotoUrl]
       properties:
         id: { type: string }
-        date: { type: string, format: date-time, description: Cuándo se cargó el gasto. }
+        date:
+          type: string
+          format: date-time
+          description: >
+            En un gasto de OT, cuándo se cargó. En uno operativo, la medianoche
+            argentina de su día: es un instante como el otro, y se lee como ese día.
         vehicleId: { type: string }
         plate: { type: string, nullable: true }
         category:
-          $ref: "#/components/schemas/WorkOrderExpenseCategory"
+          $ref: "#/components/schemas/ExpenseCategory"
         description: { type: string }
         amount: { type: number }
-        workOrderId: { type: string }
-        workOrderTitle: { type: string }
+        workOrderId: { type: string, nullable: true }
+        workOrderTitle: { type: string, nullable: true }
         workOrderStatus:
-          $ref: "#/components/schemas/WorkOrderStatus"
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkOrderStatus"
         origin:
           type: string
-          enum: [plan, defect, manual]
+          enum: [plan, defect, manual, operating]
           description: >
-            De dónde nació la OT: de un plan de mantenimiento (gasto
-            preventivo), de un defecto (correctivo) o suelta. No es
+            De dónde nació el gasto: `operating` es un gasto operativo, sin OT.
+            Los otros dicen de dónde nació su OT: de un plan de mantenimiento
+            (gasto preventivo), de un defecto (correctivo) o suelta. No es
             `sourceType`: una OT creada desde el calendario conserva el plan
             o el defecto que la originó.
         executionType:
-          $ref: "#/components/schemas/WorkOrderExecutionType"
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkOrderExecutionType"
         receiptNumber:
           type: string
           nullable: true
@@ -2936,12 +3059,12 @@ components:
 
     VehicleCosts:
       type: object
-      description: Costo de mantenimiento de un vehículo, de GET /api/vehicles/{id}/costs (CAM-105).
+      description: Costo total de un vehículo, mantenimiento y operativo, de GET /api/vehicles/{id}/costs (CAM-105, CAM-109).
       required: [totalAmount, last12MonthsAmount, expenseCount, currentKm, firstKnownKm, kmDriven, costPerKm]
       properties:
         totalAmount: { type: number, description: Total histórico de gastos del vehículo. }
-        last12MonthsAmount: { type: number, description: "Gastos cargados desde la medianoche (hora argentina) del mismo día de hace un año." }
-        expenseCount: { type: integer, description: Cantidad de gastos cargados en total. }
+        last12MonthsAmount: { type: number, description: "Gastos con fecha desde la medianoche (hora argentina) del mismo día de hace un año." }
+        expenseCount: { type: integer, description: Cantidad de gastos en total. }
         currentKm: { type: integer, description: Km actual del vehículo. }
         firstKnownKm:
           type: integer
