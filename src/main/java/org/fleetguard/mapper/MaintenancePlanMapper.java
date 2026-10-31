@@ -15,7 +15,8 @@ public class MaintenancePlanMapper {
                 plan.getIntervalType().toJson(),
                 plan.getIntervalKm(),
                 plan.getIntervalDays(),
-                plan.isActive()
+                plan.isActive(),
+                plan.getDocumentType() == null ? null : plan.getDocumentType().toJson()
         );
     }
 }

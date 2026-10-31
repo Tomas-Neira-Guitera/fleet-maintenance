@@ -6,6 +6,7 @@ import org.fleetguard.dto.MaintenancePlanDto;
 import org.fleetguard.dto.UpdateMaintenancePlanRequest;
 import org.fleetguard.entity.IntervalType;
 import org.fleetguard.entity.MaintenancePlan;
+import org.fleetguard.entity.VehicleDocumentType;
 import org.fleetguard.exception.MaintenanceConflictException;
 import org.fleetguard.exception.MaintenancePlanNotFoundException;
 import org.fleetguard.exception.MaintenanceValidationException;
@@ -25,13 +26,15 @@ public class MaintenancePlanService {
     private final MaintenancePlanRepository planRepository;
     private final VehicleMaintenanceAssignmentRepository assignmentRepository;
     private final MaintenancePlanMapper mapper;
+    private final LinkedDocumentDueDates linkedDueDates;
 
     public MaintenancePlanService(MaintenancePlanRepository planRepository,
                                    VehicleMaintenanceAssignmentRepository assignmentRepository,
-                                   MaintenancePlanMapper mapper) {
+                                   MaintenancePlanMapper mapper, LinkedDocumentDueDates linkedDueDates) {
         this.planRepository = planRepository;
         this.assignmentRepository = assignmentRepository;
         this.mapper = mapper;
+        this.linkedDueDates = linkedDueDates;
     }
 
     public List<MaintenancePlanDto> list(boolean active, String category) {
@@ -55,12 +58,14 @@ public class MaintenancePlanService {
         } else {
             validateIntervalCoherence(intervalType, request.intervalKm(), request.intervalDays(), details);
         }
+        VehicleDocumentType documentType = parseDocumentType(request.documentType(), intervalType, details);
         if (!details.isEmpty()) {
             throw new MaintenanceValidationException("Datos inválidos para crear el plan", details);
         }
 
         MaintenancePlan plan = new MaintenancePlan(request.name().trim(), request.category(), intervalType,
                 request.intervalKm(), request.intervalDays());
+        plan.setDocumentType(documentType);
         return mapper.toDto(planRepository.save(plan));
     }
 
@@ -70,7 +75,8 @@ public class MaintenancePlanService {
 
         boolean onlyReactivating = Boolean.TRUE.equals(request.active())
                 && request.name() == null && request.category() == null
-                && request.intervalType() == null && request.intervalKm() == null && request.intervalDays() == null;
+                && request.intervalType() == null && request.intervalKm() == null && request.intervalDays() == null
+                && request.documentType() == null;
         if (!plan.isActive() && !onlyReactivating) {
             throw new MaintenanceConflictException("PLAN_INACTIVE",
                     "El plan está desactivado -- reactivalo primero con PATCH { \"active\": true }");
@@ -99,18 +105,30 @@ public class MaintenancePlanService {
 
         List<FieldValidationErrorDetail> details = new ArrayList<>();
         validateIntervalCoherence(newIntervalType, newIntervalKm, newIntervalDays, details);
+        VehicleDocumentType newDocumentType = request.documentType() == null ? plan.getDocumentType()
+                : parseDocumentType(request.documentType(), newIntervalType, details);
+        if (request.documentType() == null && newDocumentType != null && newIntervalType != IntervalType.TIME) {
+            details.add(new FieldValidationErrorDetail("documentType", DOCUMENT_ONLY_TIME));
+        }
         if (!details.isEmpty()) {
             throw new MaintenanceValidationException("Datos inválidos para editar el plan", details);
         }
         plan.setIntervalType(newIntervalType);
         plan.setIntervalKm(newIntervalKm);
         plan.setIntervalDays(newIntervalDays);
+        boolean linkChanged = newDocumentType != plan.getDocumentType();
+        plan.setDocumentType(newDocumentType);
 
         if (request.active() != null) {
             plan.setActive(request.active());
         }
 
-        return mapper.toDto(planRepository.save(plan));
+        MaintenancePlan saved = planRepository.save(plan);
+        // CAM-127: al vincular, las asignaciones toman el vencimiento del documento; al desvincular, el del plan.
+        if (linkChanged) {
+            linkedDueDates.syncPlan(saved);
+        }
+        return mapper.toDto(saved);
     }
 
     @Transactional
@@ -126,6 +144,27 @@ public class MaintenancePlanService {
     MaintenancePlan find(String id) {
         return Uuids.parse(id).flatMap(planRepository::findById)
                 .orElseThrow(() -> new MaintenancePlanNotFoundException(id));
+    }
+
+    private static final String DOCUMENT_ONLY_TIME = "Solo un plan por tiempo puede renovar un documento";
+
+    /** CAM-127: null o "" = sin vínculo. Solo tipos con vencimiento propio, y solo en planes por tiempo. */
+    private VehicleDocumentType parseDocumentType(String raw, IntervalType intervalType,
+                                                  List<FieldValidationErrorDetail> details) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        VehicleDocumentType type = VehicleDocumentType.fromJson(raw);
+        if (type == null || !type.isRenewable()) {
+            details.add(new FieldValidationErrorDetail("documentType",
+                    "Debe ser 'vtv', 'seguro', 'cedula_azul' o 'habilitacion_carga'"));
+            return null;
+        }
+        if (intervalType != null && intervalType != IntervalType.TIME) {
+            details.add(new FieldValidationErrorDetail("documentType", DOCUMENT_ONLY_TIME));
+            return null;
+        }
+        return type;
     }
 
     private void validateIntervalCoherence(IntervalType type, Integer intervalKm, Integer intervalDays, List<FieldValidationErrorDetail> details) {

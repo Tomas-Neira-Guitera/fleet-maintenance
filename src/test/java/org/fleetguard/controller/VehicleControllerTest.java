@@ -1,5 +1,6 @@
 package org.fleetguard.controller;
 
+import org.fleetguard.dto.BlockReasonDto;
 import org.fleetguard.dto.CreateVehicleRequest;
 import org.fleetguard.dto.CurrentTripDto;
 import org.fleetguard.dto.FieldValidationErrorDetail;
@@ -45,7 +46,7 @@ class VehicleControllerTest extends WebMvcTestBase {
 
     private static VehicleSummaryDto summary() {
         return new VehicleSummaryDto("v-1", "AB123CD", "Ford", "Cargo", "available", "Camión", 2020, null, 50000, true,
-                false, null);
+                false, List.of(), null);
     }
 
     @Test
@@ -62,7 +63,8 @@ class VehicleControllerTest extends WebMvcTestBase {
     @Test
     void unVehiculoEnViajeTraeQuienLoAbrioYUnoBloqueadoLoDice() throws Exception {
         VehicleSummaryDto onTrip = new VehicleSummaryDto("v-2", "AC456EF", "Iveco", "Daily", "on-trip", null, null, null,
-                1000, true, true, new CurrentTripDto("2026-10-07T11:15:00Z", new UserRefDto("u-1", "chofer1")));
+                1000, true, true, List.of(new BlockReasonDto("blocking_defect", "Defecto bloqueante: Sin frenos")),
+                new CurrentTripDto("2026-10-07T11:15:00Z", new UserRefDto("u-1", "chofer1")));
         when(vehicleService.listVehicles(true)).thenReturn(List.of(summary(), onTrip));
 
         // CAM-87 y CAM-89: forma del JSON que consumen el listado del chofer y el detalle del admin.
@@ -71,13 +73,15 @@ class VehicleControllerTest extends WebMvcTestBase {
                 .andExpect(jsonPath("$[0].blocked").value(false))
                 .andExpect(jsonPath("$[0].currentTrip").doesNotExist())
                 .andExpect(jsonPath("$[1].blocked").value(true))
+                .andExpect(jsonPath("$[1].blockReasons[0].type").value("blocking_defect"))
+                .andExpect(jsonPath("$[1].blockReasons[0].message").value("Defecto bloqueante: Sin frenos"))
                 .andExpect(jsonPath("$[1].currentTrip.startedAt").value("2026-10-07T11:15:00Z"))
                 .andExpect(jsonPath("$[1].currentTrip.openedBy.name").value("chofer1"));
     }
 
     @Test
     void elParametroViewFleetStatusDevuelveLaVistaPaginadaDeFlota() throws Exception {
-        FleetStatusRowDto row = new FleetStatusRowDto("v-1", "AB123CD", "Ford", "Cargo", null, 50000, 75, "vencido", null);
+        FleetStatusRowDto row = new FleetStatusRowDto("v-1", "AB123CD", "Ford", "Cargo", null, 50000, 75, "vencido", null, false, List.of());
         when(vehicleService.getFleetStatus(2, 5, "vencido", true))
                 .thenReturn(new PagedResponse<>(2, 5, 6, List.of(row)));
 

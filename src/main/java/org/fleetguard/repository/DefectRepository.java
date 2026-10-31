@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,6 +41,18 @@ public interface DefectRepository extends JpaRepository<Defect, UUID> {
     @Query("select distinct i.vehicleId from Defect d join d.inspectionAnswer a join a.inspection i "
             + "where d.status = 'open' and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING")
     List<UUID> findVehicleIdsWithOpenBlockingDefect();
+
+    /** CAM-127: los bloqueantes abiertos de esos vehículos, con su inspección (el motivo de "No disponible"). */
+    @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i "
+            + "where d.status = 'open' and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING "
+            + "and i.vehicleId in :vehicleIds order by d.createdAt")
+    List<Defect> findOpenBlockingWithInspection(@Param("vehicleIds") Collection<UUID> vehicleIds);
+
+    /** CAM-103: quiénes reportaron los bloqueantes de ese vehículo que se resolvieron desde {@code since}. */
+    @Query("select distinct i.driverId from Defect d join d.inspectionAnswer a join a.inspection i "
+            + "where i.vehicleId = :vehicleId and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING "
+            + "and d.status = 'resuelto' and d.resolvedAt >= :since")
+    List<String> findReportersOfBlockingResolvedSince(@Param("vehicleId") UUID vehicleId, @Param("since") Instant since);
 
     /** Defectos de esa gravedad reportados en [from, to), por chofer -- CAM-91. */
     @Query("select new org.fleetguard.repository.DriverCount(i.driverId, count(d)) from Defect d "

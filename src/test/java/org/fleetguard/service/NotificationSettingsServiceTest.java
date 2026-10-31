@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -164,5 +165,29 @@ class NotificationSettingsServiceTest {
         assertFalse(effective.enabled());
         assertEquals(Set.of(NotificationChannel.EMAIL), effective.channels());
         assertTrue(effective.customized());
+    }
+
+    @Test
+    void losDocumentosSeAnticipanSoloEnDiasConQuinceDiasPorDefecto() {
+        when(repository.findById(any())).thenReturn(Optional.empty());
+
+        NotificationSettingDto documents = service.list().stream()
+                .filter(d -> d.type().equals("document_due_soon")).findFirst().orElseThrow();
+
+        assertTrue(documents.supportsLead());
+        assertFalse(documents.supportsLeadKm());
+        assertEquals(15, documents.leadDays());
+        assertNull(documents.leadKm());
+        NotificationSettingDto unavailable = service.list().stream()
+                .filter(d -> d.type().equals("vehicle_unavailable")).findFirst().orElseThrow();
+        assertEquals("owner", unavailable.audience());
+    }
+
+    @Test
+    void aLosDocumentosNoSeLesConfiguraAnticipacionEnKm() {
+        NotificationValidationException ex = assertThrows(NotificationValidationException.class, () ->
+                service.update("document_due_soon", request(true, List.of("in_app"), List.of("ADMIN"), List.of(), 20, 500)));
+
+        assertEquals(List.of("leadKm"), ex.getDetails().stream().map(d -> d.field()).toList());
     }
 }

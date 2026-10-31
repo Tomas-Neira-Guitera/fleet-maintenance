@@ -56,11 +56,11 @@ class MaintenanceControllersTest extends WebMvcTestBase {
     private ScheduledMaintenanceService scheduleService;
 
     private static MaintenancePlanDto planDto() {
-        return new MaintenancePlanDto("p-1", "Cambio de aceite", "motor", "km", 10000, null, true);
+        return new MaintenancePlanDto("p-1", "Cambio de aceite", "motor", "km", 10000, null, true, null);
     }
 
     private static AssignmentDto assignmentDto() {
-        return new AssignmentDto("a-1", "v-1", "p-1", "Cambio de aceite", "km", 40000L, null, 50000L, null, "por_vencer", true);
+        return new AssignmentDto("a-1", "v-1", "p-1", "Cambio de aceite", "km", 40000L, null, 50000L, null, "por_vencer", true, null, false);
     }
 
     private static ScheduleDto scheduleDto() {

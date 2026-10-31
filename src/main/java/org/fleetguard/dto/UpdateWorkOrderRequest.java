@@ -17,6 +17,8 @@ public record UpdateWorkOrderRequest(
         String technicianId,
         String executionType,
         String externalProvider,
-        String description
+        String description,
+        // CAM-127: al finalizar una OT de un plan que renueva un documento, el documento nuevo (opcional).
+        DocumentInputDto document
 ) {
 }

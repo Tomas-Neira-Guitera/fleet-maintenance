@@ -24,4 +24,6 @@ public interface VehicleMaintenanceAssignmentRepository extends JpaRepository<Ve
     boolean existsByMaintenancePlan_Id(UUID maintenancePlanId);
 
     List<VehicleMaintenanceAssignment> findByActiveTrue();
+
+    List<VehicleMaintenanceAssignment> findByMaintenancePlan_IdAndActiveTrue(UUID maintenancePlanId);
 }

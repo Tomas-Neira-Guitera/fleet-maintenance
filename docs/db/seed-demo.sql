@@ -27,28 +27,31 @@ begin
              and (table_name, column_name) not in (
                ('users','id'), ('users','username'), ('users','password_hash'), ('users','role'), ('vehicles','id'),
                ('vehicles','plate'), ('vehicles','brand'), ('vehicles','model'), ('vehicles','vehicle_type'), ('vehicles','odometer_km'),
-               ('vehicles','year'), ('vehicles','chassis_number'), ('vehicles','active'), ('trips','id'), ('trips','vehicle_id'),
-               ('trips','status'), ('trips','started_at'), ('trips','ended_at'), ('trips','opened_by_id'), ('trips','opened_by_name'),
-               ('trips','closed_by_id'), ('trips','closed_by_name'), ('inspections','id'), ('inspections','trip_id'), ('inspections','vehicle_id'),
-               ('inspections','driver_id'), ('inspections','driver_name'), ('inspections','type'), ('inspections','timestamp'), ('inspections','odometer_km'),
-               ('inspections','notes'), ('inspections','has_blocking_defect'), ('inspection_answers','id'), ('inspection_answers','inspection_id'), ('inspection_answers','item_id'),
-               ('inspection_answers','item_label'), ('inspection_answers','outcome'), ('inspection_answers','number_value'), ('defects','id'), ('defects','inspection_answer_id'),
-               ('defects','severity'), ('defects','description'), ('defects','details'), ('defects','photo_url'), ('defects','created_at'),
-               ('defects','status'), ('maintenance_plans','id'), ('maintenance_plans','name'), ('maintenance_plans','category'), ('maintenance_plans','interval_type'),
-               ('maintenance_plans','interval_km'), ('maintenance_plans','interval_days'), ('maintenance_plans','active'), ('vehicle_maintenance_assignments','id'), ('vehicle_maintenance_assignments','vehicle_id'),
-               ('vehicle_maintenance_assignments','maintenance_plan_id'), ('vehicle_maintenance_assignments','last_done_km'), ('vehicle_maintenance_assignments','last_done_date'), ('vehicle_maintenance_assignments','next_due_km'), ('vehicle_maintenance_assignments','next_due_date'),
-               ('vehicle_maintenance_assignments','active'), ('maintenance_completions','id'), ('maintenance_completions','assignment_id'), ('maintenance_completions','completed_at'), ('maintenance_completions','completed_km'),
-               ('maintenance_completions','work_order_id'), ('maintenance_completions','notes'), ('scheduled_maintenances','id'), ('scheduled_maintenances','vehicle_id'), ('scheduled_maintenances','source_type'),
-               ('scheduled_maintenances','assignment_id'), ('scheduled_maintenances','defect_id'), ('scheduled_maintenances','title'), ('scheduled_maintenances','scheduled_at'), ('scheduled_maintenances','status'),
-               ('scheduled_maintenances','notes'), ('scheduled_maintenances','created_at'), ('scheduled_maintenances','updated_at'), ('work_orders','id'), ('work_orders','vehicle_id'),
-               ('work_orders','source_type'), ('work_orders','scheduled_maintenance_id'), ('work_orders','defect_id'), ('work_orders','assignment_id'), ('work_orders','title'),
-               ('work_orders','description'), ('work_orders','execution_type'), ('work_orders','external_provider'), ('work_orders','assignee'), ('work_orders','technician_id'),
-               ('work_orders','status'), ('work_orders','closing_description'), ('work_orders','created_at'), ('work_orders','updated_at'), ('work_orders','finalized_at'),
-               ('work_order_expenses','id'), ('work_order_expenses','work_order_id'), ('work_order_expenses','category'), ('work_order_expenses','description'), ('work_order_expenses','amount'),
-               ('work_order_expenses','created_at'), ('work_order_photos','id'), ('work_order_photos','work_order_id'), ('work_order_photos','photo_url'), ('work_order_photos','created_at'),
-               ('vehicle_checklist_items','id'), ('vehicle_checklist_items','vehicle_id'), ('vehicle_checklist_items','label'), ('vehicle_checklist_items','type'), ('vehicle_checklist_items','section'),
-               ('vehicle_checklist_items','active'), ('vehicle_checklist_items','created_at'), ('vehicle_disabled_checklist_items','id'), ('vehicle_disabled_checklist_items','vehicle_id'), ('vehicle_disabled_checklist_items','base_item_id')
-             ) and table_name in ('users', 'vehicles', 'trips', 'inspections', 'inspection_answers', 'defects', 'maintenance_plans', 'vehicle_maintenance_assignments', 'maintenance_completions', 'scheduled_maintenances', 'work_orders', 'work_order_expenses', 'work_order_photos', 'vehicle_checklist_items', 'vehicle_disabled_checklist_items')
+               ('vehicles','year'), ('vehicles','chassis_number'), ('vehicles','active'), ('vehicles','unavailable_since'), ('trips','id'),
+               ('trips','vehicle_id'), ('trips','status'), ('trips','started_at'), ('trips','ended_at'), ('trips','opened_by_id'),
+               ('trips','opened_by_name'), ('trips','closed_by_id'), ('trips','closed_by_name'), ('inspections','id'), ('inspections','trip_id'),
+               ('inspections','vehicle_id'), ('inspections','driver_id'), ('inspections','driver_name'), ('inspections','type'), ('inspections','timestamp'),
+               ('inspections','odometer_km'), ('inspections','notes'), ('inspections','has_blocking_defect'), ('inspection_answers','id'), ('inspection_answers','inspection_id'),
+               ('inspection_answers','item_id'), ('inspection_answers','item_label'), ('inspection_answers','outcome'), ('inspection_answers','number_value'), ('defects','id'),
+               ('defects','inspection_answer_id'), ('defects','severity'), ('defects','description'), ('defects','details'), ('defects','photo_url'),
+               ('defects','created_at'), ('defects','status'), ('maintenance_plans','id'), ('maintenance_plans','name'), ('maintenance_plans','category'),
+               ('maintenance_plans','interval_type'), ('maintenance_plans','interval_km'), ('maintenance_plans','interval_days'), ('maintenance_plans','active'), ('maintenance_plans','document_type'),
+               ('vehicle_maintenance_assignments','id'), ('vehicle_maintenance_assignments','vehicle_id'), ('vehicle_maintenance_assignments','maintenance_plan_id'), ('vehicle_maintenance_assignments','last_done_km'), ('vehicle_maintenance_assignments','last_done_date'),
+               ('vehicle_maintenance_assignments','next_due_km'), ('vehicle_maintenance_assignments','next_due_date'), ('vehicle_maintenance_assignments','active'), ('maintenance_completions','id'), ('maintenance_completions','assignment_id'),
+               ('maintenance_completions','completed_at'), ('maintenance_completions','completed_km'), ('maintenance_completions','work_order_id'), ('maintenance_completions','notes'), ('scheduled_maintenances','id'),
+               ('scheduled_maintenances','vehicle_id'), ('scheduled_maintenances','source_type'), ('scheduled_maintenances','assignment_id'), ('scheduled_maintenances','defect_id'), ('scheduled_maintenances','title'),
+               ('scheduled_maintenances','scheduled_at'), ('scheduled_maintenances','status'), ('scheduled_maintenances','notes'), ('scheduled_maintenances','created_at'), ('scheduled_maintenances','updated_at'),
+               ('work_orders','id'), ('work_orders','vehicle_id'), ('work_orders','source_type'), ('work_orders','scheduled_maintenance_id'), ('work_orders','defect_id'),
+               ('work_orders','assignment_id'), ('work_orders','title'), ('work_orders','description'), ('work_orders','execution_type'), ('work_orders','external_provider'),
+               ('work_orders','assignee'), ('work_orders','technician_id'), ('work_orders','status'), ('work_orders','closing_description'), ('work_orders','created_at'),
+               ('work_orders','updated_at'), ('work_orders','finalized_at'), ('work_order_expenses','id'), ('work_order_expenses','work_order_id'), ('work_order_expenses','category'),
+               ('work_order_expenses','description'), ('work_order_expenses','amount'), ('work_order_expenses','created_at'), ('work_order_photos','id'), ('work_order_photos','work_order_id'),
+               ('work_order_photos','photo_url'), ('work_order_photos','created_at'), ('vehicle_checklist_items','id'), ('vehicle_checklist_items','vehicle_id'), ('vehicle_checklist_items','label'),
+               ('vehicle_checklist_items','type'), ('vehicle_checklist_items','section'), ('vehicle_checklist_items','active'), ('vehicle_checklist_items','created_at'), ('vehicle_disabled_checklist_items','id'),
+               ('vehicle_disabled_checklist_items','vehicle_id'), ('vehicle_disabled_checklist_items','base_item_id'), ('vehicle_documents','id'), ('vehicle_documents','vehicle_id'), ('vehicle_documents','type'),
+               ('vehicle_documents','name'), ('vehicle_documents','number'), ('vehicle_documents','issued_at'), ('vehicle_documents','expires_at'), ('vehicle_documents','file_url'),
+               ('vehicle_documents','replaced_by_id'), ('vehicle_documents','active'), ('vehicle_documents','created_at')
+             ) and table_name in ('users', 'vehicles', 'trips', 'inspections', 'inspection_answers', 'defects', 'maintenance_plans', 'vehicle_maintenance_assignments', 'maintenance_completions', 'scheduled_maintenances', 'work_orders', 'work_order_expenses', 'work_order_photos', 'vehicle_checklist_items', 'vehicle_disabled_checklist_items', 'vehicle_documents')
   loop
     execute format('alter table %I alter column %I drop not null', c.table_name, c.column_name);
     raise notice 'Columna vieja %.% ya no es NOT NULL', c.table_name, c.column_name;
@@ -56,7 +59,7 @@ begin
 end $$;
 
 truncate table work_order_photos, work_order_expenses, work_orders, scheduled_maintenances, maintenance_completions,
-  vehicle_checklist_items, vehicle_disabled_checklist_items,
+  vehicle_checklist_items, vehicle_disabled_checklist_items, vehicle_documents, document_alert_log,
   vehicle_maintenance_assignments, maintenance_plans, defects, inspection_answers, inspections, trips, vehicles cascade;
 
 -- Usuarios
@@ -73,34 +76,34 @@ insert into users (id, username, password_hash, role) values
   ('ff49641d-9599-5dbd-9814-a35000147cd9', 'nicolas.benitez', '$2a$10$uGDj/epb3fSJk1vgvVGqr.UhYwJtvrB3Tmkom8dAdTNMQnrr90jhG', 'TECNICO');
 
 -- Vehículos
-insert into vehicles (id, plate, brand, model, vehicle_type, odometer_km, year, chassis_number, active) values
-  ('2e44e05a-6af6-52c7-bc82-7d1bb2276cb3', 'AE215KT', 'Scania', 'R 450 A4x2', 'camion', 412300, 2021, '9BSR4X200M3981245', true),
-  ('f922966c-79f8-5c0c-be7b-9d5d119c96bd', 'AF638RB', 'Volvo', 'FH 460 4x2', 'camion', 297800, 2022, '9BVAG20C2NE872310', true),
-  ('fba0cf28-18ca-5556-afdd-0b524aedc0e3', 'AD104PW', 'Mercedes-Benz', 'Actros 2045 LS', 'camion', 624900, 2019, '9BM958074KB145872', true),
-  ('fb419384-2a18-5646-98e1-3bf6c9cd9407', 'AG312LN', 'Iveco', 'S-Way 480 4x2', 'camion', 158600, 2023, '93ZS2RML0P8871236', true),
-  ('bbcb1022-d1ef-521b-9ba1-de7fccb1c597', 'AE487GD', 'Volkswagen', 'Constellation 17.280', 'camion', 266400, 2020, '9536G8241LR031772', true),
-  ('b8084aca-910d-54a5-b6d4-d12847d5fc18', 'AC921FS', 'Mercedes-Benz', 'Atego 1726', 'camion', 341200, 2018, '9BM958171JB098341', true),
-  ('26f5fbbd-6575-5ea0-aecd-e1ce2b72e601', 'AD556HX', 'Iveco', 'Tector 170E28', 'camion', 289700, 2019, '93ZA1RHH0K8843092', true),
-  ('26ccd7e1-d620-52af-97c4-e1d0cc8f523b', 'AB733MC', 'Ford', 'Cargo 1723', 'camion', 386100, 2017, '9BFYEAHU3HBS62871', true),
-  ('e33397f9-571a-528e-8613-338f4ce8f549', 'AF102ZT', 'Volkswagen', 'Delivery 11.180', 'camion', 97600, 2022, '9532M52P2NR204517', true),
-  ('76203c7a-b5a6-5b2c-ba29-0e595679f470', 'AA846JQ', 'Mercedes-Benz', 'Accelo 1016', 'camion', 309400, 2016, '9BM979076GB012384', true);
+insert into vehicles (id, plate, brand, model, vehicle_type, odometer_km, year, chassis_number, active, unavailable_since) values
+  ('2e44e05a-6af6-52c7-bc82-7d1bb2276cb3', 'AE215KT', 'Scania', 'R 450 A4x2', 'camion', 412300, 2021, '9BSR4X200M3981245', true, null),
+  ('f922966c-79f8-5c0c-be7b-9d5d119c96bd', 'AF638RB', 'Volvo', 'FH 460 4x2', 'camion', 297800, 2022, '9BVAG20C2NE872310', true, null),
+  ('fba0cf28-18ca-5556-afdd-0b524aedc0e3', 'AD104PW', 'Mercedes-Benz', 'Actros 2045 LS', 'camion', 624900, 2019, '9BM958074KB145872', true, null),
+  ('fb419384-2a18-5646-98e1-3bf6c9cd9407', 'AG312LN', 'Iveco', 'S-Way 480 4x2', 'camion', 158600, 2023, '93ZS2RML0P8871236', true, null),
+  ('bbcb1022-d1ef-521b-9ba1-de7fccb1c597', 'AE487GD', 'Volkswagen', 'Constellation 17.280', 'camion', 266400, 2020, '9536G8241LR031772', true, pg_temp.ts(-2,'19:39')),
+  ('b8084aca-910d-54a5-b6d4-d12847d5fc18', 'AC921FS', 'Mercedes-Benz', 'Atego 1726', 'camion', 341200, 2018, '9BM958171JB098341', true, null),
+  ('26f5fbbd-6575-5ea0-aecd-e1ce2b72e601', 'AD556HX', 'Iveco', 'Tector 170E28', 'camion', 289700, 2019, '93ZA1RHH0K8843092', true, null),
+  ('26ccd7e1-d620-52af-97c4-e1d0cc8f523b', 'AB733MC', 'Ford', 'Cargo 1723', 'camion', 386100, 2017, '9BFYEAHU3HBS62871', true, pg_temp.ts(-28,'00:00')),
+  ('e33397f9-571a-528e-8613-338f4ce8f549', 'AF102ZT', 'Volkswagen', 'Delivery 11.180', 'camion', 97600, 2022, '9532M52P2NR204517', true, null),
+  ('76203c7a-b5a6-5b2c-ba29-0e595679f470', 'AA846JQ', 'Mercedes-Benz', 'Accelo 1016', 'camion', 309400, 2016, '9BM979076GB012384', true, null);
 
 -- Catálogo de planes
-insert into maintenance_plans (id, name, category, interval_type, interval_km, interval_days, active) values
-  ('b27ffc40-45dd-50ee-910e-76196f040335', 'Aceite y filtros de motor', 'motor', 'BOTH', 15000, 180, true),
-  ('37cd4eed-7049-5c99-a937-986f2c6fdce2', 'Aceite motor larga distancia', 'motor', 'BOTH', 40000, 365, true),
-  ('7153cd56-667d-5829-9e33-759d7a98ef83', 'Cambio de filtro de aire', 'motor', 'KM', 40000, null, true),
-  ('1451a0d8-ccc5-5571-9e34-82e6413f6a1a', 'Filtros de combustible', 'motor', 'KM', 30000, null, true),
-  ('8aec6de2-76ec-513c-938f-ad15e130165d', 'Revisión de frenos', 'frenos', 'BOTH', 30000, 180, true),
-  ('c476a722-87d2-5c7d-9721-732ea94b1ae0', 'Rotación de neumáticos', 'neumáticos', 'KM', 20000, null, true),
-  ('b6c207b9-1e0d-53c7-bb33-dede8e75ee0a', 'Alineación y balanceo', 'neumáticos', 'KM', 50000, null, true),
-  ('f01c1b03-4bc0-5bab-b69b-f98495ae84d5', 'Engrase general de chasis', 'chasis', 'BOTH', 10000, 30, true),
-  ('2ab38a32-b5df-5fd8-bda6-c3d5966de586', 'Cambio de líquido refrigerante', 'motor', 'TIME', null, 730, true),
-  ('7656f0e0-34ad-5eec-ba91-5cad8b8ef26a', 'Revisión técnica (RTO)', 'documentación', 'TIME', null, 365, true),
-  ('fcbb0fb4-f053-5738-9dbd-2de2c790361d', 'Batería y sistema eléctrico', 'eléctrico', 'TIME', null, 90, true),
-  ('88222dae-9369-59d8-a536-3229c3dab76e', 'Aceite de caja y diferencial', 'transmisión', 'BOTH', 120000, 730, true),
-  ('7eabc8c7-2513-5d16-bed2-c63d7632b304', 'Recarga de matafuegos', 'seguridad', 'TIME', null, 365, true),
-  ('c88e116a-5be2-536d-876d-3bb522187b9d', 'Gas de aire acondicionado', 'confort', 'TIME', null, 365, false);
+insert into maintenance_plans (id, name, category, interval_type, interval_km, interval_days, active, document_type) values
+  ('b27ffc40-45dd-50ee-910e-76196f040335', 'Aceite y filtros de motor', 'motor', 'BOTH', 15000, 180, true, null),
+  ('37cd4eed-7049-5c99-a937-986f2c6fdce2', 'Aceite motor larga distancia', 'motor', 'BOTH', 40000, 365, true, null),
+  ('7153cd56-667d-5829-9e33-759d7a98ef83', 'Cambio de filtro de aire', 'motor', 'KM', 40000, null, true, null),
+  ('1451a0d8-ccc5-5571-9e34-82e6413f6a1a', 'Filtros de combustible', 'motor', 'KM', 30000, null, true, null),
+  ('8aec6de2-76ec-513c-938f-ad15e130165d', 'Revisión de frenos', 'frenos', 'BOTH', 30000, 180, true, null),
+  ('c476a722-87d2-5c7d-9721-732ea94b1ae0', 'Rotación de neumáticos', 'neumáticos', 'KM', 20000, null, true, null),
+  ('b6c207b9-1e0d-53c7-bb33-dede8e75ee0a', 'Alineación y balanceo', 'neumáticos', 'KM', 50000, null, true, null),
+  ('f01c1b03-4bc0-5bab-b69b-f98495ae84d5', 'Engrase general de chasis', 'chasis', 'BOTH', 10000, 30, true, null),
+  ('2ab38a32-b5df-5fd8-bda6-c3d5966de586', 'Cambio de líquido refrigerante', 'motor', 'TIME', null, 730, true, null),
+  ('7656f0e0-34ad-5eec-ba91-5cad8b8ef26a', 'Revisión técnica (RTO)', 'documentación', 'TIME', null, 365, true, 'VTV'),
+  ('fcbb0fb4-f053-5738-9dbd-2de2c790361d', 'Batería y sistema eléctrico', 'eléctrico', 'TIME', null, 90, true, null),
+  ('88222dae-9369-59d8-a536-3229c3dab76e', 'Aceite de caja y diferencial', 'transmisión', 'BOTH', 120000, 730, true, null),
+  ('7eabc8c7-2513-5d16-bed2-c63d7632b304', 'Recarga de matafuegos', 'seguridad', 'TIME', null, 365, true, null),
+  ('c88e116a-5be2-536d-876d-3bb522187b9d', 'Gas de aire acondicionado', 'confort', 'TIME', null, 365, false, null);
 
 -- Asignaciones (last/next = cache de la última completion)
 insert into vehicle_maintenance_assignments (id, vehicle_id, maintenance_plan_id, last_done_km, last_done_date, next_due_km, next_due_date, active) values
@@ -7014,6 +7017,48 @@ insert into work_order_photos (id, work_order_id, photo_url, created_at) values
   ('5bd71618-a95e-59f8-a749-cd023f133e12', '59740f9a-55c1-5abe-b366-65dfc36bfed6', 'http://localhost:8080/api/photos/demo-ot-taller', pg_temp.ts(-88,'11:00')),
   ('17c1c87e-d76f-54a0-902b-4a7bb4bc6e8f', 'e032d0d8-79db-5336-9243-84acd1dee973', 'http://localhost:8080/api/photos/demo-ot-taller', pg_temp.ts(-39,'11:00')),
   ('68c7de98-0eab-5f09-b470-6b04d00ad9f1', '30f867a7-e861-56fb-aee9-b6fdbbeb0932', 'http://localhost:8080/api/photos/demo-ot-frenos', pg_temp.ts(0,'08:00'));
+
+-- Documentación de cada camión (CAM-127)
+insert into vehicle_documents (id, vehicle_id, type, name, number, issued_at, expires_at, file_url, replaced_by_id, active, created_at) values
+  ('18c3e834-8a92-546d-bb3d-452f2bcd0589', '2e44e05a-6af6-52c7-bc82-7d1bb2276cb3', 'VTV', null, 'RTO-481200', pg_temp.d(-206), pg_temp.d(159), null, null, true, pg_temp.ts(-206,'09:00')),
+  ('a867b89b-79cd-506d-a3bc-2642e7a33434', '2e44e05a-6af6-52c7-bc82-7d1bb2276cb3', 'SEGURO', null, 'POL-70315-2', pg_temp.d(-20), pg_temp.d(345), 'http://localhost:8080/api/photos/demo-poliza-seguro', null, true, pg_temp.ts(-20,'09:00')),
+  ('d5f7d3ef-ea78-5a22-8fb7-4536bac7f344', '2e44e05a-6af6-52c7-bc82-7d1bb2276cb3', 'SEGURO', null, 'POL-70315-0', pg_temp.d(-385), pg_temp.d(-20), null, 'a867b89b-79cd-506d-a3bc-2642e7a33434', true, pg_temp.ts(-385,'09:00')),
+  ('0496879a-48f1-504f-b97f-9b88766d447b', '2e44e05a-6af6-52c7-bc82-7d1bb2276cb3', 'HABILITACION_CARGA', null, 'RUTA-9100', pg_temp.d(-155), pg_temp.d(210), null, null, true, pg_temp.ts(-155,'09:00')),
+  ('26b33262-bd7c-522a-8999-cbf3bdc3a7c9', '2e44e05a-6af6-52c7-bc82-7d1bb2276cb3', 'CEDULA_VERDE', null, 'CV-AE215KT', null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('f3cc24b4-efa4-5a7b-8eb0-3ce7bcf71251', '2e44e05a-6af6-52c7-bc82-7d1bb2276cb3', 'TITULO', null, null, null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('1640a7fd-fa5a-54c4-a96c-20656abc99a7', 'f922966c-79f8-5c0c-be7b-9d5d119c96bd', 'VTV', null, 'RTO-481237', pg_temp.d(-166), pg_temp.d(199), null, null, true, pg_temp.ts(-166,'09:00')),
+  ('e8c60da2-7445-5e1a-8eb3-17e2b30c6bdd', 'f922966c-79f8-5c0c-be7b-9d5d119c96bd', 'SEGURO', null, 'POL-70326-3', pg_temp.d(-355), pg_temp.d(10), 'http://localhost:8080/api/photos/demo-poliza-seguro', null, true, pg_temp.ts(-355,'09:00')),
+  ('d9600766-47fe-517d-a4a1-0d62607c1849', 'f922966c-79f8-5c0c-be7b-9d5d119c96bd', 'HABILITACION_CARGA', null, 'RUTA-9101', pg_temp.d(-225), pg_temp.d(140), null, null, true, pg_temp.ts(-225,'09:00')),
+  ('5b5f6954-1f85-5f0d-afe5-1396543cf99c', 'f922966c-79f8-5c0c-be7b-9d5d119c96bd', 'CEDULA_VERDE', null, 'CV-AF638RB', null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('6d5db15a-e012-5fc4-946e-8c98900116b8', 'fba0cf28-18ca-5556-afdd-0b524aedc0e3', 'VTV', null, 'RTO-481274', pg_temp.d(-189), pg_temp.d(176), null, null, true, pg_temp.ts(-189,'09:00')),
+  ('95947be7-524b-531d-8396-ab0b0b68d750', 'fba0cf28-18ca-5556-afdd-0b524aedc0e3', 'SEGURO', null, 'POL-70337-6', pg_temp.d(-135), pg_temp.d(230), null, null, true, pg_temp.ts(-135,'09:00')),
+  ('77191ea9-9f58-501a-9874-20501e6c63f0', 'fba0cf28-18ca-5556-afdd-0b524aedc0e3', 'HABILITACION_CARGA', null, 'RUTA-9102', pg_temp.d(-270), pg_temp.d(95), null, null, true, pg_temp.ts(-270,'09:00')),
+  ('63fb8089-b3bf-57e5-9ff9-3c89a2fe4d1c', 'fba0cf28-18ca-5556-afdd-0b524aedc0e3', 'CEDULA_VERDE', null, 'CV-AD104PW', null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('a05b0ece-4620-56d9-acfd-05652b64bd2e', 'fb419384-2a18-5646-98e1-3bf6c9cd9407', 'VTV', null, 'RTO-481311', pg_temp.d(-99), pg_temp.d(266), null, null, true, pg_temp.ts(-99,'09:00')),
+  ('44caa169-53c2-52d1-a536-9f39f39231e3', 'fb419384-2a18-5646-98e1-3bf6c9cd9407', 'SEGURO', null, 'POL-70348-6', pg_temp.d(-65), pg_temp.d(300), null, null, true, pg_temp.ts(-65,'09:00')),
+  ('4f026fc5-0213-5e67-b508-2bd3ec92831f', 'fb419384-2a18-5646-98e1-3bf6c9cd9407', 'HABILITACION_CARGA', null, 'RUTA-9103', pg_temp.d(-85), pg_temp.d(280), null, null, true, pg_temp.ts(-85,'09:00')),
+  ('7501e38d-d39f-5482-ab8c-23d8e27b45cd', 'fb419384-2a18-5646-98e1-3bf6c9cd9407', 'CEDULA_VERDE', null, 'CV-AG312LN', null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('3f40c69d-65a4-5672-b049-4b9249876fbf', 'fb419384-2a18-5646-98e1-3bf6c9cd9407', 'TITULO', null, null, null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('d02f01e5-f4bb-59b4-8a08-a9681daeabc5', 'bbcb1022-d1ef-521b-9ba1-de7fccb1c597', 'VTV', null, 'RTO-481348', pg_temp.d(-282), pg_temp.d(83), null, null, true, pg_temp.ts(-282,'09:00')),
+  ('856467e4-473f-5b3c-af25-44e8c4de506a', 'bbcb1022-d1ef-521b-9ba1-de7fccb1c597', 'SEGURO', null, 'POL-70359-1', pg_temp.d(-245), pg_temp.d(120), null, null, true, pg_temp.ts(-245,'09:00')),
+  ('a4f9c517-43ca-55ad-8848-9e8930540279', 'bbcb1022-d1ef-521b-9ba1-de7fccb1c597', 'CEDULA_VERDE', null, 'CV-AE487GD', null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('2bb56195-6a3f-591f-b7de-2bba3d44747c', 'b8084aca-910d-54a5-b6d4-d12847d5fc18', 'VTV', null, 'RTO-481385', pg_temp.d(-125), pg_temp.d(240), null, null, true, pg_temp.ts(-125,'09:00')),
+  ('e6788c70-bee7-50a2-8186-329430d7180d', 'b8084aca-910d-54a5-b6d4-d12847d5fc18', 'SEGURO', null, 'POL-70370-5', pg_temp.d(-290), pg_temp.d(75), null, null, true, pg_temp.ts(-290,'09:00')),
+  ('644a7c66-e86b-5929-8086-77d1ba892667', 'b8084aca-910d-54a5-b6d4-d12847d5fc18', 'CEDULA_VERDE', null, 'CV-AC921FS', null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('feca4fb6-6783-5cb2-bfe4-3a734cf83b82', '26f5fbbd-6575-5ea0-aecd-e1ce2b72e601', 'VTV', null, 'RTO-481422', pg_temp.d(-238), pg_temp.d(127), null, null, true, pg_temp.ts(-238,'09:00')),
+  ('cd5e0ae6-e56a-5a2e-a564-3fbfc81daf59', '26f5fbbd-6575-5ea0-aecd-e1ce2b72e601', 'SEGURO', null, 'POL-70381-1', pg_temp.d(-175), pg_temp.d(190), null, null, true, pg_temp.ts(-175,'09:00')),
+  ('52dcefea-517b-5805-93ac-f586ff39d51b', '26f5fbbd-6575-5ea0-aecd-e1ce2b72e601', 'CEDULA_VERDE', null, 'CV-AD556HX', null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('0886adf7-5271-5bb0-b419-172fee1362de', '26ccd7e1-d620-52af-97c4-e1d0cc8f523b', 'VTV', null, 'RTO-481459', pg_temp.d(-394), pg_temp.d(-29), null, null, true, pg_temp.ts(-394,'09:00')),
+  ('1c41ccc3-180b-5c8a-9e2a-4dc1900b5d30', '26ccd7e1-d620-52af-97c4-e1d0cc8f523b', 'SEGURO', null, 'POL-70392-6', pg_temp.d(-205), pg_temp.d(160), null, null, true, pg_temp.ts(-205,'09:00')),
+  ('7733c020-7756-5d74-bcfa-925679227d35', '26ccd7e1-d620-52af-97c4-e1d0cc8f523b', 'CEDULA_VERDE', null, 'CV-AB733MC', null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('16ad907f-09f3-5dc1-9352-14882f58ccf7', 'e33397f9-571a-528e-8613-338f4ce8f549', 'VTV', null, 'RTO-481496', pg_temp.d(-123), pg_temp.d(242), null, null, true, pg_temp.ts(-123,'09:00')),
+  ('c24a73cd-b5c3-50b4-a15d-999aab50acc5', 'e33397f9-571a-528e-8613-338f4ce8f549', 'SEGURO', null, 'POL-70403-1', pg_temp.d(-105), pg_temp.d(260), null, null, true, pg_temp.ts(-105,'09:00')),
+  ('4316c6ec-40c8-5f7a-9f4b-ba65e2b4569f', 'e33397f9-571a-528e-8613-338f4ce8f549', 'CEDULA_VERDE', null, 'CV-AF102ZT', null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('f26e5c92-5c42-508c-8afd-c9f487463261', 'e33397f9-571a-528e-8613-338f4ce8f549', 'TITULO', null, null, null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('804c9c96-6ec2-5a8f-8eef-901a8b375875', '76203c7a-b5a6-5b2c-ba29-0e595679f470', 'VTV', null, 'RTO-481533', pg_temp.d(-219), pg_temp.d(146), null, null, true, pg_temp.ts(-219,'09:00')),
+  ('b83a6e1f-092d-5314-a887-d4493380c2f5', '76203c7a-b5a6-5b2c-ba29-0e595679f470', 'CEDULA_VERDE', null, 'CV-AA846JQ', null, null, null, null, true, pg_temp.ts(-170,'09:00')),
+  ('bdbcb562-4feb-5fed-984a-c6487e6683d8', 'b8084aca-910d-54a5-b6d4-d12847d5fc18', 'CEDULA_AZUL', null, 'CA-31877', pg_temp.d(-165), pg_temp.d(200), null, null, true, pg_temp.ts(-165,'09:00')),
+  ('0ea1faac-03da-54cf-b20e-d7c35f2f3d66', 'e33397f9-571a-528e-8613-338f4ce8f549', 'OTRO', 'Permiso municipal de carga', 'PM-2210', pg_temp.d(-320), pg_temp.d(45), null, null, true, pg_temp.ts(-320,'09:00'));
 
 -- Historial de mantenimientos realizados
 insert into maintenance_completions (id, assignment_id, completed_at, completed_km, work_order_id, notes) values

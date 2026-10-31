@@ -2,16 +2,20 @@ package org.fleetguard.service;
 
 import org.fleetguard.dto.CompletionResultDto;
 import org.fleetguard.dto.CreateCompletionRequest;
+import org.fleetguard.dto.DocumentInputDto;
 import org.fleetguard.dto.FieldValidationErrorDetail;
 import org.fleetguard.entity.IntervalType;
 import org.fleetguard.entity.MaintenanceCompletion;
 import org.fleetguard.entity.MaintenancePlan;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.VehicleDocumentType;
 import org.fleetguard.entity.VehicleMaintenanceAssignment;
 import org.fleetguard.exception.MaintenanceConflictException;
 import org.fleetguard.exception.MaintenanceValidationException;
 import org.fleetguard.mapper.MaintenanceCompletionMapper;
 import org.fleetguard.repository.MaintenanceCompletionRepository;
+import org.fleetguard.repository.VehicleDocumentRepository;
+import org.fleetguard.repository.VehicleMaintenanceAssignmentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -39,8 +43,12 @@ class MaintenanceCompletionServiceTest {
     private final MaintenanceCompletionRepository completionRepository = mock(MaintenanceCompletionRepository.class);
     private final VehicleMaintenanceAssignmentService assignmentService = mock(VehicleMaintenanceAssignmentService.class);
     private final ScheduledMaintenanceService scheduledMaintenanceService = mock(ScheduledMaintenanceService.class);
+    private final LinkedDocumentDueDates linkedDueDates = new LinkedDocumentDueDates(
+            mock(VehicleDocumentRepository.class), mock(VehicleMaintenanceAssignmentRepository.class));
+    private final VehicleDocumentWriter documentWriter = mock(VehicleDocumentWriter.class);
     private final MaintenanceCompletionService service = new MaintenanceCompletionService(completionRepository,
-            assignmentService, new MaintenanceCompletionMapper(), scheduledMaintenanceService, new OdometerReadings(5000));
+            assignmentService, new MaintenanceCompletionMapper(), scheduledMaintenanceService, new OdometerReadings(5000),
+            linkedDueDates, documentWriter);
 
     private Vehicle vehicle;
     private VehicleMaintenanceAssignment assignment;
@@ -76,7 +84,7 @@ class MaintenanceCompletionServiceTest {
 
     private CompletionResultDto complete(String date, Long km) {
         return service.create(vehicle.getId().toString(), assignment.getId().toString(),
-                new CreateCompletionRequest(date, km, null, "Hecho en el taller"));
+                new CreateCompletionRequest(date, km, null, "Hecho en el taller", null));
     }
 
     private static List<String> messages(MaintenanceValidationException ex) {
@@ -175,4 +183,45 @@ class MaintenanceCompletionServiceTest {
         verify(scheduledMaintenanceService, never()).closeActiveScheduleForAssignment(any());
     }
 
+    @Test
+    void unPlanQueNoRenuevaDocumentosNoAceptaUnDocumento() {
+        MaintenanceValidationException ex = assertThrows(MaintenanceValidationException.class, () ->
+                service.create(vehicle.getId().toString(), assignment.getId().toString(), new CreateCompletionRequest(
+                        LocalDate.now().toString(), 52000L, null, null, new DocumentInputDto(null, "2027-01-01", null))));
+
+        assertEquals("document", ex.getDetails().get(0).field());
+        verify(documentWriter, never()).renew(any(), any(), any(), any());
+    }
+
+    @Test
+    void elDocumentoRenovadoSeGuardaConLaFechaDelMantenimiento() throws Exception {
+        assignmentWith(IntervalType.TIME, null, 365);
+        assignment.getMaintenancePlan().setDocumentType(VehicleDocumentType.VTV);
+        LocalDate today = LocalDate.now();
+
+        service.create(vehicle.getId().toString(), assignment.getId().toString(), new CreateCompletionRequest(
+                today.toString(), null, null, "VTV aprobada", new DocumentInputDto(" 0012 ", today.plusYears(1).toString(), "http://x/o.jpg")));
+
+        // CAM-127: se emite el día del mantenimiento y su vencimiento pasa a ser el del plan.
+        verify(documentWriter).renew(vehicle.getId(), VehicleDocumentType.VTV, null,
+                new VehicleDocumentWriter.Fields("0012", today, today.plusYears(1), "http://x/o.jpg"));
+    }
+
+    @Test
+    void elDocumentoRenovadoNecesitaVencimientoPosteriorAlMantenimiento() throws Exception {
+        assignmentWith(IntervalType.TIME, null, 365);
+        assignment.getMaintenancePlan().setDocumentType(VehicleDocumentType.SEGURO);
+        String today = LocalDate.now().toString();
+
+        MaintenanceValidationException ex = assertThrows(MaintenanceValidationException.class, () ->
+                service.create(vehicle.getId().toString(), assignment.getId().toString(),
+                        new CreateCompletionRequest(today, null, null, null, new DocumentInputDto(null, null, null))));
+        assertEquals("document.expiresAt", ex.getDetails().get(0).field());
+
+        ex = assertThrows(MaintenanceValidationException.class, () ->
+                service.create(vehicle.getId().toString(), assignment.getId().toString(), new CreateCompletionRequest(today,
+                        null, null, null, new DocumentInputDto(null, LocalDate.now().minusDays(1).toString(), null))));
+        assertEquals("document.expiresAt", ex.getDetails().get(0).field());
+        verify(documentWriter, never()).renew(any(), any(), any(), any());
+    }
 }

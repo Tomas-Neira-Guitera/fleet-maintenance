@@ -24,7 +24,8 @@ public class LocalFilesystemPhotoStorage implements PhotoStorage {
 
     private static final Map<String, String> EXTENSION_BY_CONTENT_TYPE = Map.of(
             "image/jpeg", "jpg",
-            "image/png", "png"
+            "image/png", "png",
+            "application/pdf", "pdf"
     );
 
     // Letras, números, guion y guion bajo: sin puntos ni barras, no puede armar "../".

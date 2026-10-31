@@ -101,6 +101,12 @@ public class GlobalExceptionHandler {
                 .body(new ValidationError<>("VALIDATION_ERROR", ex.getMessage(), ex.getDetails()));
     }
 
+    @ExceptionHandler(DocumentNotFoundException.class)
+    public ResponseEntity<ApiError> handleDocumentNotFound(DocumentNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("DOCUMENT_NOT_FOUND", ex.getMessage()));
+    }
+
     @ExceptionHandler(DefectNotFoundException.class)
     public ResponseEntity<ApiError> handleDefectNotFound(DefectNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

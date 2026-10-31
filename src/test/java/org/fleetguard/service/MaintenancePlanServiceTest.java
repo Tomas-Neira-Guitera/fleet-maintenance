@@ -6,6 +6,7 @@ import org.fleetguard.dto.MaintenancePlanDto;
 import org.fleetguard.dto.UpdateMaintenancePlanRequest;
 import org.fleetguard.entity.IntervalType;
 import org.fleetguard.entity.MaintenancePlan;
+import org.fleetguard.entity.VehicleDocumentType;
 import org.fleetguard.exception.MaintenanceConflictException;
 import org.fleetguard.exception.MaintenancePlanNotFoundException;
 import org.fleetguard.exception.MaintenanceValidationException;
@@ -21,11 +22,13 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,8 +41,9 @@ class MaintenancePlanServiceTest {
 
     private final MaintenancePlanRepository planRepository = mock(MaintenancePlanRepository.class);
     private final VehicleMaintenanceAssignmentRepository assignmentRepository = mock(VehicleMaintenanceAssignmentRepository.class);
+    private final LinkedDocumentDueDates linkedDueDates = mock(LinkedDocumentDueDates.class);
     private final MaintenancePlanService service =
-            new MaintenancePlanService(planRepository, assignmentRepository, new MaintenancePlanMapper());
+            new MaintenancePlanService(planRepository, assignmentRepository, new MaintenancePlanMapper(), linkedDueDates);
 
     private static MaintenancePlan plan(IntervalType type, Integer km, Integer days) throws Exception {
         MaintenancePlan plan = new MaintenancePlan("Cambio de aceite", "motor", type, km, days);
@@ -74,7 +78,7 @@ class MaintenancePlanServiceTest {
         saveReturnsWithId();
 
         MaintenancePlanDto created = service.create(
-                new CreateMaintenancePlanRequest("  Cambio de aceite ", "motor", "km", 10000, null));
+                new CreateMaintenancePlanRequest("  Cambio de aceite ", "motor", "km", 10000, null, null));
 
         assertEquals("Cambio de aceite", created.name());
         assertEquals("km", created.intervalType());
@@ -85,7 +89,7 @@ class MaintenancePlanServiceTest {
     @Test
     void unPlanPorKilometrajeExigeIntervalKmPositivoYNoAceptaDias() {
         MaintenanceValidationException ex = assertThrows(MaintenanceValidationException.class,
-                () -> service.create(new CreateMaintenancePlanRequest("Aceite", null, "km", 0, 180)));
+                () -> service.create(new CreateMaintenancePlanRequest("Aceite", null, "km", 0, 180, null)));
 
         assertEquals(List.of("intervalKm", "intervalDays"), fields(ex));
         verify(planRepository, never()).save(any());
@@ -94,7 +98,7 @@ class MaintenancePlanServiceTest {
     @Test
     void unPlanPorKmOTiempoExigeLosDosIntervalos() {
         MaintenanceValidationException ex = assertThrows(MaintenanceValidationException.class,
-                () -> service.create(new CreateMaintenancePlanRequest("Frenos", null, "both", 20000, null)));
+                () -> service.create(new CreateMaintenancePlanRequest("Frenos", null, "both", 20000, null, null)));
 
         assertEquals(List.of("intervalDays"), fields(ex));
     }
@@ -102,7 +106,7 @@ class MaintenancePlanServiceTest {
     @Test
     void unPlanPorTiempoNoAceptaKilometraje() {
         MaintenanceValidationException ex = assertThrows(MaintenanceValidationException.class,
-                () -> service.create(new CreateMaintenancePlanRequest("VTV", null, "time", 5000, 365)));
+                () -> service.create(new CreateMaintenancePlanRequest("VTV", null, "time", 5000, 365, null)));
 
         assertEquals(List.of("intervalKm"), fields(ex));
     }
@@ -110,10 +114,10 @@ class MaintenancePlanServiceTest {
     @Test
     void altaSinNombreConNombreLargoOTipoInvalidoDevuelve422() {
         assertEquals(List.of("name", "intervalType"), fields(assertThrows(MaintenanceValidationException.class,
-                () -> service.create(new CreateMaintenancePlanRequest(" ", null, "semanal", null, null)))));
+                () -> service.create(new CreateMaintenancePlanRequest(" ", null, "semanal", null, null, null)))));
         // CAM-79: el nombre se ve en el calendario, hasta 30 caracteres.
         assertEquals(List.of("name"), fields(assertThrows(MaintenanceValidationException.class,
-                () -> service.create(new CreateMaintenancePlanRequest("a".repeat(31), null, "km", 1000, null)))));
+                () -> service.create(new CreateMaintenancePlanRequest("a".repeat(31), null, "km", 1000, null, null)))));
     }
 
     @Test
@@ -122,11 +126,11 @@ class MaintenancePlanServiceTest {
 
         // Pasar a "both" sin mandar días deja el plan incoherente: se rechaza y no se toca.
         assertThrows(MaintenanceValidationException.class, () -> service.update(plan.getId().toString(),
-                new UpdateMaintenancePlanRequest(null, null, "both", null, null, null)));
+                new UpdateMaintenancePlanRequest(null, null, "both", null, null, null, null)));
         assertEquals(IntervalType.KM, plan.getIntervalType());
 
         MaintenancePlanDto updated = service.update(plan.getId().toString(),
-                new UpdateMaintenancePlanRequest(null, null, "both", null, 180, null));
+                new UpdateMaintenancePlanRequest(null, null, "both", null, 180, null, null));
         assertEquals("both", updated.intervalType());
         assertEquals(10000, updated.intervalKm());
         assertEquals(180, updated.intervalDays());
@@ -138,7 +142,7 @@ class MaintenancePlanServiceTest {
 
         MaintenanceValidationException ex = assertThrows(MaintenanceValidationException.class,
                 () -> service.update(plan.getId().toString(),
-                        new UpdateMaintenancePlanRequest(null, null, "semanal", null, null, null)));
+                        new UpdateMaintenancePlanRequest(null, null, "semanal", null, null, null, null)));
 
         assertEquals(List.of("intervalType"), fields(ex));
         assertEquals(IntervalType.KM, plan.getIntervalType());
@@ -152,11 +156,11 @@ class MaintenancePlanServiceTest {
 
         MaintenanceConflictException ex = assertThrows(MaintenanceConflictException.class,
                 () -> service.update(plan.getId().toString(),
-                        new UpdateMaintenancePlanRequest("Otro nombre", null, null, null, null, true)));
+                        new UpdateMaintenancePlanRequest("Otro nombre", null, null, null, null, true, null)));
         assertEquals("PLAN_INACTIVE", ex.getErrorCode());
 
         MaintenancePlanDto reactivated = service.update(plan.getId().toString(),
-                new UpdateMaintenancePlanRequest(null, null, null, null, null, true));
+                new UpdateMaintenancePlanRequest(null, null, null, null, null, true, null));
         assertTrue(reactivated.active());
     }
 
@@ -165,10 +169,10 @@ class MaintenancePlanServiceTest {
         MaintenancePlan plan = stored(plan(IntervalType.KM, 10000, null));
 
         assertThrows(MaintenanceValidationException.class, () -> service.update(plan.getId().toString(),
-                new UpdateMaintenancePlanRequest(" ", null, null, null, null, null)));
+                new UpdateMaintenancePlanRequest(" ", null, null, null, null, null, null)));
 
         MaintenancePlanDto updated = service.update(plan.getId().toString(),
-                new UpdateMaintenancePlanRequest(" Aceite y filtro ", "lubricación", null, null, null, false));
+                new UpdateMaintenancePlanRequest(" Aceite y filtro ", "lubricación", null, null, null, false, null));
         assertEquals("Aceite y filtro", updated.name());
         assertEquals("lubricación", updated.category());
         assertFalse(updated.active());
@@ -199,5 +203,53 @@ class MaintenancePlanServiceTest {
     void unIdInexistenteOMalformadoDevuelve404() {
         assertThrows(MaintenancePlanNotFoundException.class, () -> service.delete(UUID.randomUUID().toString()));
         assertThrows(MaintenancePlanNotFoundException.class, () -> service.delete("no-es-un-uuid"));
+    }
+
+    @Test
+    void unPlanPorTiempoPuedeRenovarUnDocumento() {
+        saveReturnsWithId();
+
+        MaintenancePlanDto created = service.create(new CreateMaintenancePlanRequest("Revisión técnica (RTO)", "documentacion",
+                "time", null, 365, "vtv"));
+
+        assertEquals("vtv", created.documentType());
+    }
+
+    @Test
+    void soloUnPlanPorTiempoYUnDocumentoConVencimientoSePuedenVincular() {
+        MaintenanceValidationException km = assertThrows(MaintenanceValidationException.class, () ->
+                service.create(new CreateMaintenancePlanRequest("Seguro", null, "km", 10000, null, "seguro")));
+        assertEquals(List.of("documentType"), fields(km));
+
+        MaintenanceValidationException titulo = assertThrows(MaintenanceValidationException.class, () ->
+                service.create(new CreateMaintenancePlanRequest("Título", null, "time", null, 365, "titulo")));
+        assertEquals(List.of("documentType"), fields(titulo));
+    }
+
+    @Test
+    void vincularYDesvincularRecalculaLasAsignacionesYNoCambiarloNo() throws Exception {
+        MaintenancePlan plan = stored(plan(IntervalType.TIME, null, 365));
+
+        MaintenancePlanDto linked = service.update(plan.getId().toString(),
+                new UpdateMaintenancePlanRequest(null, null, null, null, null, null, "vtv"));
+        assertEquals("vtv", linked.documentType());
+        service.update(plan.getId().toString(), new UpdateMaintenancePlanRequest("RTO", null, null, null, null, null, null));
+        MaintenancePlanDto unlinked = service.update(plan.getId().toString(),
+                new UpdateMaintenancePlanRequest(null, null, null, null, null, null, ""));
+
+        assertNull(unlinked.documentType());
+        verify(linkedDueDates, times(2)).syncPlan(plan);
+    }
+
+    @Test
+    void unPlanVinculadoNoPuedePasarAKilometraje() throws Exception {
+        MaintenancePlan plan = plan(IntervalType.TIME, null, 365);
+        plan.setDocumentType(VehicleDocumentType.SEGURO);
+        stored(plan);
+
+        MaintenanceValidationException ex = assertThrows(MaintenanceValidationException.class, () ->
+                service.update(plan.getId().toString(), new UpdateMaintenancePlanRequest(null, null, "both", 10000, null, null, null)));
+
+        assertTrue(fields(ex).contains("documentType"));
     }
 }
