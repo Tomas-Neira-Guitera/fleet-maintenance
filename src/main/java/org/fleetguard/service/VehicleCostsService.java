@@ -2,10 +2,12 @@ package org.fleetguard.service;
 
 import org.fleetguard.dto.VehicleCostsDto;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.VehicleExpense;
 import org.fleetguard.entity.WorkOrderExpense;
 import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.repository.MaintenanceCompletionRepository;
+import org.fleetguard.repository.VehicleExpenseRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderExpenseRepository;
 import org.springframework.stereotype.Service;
@@ -14,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Comparator;
@@ -29,14 +32,17 @@ public class VehicleCostsService {
 
     private final VehicleRepository vehicleRepository;
     private final WorkOrderExpenseRepository expenseRepository;
+    private final VehicleExpenseRepository vehicleExpenseRepository;
     private final InspectionRepository inspectionRepository;
     private final MaintenanceCompletionRepository completionRepository;
 
     public VehicleCostsService(VehicleRepository vehicleRepository, WorkOrderExpenseRepository expenseRepository,
+                               VehicleExpenseRepository vehicleExpenseRepository,
                                InspectionRepository inspectionRepository,
                                MaintenanceCompletionRepository completionRepository) {
         this.vehicleRepository = vehicleRepository;
         this.expenseRepository = expenseRepository;
+        this.vehicleExpenseRepository = vehicleExpenseRepository;
         this.inspectionRepository = inspectionRepository;
         this.completionRepository = completionRepository;
     }
@@ -52,11 +58,17 @@ public class VehicleCostsService {
         Vehicle vehicle = vehicleRepository.findById(vehicleId).orElseThrow(() -> new VehicleNotFoundException(id));
 
         List<WorkOrderExpense> expenses = expenseRepository.findByVehicleId(vehicleId);
+        List<VehicleExpense> operating = vehicleExpenseRepository.findByVehicle_Id(vehicleId);
         // Desde la medianoche argentina del mismo día de hace un año: la misma ventana con la que
         // "Ver gastos" abre la pestaña Gastos, así las dos cifras coinciden.
-        Instant yearAgo = now.atZone(FLEET_ZONE).toLocalDate().minusYears(1).atStartOfDay(FLEET_ZONE).toInstant();
-        BigDecimal total = sum(expenses.stream());
-        BigDecimal last12Months = sum(expenses.stream().filter(e -> !e.getCreatedAt().isBefore(yearAgo)));
+        LocalDate dayAYearAgo = now.atZone(FLEET_ZONE).toLocalDate().minusYears(1);
+        Instant yearAgo = dayAYearAgo.atStartOfDay(FLEET_ZONE).toInstant();
+        BigDecimal total = sum(Stream.concat(
+                expenses.stream().map(WorkOrderExpense::getAmount),
+                operating.stream().map(VehicleExpense::getAmount)));
+        BigDecimal last12Months = sum(Stream.concat(
+                expenses.stream().filter(e -> !e.getCreatedAt().isBefore(yearAgo)).map(WorkOrderExpense::getAmount),
+                operating.stream().filter(e -> !e.getDate().isBefore(dayAYearAgo)).map(VehicleExpense::getAmount)));
 
         Long firstKnownKm = firstKnownKm(vehicleId);
         long currentKm = vehicle.getOdometerKm();
@@ -66,7 +78,8 @@ public class VehicleCostsService {
                 ? total.divide(BigDecimal.valueOf(kmDriven), 2, RoundingMode.HALF_UP)
                 : null;
 
-        return new VehicleCostsDto(total, last12Months, expenses.size(), currentKm, firstKnownKm, kmDriven, costPerKm);
+        return new VehicleCostsDto(total, last12Months, expenses.size() + operating.size(), currentKm, firstKnownKm,
+                kmDriven, costPerKm);
     }
 
     /** Un km registrado y cuándo: un mantenimiento hecho solo guarda el día, que cuenta desde su inicio (UTC). */
@@ -93,7 +106,7 @@ public class VehicleCostsService {
                 .orElse(null);
     }
 
-    private static BigDecimal sum(Stream<WorkOrderExpense> expenses) {
-        return expenses.map(WorkOrderExpense::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    private static BigDecimal sum(Stream<BigDecimal> amounts) {
+        return amounts.reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }
