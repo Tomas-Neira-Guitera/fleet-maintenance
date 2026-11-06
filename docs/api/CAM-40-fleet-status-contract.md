@@ -136,7 +136,8 @@ Query params: `page` (default 1), `pageSize` (default 20), `status` (filtro opci
         "dueDate": "2026-08-15",
         "dueKm": null,
         "remainingDays": -5,
-        "remainingKm": null
+        "remainingKm": null,
+        "estimatedDueDate": null
       }
     }
   ]
@@ -145,6 +146,53 @@ Query params: `page` (default 1), `pageSize` (default 20), `status` (filtro opci
 `nextMaintenance` es `null` si el vehículo no tiene ningún plan activo asignado (caso a
 mostrar distinto en el componente — "sin mantenimiento configurado", no confundir con
 "al día").
+
+#### Fecha estimada (CAM-137)
+
+`nextMaintenance.estimatedDueDate` es la fecha aproximada en que vence un plan por km, para
+que "Próximos vencimientos" pueda ubicarlo en una franja de días. Es **solo informativa**:
+`status`, `healthScore` y los avisos siguen saliendo de los km reales.
+
+- **Km por día del vehículo.** Salen de las lecturas que guardan km y fecha: el km de las
+  inspecciones y el `completedKm` de los mantenimientos hechos (este cuenta desde la medianoche
+  argentina de `completedAt`). Una OT de un plan, al finalizarse, crea un mantenimiento hecho con su
+  `completedKm`, así que cuenta. "Cargar km" y las OTs de un defecto o manuales no dejan registro
+  del km, así que no cuentan.
+- **Lecturas que se ignoran.** Se recorren por fecha desde la primera de la historia del vehículo
+  y se ignora la que tiene menos km que una anterior: el odómetro no baja, así que es un error de
+  carga (AA846JQ tiene inspecciones con 310 y 15.000 km siendo un vehículo de 309.400). Se mira
+  toda la historia y no solo la ventana, para que un error al principio de la ventana no pase por
+  bueno. También se ignora la que supera el `odometerKm` actual: un error de tipeo que el vehículo
+  no aceptó por el tope de salto. Dentro de un mismo día manda el km y no la hora: el mantenimiento
+  cuenta desde las 00:00 y quedaría antes del pre-viaje de esa mañana, que tiene menos km.
+- **Ventana.** De las lecturas que quedan, cuentan las de los últimos 60 días. Hacen falta al
+  menos dos, con 7 días o más entre la primera y la última, y algún km recorrido. Km por día =
+  (km de la última − km de la primera) / días entre las dos.
+- **Una primera lectura mal cargada.** Puede ser un error que ninguna lectura anterior delata (un
+  vehículo dado de alta con 309.000 km, sin lectura, cuya primera inspección se cargó con 310 o con
+  290.000). Se descarta y se prueba con la siguiente si hay más de `fleetguard.odometer.max-jump-km`
+  (5.000 km) hasta la lectura que le sigue, la misma regla con que el vehículo ignora una lectura
+  (ver CAM-90 más abajo), o si hasta la última da más de **1.500 km por día**. Si no queda ninguna
+  que cumpla, no hay estimación.
+- **Lo que no se detecta.** Un error de menos de 5.000 km en la primera lectura, si el ritmo que da
+  no pasa los 1.500 km por día: la fecha sale antes de lo real hasta que esa lectura sale de la
+  ventana. Y un km alto mal cargado que el vehículo sí aceptó (dentro del tope de salto) deja mal el
+  odómetro, y también descarta las lecturas buenas que vienen después. "Cargar km" no lo arregla,
+  porque no deja bajar el km ni cambia las lecturas: se corrige solo cuando el vehículo pasa ese km.
+- **La zona horaria de "hoy".** `remainingDays` y la fecha estimada usan el día del servidor, como el
+  resto de esta vista, y el frontend cuenta los días con el día del navegador. Con el servidor en
+  UTC, entre las 21:00 y las 24:00 de Argentina la fecha sale un día después. Además, en esas horas
+  una OT de un plan que se finaliza queda con la fecha de mañana (`WorkOrderService` usa el día del
+  servidor) y no cuenta hasta las 00:00. Queda para el deploy (CAM-131).
+- **La fecha.** Hoy + `remainingKm` / km por día, redondeado para arriba. Es `null` si el plan no
+  es por km, si ya venció por km (`remainingKm <= 0`, no tiene una fecha por delante) o si no se
+  puede estimar.
+- **Un vehículo que estuvo parado** dentro de la ventana anda menos por día en el promedio, así
+  que su fecha sale más lejos. Por ahora queda así: al volver a andar, las lecturas nuevas lo corrigen
+  de a poco, y los días parados dejan de contar a los 60 días.
+- **Solo el plan que ya es `nextMaintenance`.** El plan más urgente se sigue eligiendo por estado
+  y por cuánto consumió de su intervalo; la fecha estimada no cambia cuál se elige.
+- En un plan `both`, el cliente usa la más cercana entre `dueDate` y `estimatedDueDate`.
 
 ### `GET /api/maintenance-plans`
 

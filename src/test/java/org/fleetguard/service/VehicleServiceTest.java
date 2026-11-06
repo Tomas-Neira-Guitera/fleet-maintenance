@@ -44,7 +44,8 @@ class VehicleServiceTest {
     private final UserRepository userRepository = mock(UserRepository.class);
     private final VehicleMapper vehicleMapper = new VehicleMapper();
     private final VehicleService service = new VehicleService(vehicleRepository, tripRepository, assignmentRepository,
-            availabilityService, new UserNameService(userRepository), vehicleMapper, event -> { });
+            availabilityService, new UserNameService(userRepository), vehicleMapper, mock(KmPerDayEstimator.class),
+            event -> { });
 
     /** El id es @GeneratedValue; en el test se setea por reflexión, sin persistencia real (mismo patrón que DefectServiceTest). */
     private static void setId(Object entity, UUID id) throws Exception {

@@ -1,6 +1,7 @@
 package org.fleetguard.service;
 
 import org.fleetguard.dto.FleetStatusRowDto;
+import org.fleetguard.dto.NextMaintenanceDto;
 import org.fleetguard.dto.OdometerResultDto;
 import org.fleetguard.dto.PagedResponse;
 import org.fleetguard.dto.UpdateVehicleRequest;
@@ -14,6 +15,9 @@ import org.fleetguard.exception.MaintenanceConflictException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.exception.VehicleValidationException;
 import org.fleetguard.mapper.VehicleMapper;
+import org.fleetguard.repository.InspectionRepository;
+import org.fleetguard.repository.KmReadingRow;
+import org.fleetguard.repository.MaintenanceCompletionRepository;
 import org.fleetguard.repository.TripRepository;
 import org.fleetguard.repository.UserRepository;
 import org.fleetguard.repository.VehicleMaintenanceAssignmentRepository;
@@ -22,6 +26,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -48,11 +55,15 @@ class FleetStatusServiceTest {
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final VehicleMaintenanceAssignmentRepository assignmentRepository = mock(VehicleMaintenanceAssignmentRepository.class);
+    private final InspectionRepository inspectionRepository = mock(InspectionRepository.class);
+    private final MaintenanceCompletionRepository completionRepository = mock(MaintenanceCompletionRepository.class);
     private final VehicleService service = new VehicleService(vehicleRepository, tripRepository, assignmentRepository,
-            mock(VehicleAvailabilityService.class), new UserNameService(mock(UserRepository.class)), new VehicleMapper(), event -> { });
+            mock(VehicleAvailabilityService.class), new UserNameService(mock(UserRepository.class)), new VehicleMapper(),
+            new KmPerDayEstimator(inspectionRepository, completionRepository), event -> { });
 
     private final List<Vehicle> fleet = new ArrayList<>();
     private final List<VehicleMaintenanceAssignment> assignments = new ArrayList<>();
+    private final List<KmReadingRow.FromInspection> inspectionKm = new ArrayList<>();
 
     private static void setId(Object entity, UUID id) throws Exception {
         Field field = entity.getClass().getDeclaredField("id");
@@ -64,6 +75,7 @@ class FleetStatusServiceTest {
     void setUp() {
         when(vehicleRepository.findByActive(true)).thenReturn(fleet);
         when(assignmentRepository.findByVehicleIdIn(any())).thenReturn(assignments);
+        when(inspectionRepository.findKmReadings(any())).thenReturn(inspectionKm);
         when(vehicleRepository.save(any(Vehicle.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
@@ -112,6 +124,92 @@ class FleetStatusServiceTest {
 
         assertEquals("al_dia", row.status());
         assertEquals("Correa", row.nextMaintenance().name());
+    }
+
+    /**
+     * Una inspección con ese km hace tantos días. Todas cuentan desde el mismo instante: si cada una
+     * tomara su propio "ahora", el tramo entre dos podría tener un segundo de más.
+     */
+    private final Instant readingsBase = Instant.now();
+
+    private void inspection(Vehicle vehicle, long km, int daysAgo) {
+        inspectionKm.add(new KmReadingRow.FromInspection(vehicle.getId(),
+                readingsBase.minus(Duration.ofDays(daysAgo)), (double) km));
+    }
+
+    @Test
+    void unPlanVencidoPorKmNoTieneFechaEstimada() throws Exception {
+        Vehicle truck = vehicle("AB123CD", 50000);
+        plan(truck, "Cambio de aceite", 10000, 39000);   // venció a los 49.000
+        inspection(truck, 47000, 30);
+        inspection(truck, 50000, 0);
+
+        NextMaintenanceDto next = service.getFleetStatus(1, 20, null, true).items().get(0).nextMaintenance();
+
+        assertEquals("vencido", next.status());
+        assertNull(next.estimatedDueDate());
+    }
+
+    @Test
+    void unPlanPorKmYPorTiempoTraeLasDosFechas() throws Exception {
+        Vehicle truck = vehicle("AB123CD", 50000);
+        MaintenancePlan plan = new MaintenancePlan("Service completo", null, IntervalType.BOTH, 10000, 180);
+        setId(plan, UUID.randomUUID());
+        VehicleMaintenanceAssignment assignment = new VehicleMaintenanceAssignment(truck.getId(), plan, 42000L,
+                LocalDate.now().minusDays(100));
+        setId(assignment, UUID.randomUUID());
+        assignment.recalculateNextDue();
+        assignments.add(assignment);
+        inspection(truck, 47000, 30);
+        inspection(truck, 50000, 0);   // 100 km por día, faltan 2.000 km
+
+        NextMaintenanceDto next = service.getFleetStatus(1, 20, null, true).items().get(0).nextMaintenance();
+
+        assertEquals(LocalDate.now().plusDays(80).toString(), next.dueDate());
+        assertEquals(LocalDate.now().plusDays(20).toString(), next.estimatedDueDate());
+    }
+
+    @Test
+    void conUnos100KmPorDiaYMilKmPorDelanteElPlanVenceAprox10DiasDespues() throws Exception {
+        Vehicle truck = vehicle("AB123CD", 50000);
+        plan(truck, "Cambio de aceite", 10000, 41000);   // vence a los 51.000: faltan 1.000 km
+        inspection(truck, 47000, 30);
+        inspection(truck, 50000, 0);                     // 3.000 km en 30 días
+
+        NextMaintenanceDto next = service.getFleetStatus(1, 20, null, true).items().get(0).nextMaintenance();
+
+        assertEquals(LocalDate.now().plusDays(10).toString(), next.estimatedDueDate());
+        // El estado sigue saliendo de los km reales.
+        assertEquals("por_vencer", next.status());
+        assertEquals(1000L, next.remainingKm());
+    }
+
+    @Test
+    void conUnaSolaLecturaNoHayFechaEstimada() throws Exception {
+        Vehicle truck = vehicle("AB123CD", 50000);
+        plan(truck, "Cambio de aceite", 10000, 41000);
+        inspection(truck, 50000, 3);
+
+        assertNull(service.getFleetStatus(1, 20, null, true).items().get(0).nextMaintenance().estimatedDueDate());
+    }
+
+    @Test
+    void unPlanSoloPorTiempoNoTieneFechaEstimada() throws Exception {
+        Vehicle truck = vehicle("AB123CD", 50000);
+        MaintenancePlan plan = new MaintenancePlan("Revisión anual", null, IntervalType.TIME, null, 365);
+        setId(plan, UUID.randomUUID());
+        VehicleMaintenanceAssignment assignment = new VehicleMaintenanceAssignment(truck.getId(), plan, null, LocalDate.now());
+        setId(assignment, UUID.randomUUID());
+        assignment.recalculateNextDue();
+        assignments.add(assignment);
+        inspection(truck, 47000, 30);
+        inspection(truck, 50000, 0);
+
+        NextMaintenanceDto next = service.getFleetStatus(1, 20, null, true).items().get(0).nextMaintenance();
+
+        assertNull(next.estimatedDueDate());
+        // Sin planes por km no hace falta buscar lecturas.
+        verify(inspectionRepository, never()).findKmReadings(any());
     }
 
     @Test

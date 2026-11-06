@@ -2896,6 +2896,21 @@ components:
         dueKm: { type: integer, nullable: true }
         remainingDays: { type: integer, nullable: true, description: Negativo si está vencido. }
         remainingKm: { type: integer, nullable: true, description: Negativo si está vencido. }
+        estimatedDueDate:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-11-15"
+          description: >-
+            CAM-137. Fecha aproximada en que el plan vence por km: hoy + remainingKm / km por día
+            del vehículo, redondeado para arriba. Los km por día salen de las inspecciones y los
+            mantenimientos hechos de los últimos 60 días, sin las lecturas menores a una anterior
+            ni las mayores al km actual. Null si el plan no es por km, si ya venció por km
+            (remainingKm <= 0), o si no hay al menos dos lecturas válidas con 7 días o más entre la
+            primera y la última, algún km recorrido y no más de 1.500 km por día (una primera
+            lectura con más de 5.000 km hasta la siguiente se descarta). Solo informativa, status
+            no depende de ella.
+            Ver CAM-40-fleet-status-contract.md, "Fecha estimada".
 
     FleetStatusRow:
       type: object

@@ -50,6 +50,7 @@ public class VehicleService {
     private final VehicleAvailabilityService availabilityService;
     private final UserNameService userNameService;
     private final VehicleMapper vehicleMapper;
+    private final KmPerDayEstimator kmPerDayEstimator;
 
     private static final int MIN_YEAR = 1980;
 
@@ -58,13 +59,15 @@ public class VehicleService {
     public VehicleService(VehicleRepository vehicleRepository, TripRepository tripRepository,
                            VehicleMaintenanceAssignmentRepository assignmentRepository,
                            VehicleAvailabilityService availabilityService, UserNameService userNameService,
-                           VehicleMapper vehicleMapper, ApplicationEventPublisher eventPublisher) {
+                           VehicleMapper vehicleMapper, KmPerDayEstimator kmPerDayEstimator,
+                           ApplicationEventPublisher eventPublisher) {
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.assignmentRepository = assignmentRepository;
         this.availabilityService = availabilityService;
         this.userNameService = userNameService;
         this.vehicleMapper = vehicleMapper;
+        this.kmPerDayEstimator = kmPerDayEstimator;
         this.eventPublisher = eventPublisher;
     }
 
@@ -135,10 +138,17 @@ public class VehicleService {
         Map<UUID, List<BlockReasonDto>> reasons = availabilityService.reasonsFor(vehicles.stream().map(Vehicle::getId).toList());
 
         LocalDate today = LocalDate.now();
+        // CAM-137: solo hace falta el ritmo de los vehículos con algún plan por km.
+        List<Vehicle> withKmPlans = vehicles.stream()
+                .filter(vehicle -> byVehicle.getOrDefault(vehicle.getId(), List.of()).stream()
+                        .anyMatch(assignment -> assignment.getNextDueKm() != null))
+                .toList();
+        Map<UUID, Double> kmPerDay = kmPerDayEstimator.kmPerDay(withKmPlans, Instant.now());
         List<FleetStatusRowDto> rows = new ArrayList<>();
         for (Vehicle vehicle : vehicles) {
             List<VehicleMaintenanceAssignment> assignments = byVehicle.getOrDefault(vehicle.getId(), List.of());
-            rows.add(buildRow(vehicle, assignments, today, reasons.getOrDefault(vehicle.getId(), List.of())));
+            rows.add(buildRow(vehicle, assignments, today, reasons.getOrDefault(vehicle.getId(), List.of()),
+                    kmPerDay.get(vehicle.getId())));
         }
 
         if (statusFilter != null) {
@@ -159,7 +169,7 @@ public class VehicleService {
     }
 
     private FleetStatusRowDto buildRow(Vehicle vehicle, List<VehicleMaintenanceAssignment> assignments, LocalDate today,
-                                       List<BlockReasonDto> blockReasons) {
+                                       List<BlockReasonDto> blockReasons, Double kmPerDay) {
         long currentKm = vehicle.getOdometerKm();
 
         List<MaintenanceStatus> statuses = assignments.stream()
@@ -171,7 +181,7 @@ public class VehicleService {
                 .max(Comparator.comparingInt(MaintenanceStatus::severity))
                 .orElse(MaintenanceStatus.AL_DIA);
 
-        NextMaintenanceDto nextMaintenance = pickMostUrgent(assignments, currentKm, today);
+        NextMaintenanceDto nextMaintenance = pickMostUrgent(assignments, currentKm, today, kmPerDay);
 
         return new FleetStatusRowDto(
                 vehicle.getId().toString(),
@@ -188,7 +198,8 @@ public class VehicleService {
         );
     }
 
-    private NextMaintenanceDto pickMostUrgent(List<VehicleMaintenanceAssignment> assignments, long currentKm, LocalDate today) {
+    private NextMaintenanceDto pickMostUrgent(List<VehicleMaintenanceAssignment> assignments, long currentKm, LocalDate today,
+                                              Double kmPerDay) {
         VehicleMaintenanceAssignment best = null;
         MaintenanceStatus bestStatus = null;
         double bestUrgency = -1;
@@ -213,6 +224,8 @@ public class VehicleService {
         Long remainingDays = best.getNextDueDate() != null
                 ? ChronoUnit.DAYS.between(today, best.getNextDueDate())
                 : null;
+        // CAM-137: solo informativa, el estado de arriba ya salió de los km reales.
+        LocalDate estimatedDueDate = KmPerDayEstimator.estimatedDueDate(remainingKm, kmPerDay, today);
 
         return new NextMaintenanceDto(
                 best.getId().toString(),
@@ -221,7 +234,8 @@ public class VehicleService {
                 best.getNextDueDate() == null ? null : best.getNextDueDate().toString(),
                 best.getNextDueKm(),
                 remainingDays,
-                remainingKm
+                remainingKm,
+                estimatedDueDate == null ? null : estimatedDueDate.toString()
         );
     }
 
