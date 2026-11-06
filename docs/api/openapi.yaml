@@ -2790,6 +2790,28 @@ components:
         odometerKm: { type: number, nullable: true }
         notes: { type: string, nullable: true }
         hasBlockingDefect: { type: boolean }
+        kmAlert:
+          $ref: "#/components/schemas/TripKmAlert"
+
+    TripKmAlert:
+      type: object
+      nullable: true
+      description: >-
+        CAM-152. Solo en el post-viaje de un viaje que se cerró con un kilometraje fuera de lo
+        normal; null en el resto. Los números son los del momento del cierre. Ver
+        CAM-152-trip-km-alert-contract.md.
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [above_average, below_average, below_vehicle_km]
+          description: >-
+            above_average: recorrió más del doble del promedio. below_average: menos de la
+            mitad. below_vehicle_km: el km declarado es menor al que ya tenía el vehículo.
+        tripKm: { type: integer, format: int64, nullable: true, description: "Post-viaje menos pre-viaje. Null sin pre-viaje con km, o si CAM-90 descartó el km del pre-viaje." }
+        averageKm: { type: integer, format: int64, nullable: true, description: "Promedio de km por viaje del vehículo. Null si no había viajes suficientes (solo con below_vehicle_km)." }
+        declaredKm: { type: integer, format: int64, description: "El km del post-viaje." }
+        vehicleKm: { type: integer, format: int64, description: "El km que tenía el vehículo antes del post-viaje." }
 
     MaintenanceHistoryItem:
       type: object
@@ -3655,7 +3677,8 @@ components:
         front no depende del tipo para mostrar el aviso, solo del texto.
       enum: [work_order_assigned, work_order_unassigned, work_order_cancelled, trip_open_reminder,
              blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue,
-             recurring_defect, document_due_soon, document_expired, vehicle_unavailable, vehicle_available]
+             recurring_defect, document_due_soon, document_expired, vehicle_unavailable, vehicle_available,
+             trip_km_anomaly]
 
     NotificationChannel:
       type: string

@@ -52,6 +52,26 @@ public class Trip {
     @Column(name = "reminder_sent_at")
     private Instant reminderSentAt;
 
+    // CAM-152: la marca de km fuera de lo normal, con los números del momento del cierre. Sin marca,
+    // todo en null. tripKm y averageKm faltan si el motivo es BELOW_VEHICLE_KM y no hubo promedio.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "km_alert_reason", length = 30)
+    private TripKmAlertReason kmAlertReason;
+
+    @Column(name = "km_alert_trip_km")
+    private Long kmAlertTripKm;
+
+    @Column(name = "km_alert_average_km")
+    private Long kmAlertAverageKm;
+
+    /** El km que declaró el chofer al cerrar. */
+    @Column(name = "km_alert_declared_km")
+    private Long kmAlertDeclaredKm;
+
+    /** El km que tenía el vehículo antes del cierre. */
+    @Column(name = "km_alert_vehicle_km")
+    private Long kmAlertVehicleKm;
+
     protected Trip() {
         // JPA
     }
@@ -73,6 +93,35 @@ public class Trip {
         this.endedAt = endedAt;
         this.closedById = closedById;
         this.closedByName = closedByName;
+    }
+
+    /** CAM-152: marca el viaje con un kilometraje fuera de lo normal. */
+    public void markKmAlert(TripKmAlertReason reason, Long tripKm, Long averageKm, long declaredKm, long vehicleKm) {
+        this.kmAlertReason = reason;
+        this.kmAlertTripKm = tripKm;
+        this.kmAlertAverageKm = averageKm;
+        this.kmAlertDeclaredKm = declaredKm;
+        this.kmAlertVehicleKm = vehicleKm;
+    }
+
+    public TripKmAlertReason getKmAlertReason() {
+        return kmAlertReason;
+    }
+
+    public Long getKmAlertTripKm() {
+        return kmAlertTripKm;
+    }
+
+    public Long getKmAlertAverageKm() {
+        return kmAlertAverageKm;
+    }
+
+    public Long getKmAlertDeclaredKm() {
+        return kmAlertDeclaredKm;
+    }
+
+    public Long getKmAlertVehicleKm() {
+        return kmAlertVehicleKm;
     }
 
     public UUID getId() {

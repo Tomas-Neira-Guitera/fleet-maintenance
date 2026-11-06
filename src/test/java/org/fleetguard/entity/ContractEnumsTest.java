@@ -95,7 +95,18 @@ class ContractEnumsTest {
                         Map.entry(NotificationType.DOCUMENT_DUE_SOON, "document_due_soon"),
                         Map.entry(NotificationType.DOCUMENT_EXPIRED, "document_expired"),
                         Map.entry(NotificationType.VEHICLE_UNAVAILABLE, "vehicle_unavailable"),
-                        Map.entry(NotificationType.VEHICLE_AVAILABLE, "vehicle_available")));
+                        Map.entry(NotificationType.VEHICLE_AVAILABLE, "vehicle_available"),
+                        Map.entry(NotificationType.TRIP_KM_ANOMALY, "trip_km_anomaly")));
+    }
+
+    @Test
+    void motivosDeKmFueraDeLoNormal() {
+        Map<TripKmAlertReason, String> expected = Map.of(TripKmAlertReason.ABOVE_AVERAGE, "above_average",
+                TripKmAlertReason.BELOW_AVERAGE, "below_average",
+                TripKmAlertReason.BELOW_VEHICLE_KM, "below_vehicle_km");
+        for (TripKmAlertReason reason : TripKmAlertReason.values()) {
+            assertEquals(expected.get(reason), reason.toJson());
+        }
     }
 
     @Test

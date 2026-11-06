@@ -50,6 +50,7 @@ public class InspectionService {
     private final VehicleChecklistService checklistService;
     private final OdometerReadings odometerReadings;
     private final VehicleAvailabilityService availabilityService;
+    private final TripKmAlertService tripKmAlertService;
 
     private final ApplicationEventPublisher eventPublisher;
 
@@ -57,7 +58,9 @@ public class InspectionService {
                               InspectionRepository inspectionRepository,
                               InspectionMapper inspectionMapper, TripMapper tripMapper,
                               VehicleChecklistService checklistService, OdometerReadings odometerReadings,
-                              VehicleAvailabilityService availabilityService, ApplicationEventPublisher eventPublisher) {
+                              VehicleAvailabilityService availabilityService, TripKmAlertService tripKmAlertService,
+                              ApplicationEventPublisher eventPublisher) {
+        this.tripKmAlertService = tripKmAlertService;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.inspectionRepository = inspectionRepository;
@@ -154,6 +157,13 @@ public class InspectionService {
                 .toList();
         if (!failedItemIds.isEmpty()) {
             eventPublisher.publishEvent(new DefectsReportedEvent(vehicleId, vehicle.getPlate(), failedItemIds));
+        }
+
+        // CAM-152: antes de que el post-viaje mueva el km del vehículo, se compara con el que tenía y
+        // con lo que suele recorrer. Si está fuera de lo normal, marca el viaje y avisa después del commit.
+        if (type == InspectionType.POST_TRIP && outcome.odometerKm() != null) {
+            tripKmAlertService.check(trip, (long) Math.floor(outcome.odometerKm()), vehicle.getOdometerKm(),
+                    driver.username());
         }
 
         // CAM-90: el km que cargó el chofer avanza el del vehículo (parte entera; la inspección guarda
