@@ -51,7 +51,8 @@ public class VehicleHistoryService {
 
         // Todo defecto sale de una inspección del mismo vehículo: con los choferes de las
         // inspecciones alcanza para resolver también quién reportó cada defecto.
-        List<Inspection> inspections = inspectionRepository.findByVehicleIdOrderByTimestampDesc(vehicleId);
+        // Con el viaje ya cargado: el post-viaje muestra la marca de km de su viaje (CAM-152).
+        List<Inspection> inspections = inspectionRepository.findByVehicleIdWithTripOrderByTimestampDesc(vehicleId);
         Map<String, String> driverNames = userNameService.currentNames(
                 inspections.stream().map(Inspection::getDriverId).toList());
 
