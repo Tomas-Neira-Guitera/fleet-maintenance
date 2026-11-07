@@ -76,19 +76,7 @@ public class KmPerDayEstimator {
         if (vehicles.isEmpty()) {
             return Map.of();
         }
-        List<UUID> ids = vehicles.stream().map(Vehicle::getId).toList();
-        // Inspección: el km con decimales se redondea para abajo, como en el costo por km (CAM-105).
-        // Mantenimiento hecho: cuenta desde la medianoche argentina de su día.
-        Stream<Map.Entry<UUID, Reading>> fromInspections = inspectionRepository.findKmReadings(ids).stream()
-                .map(row -> Map.entry(row.vehicleId(),
-                        new Reading(row.timestamp(), (long) Math.floor(row.odometerKm()))));
-        Stream<Map.Entry<UUID, Reading>> fromCompletions = completionRepository.findKmReadings(ids).stream()
-                .map(row -> Map.entry(row.vehicleId(),
-                        new Reading(row.completedAt().atStartOfDay(FLEET_ZONE).toInstant(), row.completedKm())));
-        Map<UUID, List<Reading>> readings = Stream.concat(fromInspections, fromCompletions)
-                .collect(Collectors.groupingBy(Map.Entry::getKey,
-                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
-
+        Map<UUID, List<Reading>> readings = readings(vehicles);
         Map<UUID, Double> result = new HashMap<>();
         for (Vehicle vehicle : vehicles) {
             Double pace = kmPerDay(readings.getOrDefault(vehicle.getId(), List.of()), vehicle.getOdometerKm(), now,
@@ -98,6 +86,50 @@ public class KmPerDayEstimator {
             }
         }
         return result;
+    }
+
+    /**
+     * Las lecturas de km de cada vehículo, sin filtrar, con dos consultas para toda la flota. También las usa
+     * la comparación de vehículos (CAM-140), que las filtra con {@link #validReadings}.
+     */
+    Map<UUID, List<Reading>> readings(Collection<Vehicle> vehicles) {
+        if (vehicles.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> ids = vehicles.stream().map(Vehicle::getId).toList();
+        // Inspección: el km con decimales se redondea para abajo, como en el costo por km (CAM-105).
+        // Mantenimiento hecho: cuenta desde la medianoche argentina de su día.
+        Stream<Map.Entry<UUID, Reading>> fromInspections = inspectionRepository.findKmReadings(ids).stream()
+                .map(row -> Map.entry(row.vehicleId(),
+                        new Reading(row.timestamp(), (long) Math.floor(row.odometerKm()))));
+        Stream<Map.Entry<UUID, Reading>> fromCompletions = completionRepository.findKmReadings(ids).stream()
+                .map(row -> Map.entry(row.vehicleId(),
+                        new Reading(row.completedAt().atStartOfDay(FLEET_ZONE).toInstant(), row.completedKm())));
+        return Stream.concat(fromInspections, fromCompletions)
+                .collect(Collectors.groupingBy(Map.Entry::getKey,
+                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+    }
+
+    /**
+     * Las lecturas que valen, en orden: sin las menores a una anterior ni las mayores al km actual del
+     * vehículo, ni las futuras (ver {@link #kmPerDay(List, long, Instant, long)}).
+     */
+    static List<Reading> validReadings(List<Reading> readings, long currentKm, Instant now) {
+        List<Reading> sorted = readings.stream()
+                .sorted(Comparator.comparing((Reading reading) -> reading.at().atZone(FLEET_ZONE).toLocalDate())
+                        .thenComparingLong(Reading::km)
+                        .thenComparing(Reading::at))
+                .toList();
+        List<Reading> valid = new ArrayList<>();
+        long maxSoFar = Long.MIN_VALUE;
+        for (Reading reading : sorted) {
+            if (reading.km() < maxSoFar || reading.km() > currentKm || reading.at().isAfter(now)) {
+                continue;
+            }
+            maxSoFar = reading.km();
+            valid.add(reading);
+        }
+        return valid;
     }
 
     /**
@@ -129,21 +161,7 @@ public class KmPerDayEstimator {
     }
 
     static Double kmPerDay(List<Reading> readings, long currentKm, Instant now, long maxJumpKm) {
-        List<Reading> sorted = readings.stream()
-                .sorted(Comparator.comparing((Reading reading) -> reading.at().atZone(FLEET_ZONE).toLocalDate())
-                        .thenComparingLong(Reading::km)
-                        .thenComparing(Reading::at))
-                .toList();
-
-        List<Reading> valid = new ArrayList<>();
-        long maxSoFar = Long.MIN_VALUE;
-        for (Reading reading : sorted) {
-            if (reading.km() < maxSoFar || reading.km() > currentKm || reading.at().isAfter(now)) {
-                continue;
-            }
-            maxSoFar = reading.km();
-            valid.add(reading);
-        }
+        List<Reading> valid = validReadings(readings, currentKm, now);
 
         Instant windowStart = now.minus(WINDOW);
         List<Reading> inWindow = valid.stream().filter(reading -> !reading.at().isBefore(windowStart)).toList();
