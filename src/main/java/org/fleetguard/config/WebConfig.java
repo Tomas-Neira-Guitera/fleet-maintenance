@@ -34,15 +34,16 @@ public class WebConfig implements WebMvcConfigurer {
     }
 
     // Rutas que ya exigen JWT, cada una con su rol: usuarios (CAM-23), gastos (CAM-52) y costos de
-    // un vehículo (CAM-105), los defectos recurrentes (CAM-135) y el tiempo fuera de servicio (CAM-134) son
-    // del admin; las inspecciones (CAM-85), del chofer; las push al navegador (CAM-119) y la campanita (CAM-96),
+    // un vehículo (CAM-105), los defectos recurrentes (CAM-135), el tiempo fuera de servicio (CAM-134) y la
+    // comparación de vehículos (CAM-140) son del admin; las inspecciones (CAM-85), del chofer; las push al navegador (CAM-119) y la campanita (CAM-96),
     // de cualquiera que esté logueado. CAM-73 suma el resto.
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(requiring(Role.ADMIN))
                 .addPathPatterns("/users", "/users/**", "/expenses", "/expenses/**", "/vehicles/*/costs", "/defects/recurring",
-                        "/downtime", "/maintenance-compliance");
-        registry.addInterceptor(requiring(Role.CHOFER)).addPathPatterns("/inspections/**");
+                        "/downtime", "/vehicles/comparison", "/maintenance-compliance");
+        // CAM-139: el defecto reportado en viaje también es del chofer.
+        registry.addInterceptor(requiring(Role.CHOFER)).addPathPatterns("/inspections/**", "/vehicles/*/road-defects");
         registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER, Role.TECNICO))
                 .addPathPatterns("/push/**", "/notifications", "/notifications/**");
         // CAM-117/CAM-118: configuración de avisos, solo el admin.

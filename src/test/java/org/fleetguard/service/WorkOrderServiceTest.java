@@ -17,6 +17,7 @@ import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.WorkOrder;
 import org.fleetguard.entity.WorkOrderExecutionType;
 import org.fleetguard.entity.WorkOrderSourceType;
+import org.fleetguard.entity.WorkOrderStatus;
 import org.fleetguard.exception.WorkOrderValidationException;
 import org.fleetguard.mapper.DefectMapper;
 import org.fleetguard.mapper.WorkOrderMapper;
@@ -46,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
@@ -373,6 +375,10 @@ class WorkOrderServiceTest {
         assertNull(result.dto().technicianId());
         verify(workOrderRepository, never()).save(any());
         verify(eventPublisher, never()).publishEvent(any());
+        // CAM-148: una OT en espera también es "la abierta" de su origen.
+        verify(workOrderRepository).findFirstByDefectIdAndStatusInOrderByCreatedAtAsc(eq(defectId),
+                argThat(statuses -> statuses.containsAll(List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO,
+                        WorkOrderStatus.EN_ESPERA))));
     }
 
     @Test

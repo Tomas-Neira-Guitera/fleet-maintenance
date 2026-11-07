@@ -32,6 +32,7 @@ public class DefectMapper {
                 defect.getStatus(),
                 reportedBy,
                 defect.getDetails(),
+                inspection.getType().toJson(),
                 occurredOnTrip
         );
     }

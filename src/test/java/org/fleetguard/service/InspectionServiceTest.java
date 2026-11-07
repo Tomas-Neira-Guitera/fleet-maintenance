@@ -50,6 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -69,9 +70,10 @@ class InspectionServiceTest {
     private final VehicleAvailabilityService availabilityService = mock(VehicleAvailabilityService.class);
     private final VehicleChecklistService checklistService = mock(VehicleChecklistService.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final TripKmAlertService tripKmAlertService = mock(TripKmAlertService.class);
     private final InspectionService service = new InspectionService(vehicleRepository, tripRepository,
             inspectionRepository, new InspectionMapper(), new TripMapper(), checklistService, new OdometerReadings(5000),
-            availabilityService, eventPublisher);
+            availabilityService, tripKmAlertService, eventPublisher);
 
     private final AuthenticatedUser driver = new AuthenticatedUser(UUID.randomUUID(), "chofer1", Role.CHOFER);
     private final AuthenticatedUser otherDriver = new AuthenticatedUser(UUID.randomUUID(), "chofer2", Role.CHOFER);
@@ -561,6 +563,30 @@ class InspectionServiceTest {
         // El estado de cada plan se calcula contra este km: uno que vencía a los 120.300 pasa a vencido.
         assertEquals(MaintenanceStatus.VENCIDO,
                 MaintenanceStatusCalculator.computeStatus(120300L, null, vehicle.getOdometerKm(), LocalDate.now()));
+    }
+
+    // --- CAM-152: el km del post-viaje se compara antes de mover el del vehículo ---
+
+    @Test
+    void elPostTripRevisaElKmDelViajeConElKmQueTeniaElVehiculo() throws Exception {
+        vehicle.setOdometerKm(120000);
+        Trip trip = openTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("post-trip",
+                withAnswer(postTripAllOk(), new ChecklistAnswerDto("post-km", null, 120350.7, null)), null), driver);
+
+        // El km del vehículo de antes del post-viaje, no el que deja el post-viaje.
+        verify(tripKmAlertService).check(trip, 120350, 120000, "chofer1");
+        assertEquals(120350, vehicle.getOdometerKm());
+    }
+
+    @Test
+    void elPreTripNoRevisaElKmDelViaje() {
+        noOpenTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver);
+
+        verify(tripKmAlertService, never()).check(any(), anyLong(), anyLong(), any());
     }
 
     @Test

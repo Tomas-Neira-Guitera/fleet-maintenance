@@ -2,6 +2,7 @@ package org.fleetguard.service;
 
 import org.fleetguard.dto.RecurringDefectsDto;
 import org.fleetguard.entity.Defect;
+import org.fleetguard.entity.checklist.ChecklistCatalog;
 import org.fleetguard.entity.InspectionAnswer;
 import org.fleetguard.entity.NotificationType;
 import org.fleetguard.entity.RecurringDefectAlert;
@@ -67,6 +68,7 @@ public class RecurringDefectService {
                 : defectRepository.findReportedSinceWithInspection(from);
 
         Map<Key, List<Defect>> byControl = defects.stream()
+                .filter(RecurringDefectService::isControl)
                 .collect(Collectors.groupingBy(RecurringDefectService::key));
         List<Map.Entry<Key, List<Defect>>> recurring = byControl.entrySet().stream()
                 .filter(entry -> entry.getValue().size() >= threshold)
@@ -85,6 +87,11 @@ public class RecurringDefectService {
         return new RecurringDefectsDto(threshold, windowDays, items);
     }
 
+    /** CAM-139: "Otro problema", reportado en viaje, no es un control: dos problemas distintos no se repiten. */
+    private static boolean isControl(Defect defect) {
+        return !ChecklistCatalog.ROAD_OTHER_ITEM.id().equals(defect.getInspectionAnswer().getItemId());
+    }
+
     /**
      * Después de guardar una inspección con defectos: por cada control que falló y llegó al umbral, avisa
      * si no se avisó ese control de ese vehículo dentro de la ventana (§4). Devuelve cuántos avisos
@@ -95,6 +102,7 @@ public class RecurringDefectService {
         Instant from = windowStart(now);
         Map<String, List<Defect>> byItem = defectRepository.findReportedSinceByVehicleIdWithInspection(vehicleId, from)
                 .stream()
+                .filter(RecurringDefectService::isControl)
                 .collect(Collectors.groupingBy(RecurringDefectService::controlKey));
 
         int sent = 0;

@@ -4,6 +4,7 @@ import org.fleetguard.dto.FieldValidationErrorDetail;
 import org.fleetguard.dto.UpdateWorkOrderRequest;
 import org.fleetguard.dto.WorkOrderDto;
 import org.fleetguard.dto.WorkOrderExpenseDto;
+import org.fleetguard.dto.WorkOrderPauseDto;
 import org.fleetguard.dto.WorkOrderPhotoDto;
 import org.fleetguard.exception.WorkOrderConflictException;
 import org.fleetguard.exception.WorkOrderNotFoundException;
@@ -41,7 +42,7 @@ class WorkOrderControllerTest extends WebMvcTestBase {
     private static WorkOrderDto workOrder(String status) {
         return new WorkOrderDto("wo-1", "v-1", "AB123CD", "manual", null, null, null, null, "Cambio de pastillas",
                 null, "interno", null, null, "t-1", "tecnico", status, null, List.of(), BigDecimal.ZERO, List.of(),
-                "2026-10-03T00:00:00Z", "2026-10-03T00:00:00Z", null);
+                "2026-10-03T00:00:00Z", "2026-10-03T00:00:00Z", null, null, 0);
     }
 
     @Test
@@ -99,6 +100,30 @@ class WorkOrderControllerTest extends WebMvcTestBase {
         ArgumentCaptor<UpdateWorkOrderRequest> captor = ArgumentCaptor.forClass(UpdateWorkOrderRequest.class);
         verify(service).update(eq("wo-1"), captor.capture());
         assertEquals(new BigDecimal("1500.7"), captor.getValue().completedKm());
+    }
+
+    @Test
+    void pausarLlegaConElMotivoYDevuelveLaPausaYElTiempo() throws Exception {
+        // CAM-148: el record tiene dos constructores; Jackson tiene que usar el que trae la pausa.
+        WorkOrderDto onHold = new WorkOrderDto("wo-1", "v-1", "AB123CD", "manual", null, null, null, null,
+                "Cambio de pastillas", null, "interno", null, null, "t-1", "tecnico", "en_espera", null, List.of(),
+                BigDecimal.ZERO, List.of(), "2026-10-03T00:00:00Z", "2026-10-03T00:00:00Z", null,
+                new WorkOrderPauseDto("esperando_repuesto", "Pastillas pedidas", "2026-10-03T10:00:00Z"), 7200);
+        when(service.update(eq("wo-1"), any())).thenReturn(onHold);
+
+        mvc.perform(patch("/work-orders/wo-1").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"en_espera\",\"pauseReason\":\"esperando_repuesto\",\"pauseComment\":\"Pastillas pedidas\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("en_espera"))
+                .andExpect(jsonPath("$.pause.reason").value("esperando_repuesto"))
+                .andExpect(jsonPath("$.pause.comment").value("Pastillas pedidas"))
+                .andExpect(jsonPath("$.pausedSeconds").value(7200));
+
+        ArgumentCaptor<UpdateWorkOrderRequest> captor = ArgumentCaptor.forClass(UpdateWorkOrderRequest.class);
+        verify(service).update(eq("wo-1"), captor.capture());
+        assertEquals("en_espera", captor.getValue().status());
+        assertEquals("esperando_repuesto", captor.getValue().pauseReason());
+        assertEquals("Pastillas pedidas", captor.getValue().pauseComment());
     }
 
     @Test

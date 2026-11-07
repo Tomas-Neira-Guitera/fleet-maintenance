@@ -265,6 +265,42 @@ paths:
         "404":
           description: VEHICLE_NOT_FOUND
 
+  /api/vehicles/comparison:
+    get:
+      summary: Comparar los vehículos activos en un período (CAM-140)
+      description: >
+        Solo ADMIN, solo lectura. Una fila por vehículo activo con gastos de
+        mantenimiento y operativos del período (los mismos de GET /api/expenses
+        con ese from/to), km recorridos, costo por km, disponibilidad y paradas
+        (los mismos de GET /api/downtime) y controles con fallas recurrentes
+        (los de GET /api/defects/recurring, que miran su propia ventana de 30
+        días y no el período). Incluye el promedio de la flota de cada
+        indicador y la marca "Para revisar". Ver CAM-140-vehicle-comparison-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, description: "Fecha (2026-10-01) o instante ISO-8601, como en /api/downtime." }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, description: "Fecha o instante ISO-8601. Lo que todavía no pasó no cuenta." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleComparison"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: VALIDATION_ERROR -- from o to faltan, son inválidos, o to no es posterior a from.
+
   /api/vehicles/{vehicleId}/checklist:
     get:
       summary: Checklist DVIR efectivo de un vehículo (CAM-31)
@@ -872,6 +908,68 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ValidationError"
+  /api/vehicles/{id}/road-defects:
+    post:
+      summary: Reportar un defecto durante el viaje, sin cerrarlo (CAM-139)
+      description: >
+        El chofer que tiene el viaje abierto reporta un problema en el momento en que aparece. El
+        viaje sigue abierto: no pide km ni mueve el km del vehículo, y se cierra después con el
+        post-trip, como siempre. El defecto queda con `source: on-road` y cuenta como cualquier otro
+        para la disponibilidad, los recurrentes, el tiempo fuera de servicio y las OTs.
+
+
+        `itemId` es un control de tipo sí/no del checklist pre-trip del vehículo (el de
+        GET /api/vehicles/{vehicleId}/checklist, sin el de km) o `road-otro` ("Otro problema", que no
+        cuenta para recurrentes). El defecto sigue las mismas reglas que en el checklist: gravedad,
+        título de hasta 30 caracteres, detalle opcional y foto obligatoria si es bloqueante. Un
+        bloqueante avisa al admin (CAM-97) y deja el vehículo no disponible (CAM-102).
+
+
+        Exige el JWT de un CHOFER. Ver CAM-139-road-defect-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoadDefectRequest"
+      responses:
+        "201":
+          description: Defecto registrado; el viaje sigue abierto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DefectSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Vehículo inexistente
+        "409":
+          description: El vehículo no tiene un viaje abierto, o el viaje es de otro chofer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                noOpenTrip:
+                  value: { error: "NO_OPEN_TRIP", message: "El vehículo no tiene un viaje abierto: el problema se reporta en la inspección." }
+                notYourTrip:
+                  value: { error: "NOT_YOUR_TRIP", message: "Solo puede reportar el chofer que tiene el viaje abierto." }
+        "422":
+          description: El control no es del checklist del vehículo, o el defecto no cumple sus reglas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
   /api/defects:
     get:
       summary: Listar defectos reportados en inspecciones
@@ -1456,8 +1554,8 @@ paths:
         de origen assignment se cierra sola al registrar el completion de esa
         asignación (409 USE_COMPLETION_ENDPOINT si se intenta acá).
         status=cancelled cancela también las OTs abiertas de la programación
-        (CAM-77): las asignadas sin preguntar; si hay una en_proceso responde
-        409 WORK_ORDER_IN_PROGRESS salvo que venga cancelWorkOrder=true. Las
+        (CAM-77): las asignadas sin preguntar; si hay una en_proceso o en_espera
+        (CAM-148) responde 409 WORK_ORDER_IN_PROGRESS salvo que venga cancelWorkOrder=true. Las
         finalizadas no se tocan.
       parameters:
         - name: id
@@ -1540,7 +1638,7 @@ paths:
         cliente. Nace en status=asignada. Ver docs/api/CAM-60-technician-contract.md
         para las reglas de technicianId.
 
-        Una sola OT abierta por origen: si ya hay una asignada o en proceso para
+        Una sola OT abierta por origen: si ya hay una asignada, en proceso o en espera (CAM-148) para
         el mismo defecto (directo o vía una programación de origen defecto), la
         misma asignación de plan o la misma programación manual, no se crea otra
         y se devuelve la existente con 200 en vez de 201. Sus datos (técnico,
@@ -1603,6 +1701,9 @@ paths:
       description: >
         Campos parciales: lo que no viene no se toca. Transiciones válidas:
         asignada→en_proceso, en_proceso→finalizada, asignada|en_proceso→cancelada.
+        CAM-148: en_proceso→en_espera (con pauseReason), en_espera→en_proceso
+        (retomar) y en_espera→cancelada. en_espera→finalizada responde 409
+        INVALID_STATUS_TRANSITION: primero se retoma. Ver CAM-148-work-order-pause-contract.md.
         Finalizar exige closingDescription y al menos una foto, valida completedKm
         si viene (CAM-74), y cierra el origen (completion de la asignación, programación o defecto).
         Una OT finalizada o cancelada no se edita más (CAM-75): cualquier PATCH
@@ -2881,6 +2982,13 @@ components:
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
         reportedBy: { type: string, nullable: true, description: "Nombre actual del chofer que reportó el defecto (CAM-85); en inspecciones anteriores, el nombre con el que se guardaron." }
         details: { type: string, nullable: true, description: "Descripción larga del defecto (CAM-32). description es el título corto." }
+        source:
+          type: string
+          enum: [pre-trip, post-trip, on-road]
+          description: >-
+            CAM-139. Dónde se reportó: en el checklist del pre-trip o del post-trip, o durante el
+            viaje (on-road, "Reportado en viaje"). Es distinto de occurredOnTrip de CAM-146, que se
+            calcula para los del post-trip.
         occurredOnTrip:
           nullable: true
           description: >-
@@ -2898,6 +3006,18 @@ components:
         tripEndedAt: { type: string, format: date-time, nullable: true }
         preTripInspectionId: { type: string, format: uuid, nullable: true, description: El pre-viaje en que el control dio OK. }
         preTripAt: { type: string, format: date-time, nullable: true }
+
+    RoadDefectRequest:
+      type: object
+      required: [itemId, defect]
+      description: CAM-139. Ver /api/vehicles/{id}/road-defects.
+      properties:
+        itemId:
+          type: string
+          description: Un control sí/no del checklist pre-trip del vehículo, o `road-otro`.
+          example: ext-luces
+        defect:
+          $ref: "#/components/schemas/DefectDetail"
 
     VehicleHistory:
       type: object
@@ -2927,6 +3047,28 @@ components:
         odometerKm: { type: number, nullable: true }
         notes: { type: string, nullable: true }
         hasBlockingDefect: { type: boolean }
+        kmAlert:
+          $ref: "#/components/schemas/TripKmAlert"
+
+    TripKmAlert:
+      type: object
+      nullable: true
+      description: >-
+        CAM-152. Solo en el post-viaje de un viaje que se cerró con un kilometraje fuera de lo
+        normal; null en el resto. Los números son los del momento del cierre. Ver
+        CAM-152-trip-km-alert-contract.md.
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [above_average, below_average, below_vehicle_km]
+          description: >-
+            above_average: recorrió más del doble del promedio. below_average: menos de la
+            mitad. below_vehicle_km: el km declarado es menor al que ya tenía el vehículo.
+        tripKm: { type: integer, format: int64, nullable: true, description: "Post-viaje menos pre-viaje. Null sin pre-viaje con km, o si CAM-90 descartó el km del pre-viaje." }
+        averageKm: { type: integer, format: int64, nullable: true, description: "Promedio de km por viaje del vehículo. Null si no había viajes suficientes (solo con below_vehicle_km)." }
+        declaredKm: { type: integer, format: int64, description: "El km del post-viaje." }
+        vehicleKm: { type: integer, format: int64, description: "El km que tenía el vehículo antes del post-viaje." }
 
     MaintenanceHistoryItem:
       type: object
@@ -3033,6 +3175,21 @@ components:
         dueKm: { type: integer, nullable: true }
         remainingDays: { type: integer, nullable: true, description: Negativo si está vencido. }
         remainingKm: { type: integer, nullable: true, description: Negativo si está vencido. }
+        estimatedDueDate:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-11-15"
+          description: >-
+            CAM-137. Fecha aproximada en que el plan vence por km: hoy + remainingKm / km por día
+            del vehículo, redondeado para arriba. Los km por día salen de las inspecciones y los
+            mantenimientos hechos de los últimos 60 días, sin las lecturas menores a una anterior
+            ni las mayores al km actual. Null si el plan no es por km, si ya venció por km
+            (remainingKm <= 0), o si no hay al menos dos lecturas válidas con 7 días o más entre la
+            primera y la última, algún km recorrido y no más de 1.500 km por día (una primera
+            lectura con más de 5.000 km hasta la siguiente se descarta). Solo informativa, status
+            no depende de ella.
+            Ver CAM-40-fleet-status-contract.md, "Fecha estimada".
 
     FleetStatusRow:
       type: object
@@ -3251,10 +3408,10 @@ components:
         workOrder:
           type: object
           nullable: true
-          description: OT abierta (asignada o en proceso) vinculada a la programación, si hay una.
+          description: OT abierta (asignada, en proceso o en espera) vinculada a la programación, si hay una.
           properties:
             id: { type: string }
-            status: { type: string, enum: [asignada, en_proceso] }
+            status: { type: string, enum: [asignada, en_proceso, en_espera] }
             responsible: { type: string, nullable: true, description: "Técnico, proveedor externo o contacto." }
 
     CreateScheduleRequest:
@@ -3306,7 +3463,12 @@ components:
 
     WorkOrderStatus:
       type: string
-      enum: [asignada, en_proceso, finalizada, cancelada]
+      description: "en_espera (CAM-148): pausada con un motivo. Cuenta como abierta, igual que asignada y en_proceso."
+      enum: [asignada, en_proceso, en_espera, finalizada, cancelada]
+
+    WorkOrderPauseReason:
+      type: string
+      enum: [esperando_repuesto, esperando_proveedor, esperando_vehiculo, otro]
 
     WorkOrderExpenseCategory:
       type: string
@@ -3335,7 +3497,7 @@ components:
 
     WorkOrder:
       type: object
-      required: [id, vehicleId, sourceType, title, executionType, status, expenses, totalExpenses, photos, createdAt, updatedAt]
+      required: [id, vehicleId, sourceType, title, executionType, status, expenses, totalExpenses, photos, createdAt, updatedAt, pausedSeconds]
       properties:
         id: { type: string }
         vehicleId: { type: string }
@@ -3374,6 +3536,20 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         finalizedAt: { type: string, format: date-time, nullable: true }
+        pause:
+          type: object
+          nullable: true
+          description: "CAM-148: por qué está en espera y desde cuándo. Null si la OT no está en espera."
+          required: [reason, since]
+          properties:
+            reason:
+              $ref: "#/components/schemas/WorkOrderPauseReason"
+            comment: { type: string, nullable: true }
+            since: { type: string, format: date-time }
+        pausedSeconds:
+          type: integer
+          format: int64
+          description: "CAM-148: segundos que estuvo en espera en total, contando la pausa actual hasta ahora. 0 si nunca se pausó."
 
     CreateWorkOrderRequest:
       type: object
@@ -3403,7 +3579,14 @@ components:
       properties:
         status:
           type: string
-          enum: [en_proceso, finalizada, cancelada]
+          enum: [en_proceso, en_espera, finalizada, cancelada]
+        pauseReason:
+          $ref: "#/components/schemas/WorkOrderPauseReason"
+        pauseComment:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: "Solo con status=en_espera (CAM-148). Obligatorio si pauseReason es otro; si no, opcional."
         closingDescription: { type: string, description: Obligatoria para finalizar. }
         completedKm:
           type: integer
@@ -3525,6 +3708,67 @@ components:
           type: number
           nullable: true
           description: totalAmount / kmDriven, redondeado a 2 decimales; null cuando kmDriven es null.
+
+    VehicleComparison:
+      type: object
+      description: Comparación de los vehículos activos de GET /api/vehicles/comparison (CAM-140).
+      required: [from, to, vehicles, fleet]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time, description: Fin efectivo del período, recortado a ahora. }
+        vehicles:
+          type: array
+          description: Ordenados por patente.
+          items:
+            type: object
+            required: [vehicleId, plate, maintenanceCost, operatingCost, totalCost, downtimeHours, stops, recurringControls, review]
+            properties:
+              vehicleId: { type: string }
+              plate: { type: string }
+              brand: { type: string, nullable: true }
+              model: { type: string, nullable: true }
+              vehicleType: { type: string, nullable: true }
+              year: { type: integer, nullable: true }
+              maintenanceCost: { type: number, description: "Gastos de OTs del período (preventivo, correctivo y manual)." }
+              operatingCost: { type: number, description: Gastos operativos del período (CAM-109). }
+              totalCost: { type: number }
+              kmDriven:
+                type: integer
+                nullable: true
+                description: >-
+                  Del km al empezar el período (la última lectura válida hasta el comienzo, o la primera
+                  dentro) al km al terminarlo. Null sin dos lecturas válidas. Ver el contrato, decisión 2.
+              maintenanceCostPerKm: { type: number, nullable: true, description: "Gasto de mantenimiento desde que cuentan los km, sobre kmDriven, a 2 decimales; null sin km o con 0 km." }
+              totalCostPerKm: { type: number, nullable: true, description: "Ídem, con el gasto total." }
+              availabilityPct: { type: number, nullable: true }
+              downtimeHours: { type: number }
+              stops: { type: integer }
+              recurringControls: { type: integer, description: Controles del checklist con fallas recurrentes hoy (CAM-135). }
+              review:
+                type: object
+                required: [flagged, reasons]
+                properties:
+                  flagged: { type: boolean, description: "Para revisar: peor que el promedio en al menos dos indicadores." }
+                  reasons:
+                    type: array
+                    description: Vacío si flagged es false.
+                    items:
+                      type: string
+                      enum: [maintenance_cost_per_km, availability, recurring_defects]
+        fleet:
+          type: object
+          description: El promedio de cada indicador sobre los vehículos que lo tienen; null si ninguno lo tiene.
+          properties:
+            maintenanceCost: { type: number, nullable: true }
+            operatingCost: { type: number, nullable: true }
+            totalCost: { type: number, nullable: true }
+            kmDriven: { type: number, nullable: true }
+            maintenanceCostPerKm: { type: number, nullable: true, description: "El de la flota: gasto de los vehículos con km sobre sus km, no el promedio de los cocientes." }
+            totalCostPerKm: { type: number, nullable: true, description: "Ídem, con el gasto total." }
+            availabilityPct: { type: number, nullable: true }
+            downtimeHours: { type: number, nullable: true }
+            stops: { type: number, nullable: true }
+            recurringControls: { type: number, nullable: true }
 
     MaintenanceCompliance:
       type: object
@@ -3799,7 +4043,7 @@ components:
         active: { type: boolean }
         openWorkOrders:
           type: integer
-          description: OTs a su cargo asignadas o en proceso hoy. Es la foto actual, no depende del período.
+          description: OTs a su cargo asignadas, en proceso o en espera (CAM-148) hoy. Es la foto actual, no depende del período.
         finalizedWorkOrders: { type: integer, description: OTs a su cargo finalizadas en el período. }
         avgResolutionHours:
           type: number
@@ -3814,7 +4058,8 @@ components:
         front no depende del tipo para mostrar el aviso, solo del texto.
       enum: [work_order_assigned, work_order_unassigned, work_order_cancelled, trip_open_reminder,
              blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue,
-             recurring_defect, document_due_soon, document_expired, vehicle_unavailable, vehicle_available]
+             recurring_defect, document_due_soon, document_expired, vehicle_unavailable, vehicle_available,
+             trip_km_anomaly]
 
     NotificationChannel:
       type: string

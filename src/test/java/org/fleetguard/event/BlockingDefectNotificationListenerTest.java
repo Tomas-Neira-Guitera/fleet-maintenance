@@ -46,6 +46,18 @@ class BlockingDefectNotificationListenerTest {
     }
 
     @Test
+    void unBloqueanteReportadoEnViajeDiceQueElViajeSigueAbierto() {
+        listener.onBlockingDefect(new BlockingDefectReportedEvent(vehicleId, "AB123CD", InspectionType.ON_ROAD, "chofer1",
+                List.of("Sin frenos")));
+
+        verify(notificationService).notifyConfiguredRecipients(NotificationType.BLOCKING_DEFECT_REPORTED,
+                "Defecto bloqueante en AB123CD",
+                "Sin frenos. Reportado durante el viaje por chofer1. El viaje sigue abierto, y el vehículo no puede"
+                        + " volver a salir hasta resolverlo.",
+                "/vehiculos/" + vehicleId);
+    }
+
+    @Test
     void unErrorAlAvisarNoSePropaga() {
         doThrow(new IllegalStateException("caído")).when(notificationService)
                 .notifyConfiguredRecipients(any(), any(), any(), any());

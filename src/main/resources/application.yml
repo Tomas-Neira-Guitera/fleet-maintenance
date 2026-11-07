@@ -91,6 +91,13 @@ fleetguard:
     # de veces en los últimos window-days días. Se avisa al admin una sola vez por ventana.
     threshold: 3
     window-days: 30
+  trip-km-alerts:
+    # CAM-152: al cerrar un viaje se avisa si recorrió más de ratio veces el promedio de los últimos
+    # recent-trips viajes del vehículo, o menos del promedio dividido ratio. Sin min-trips viajes
+    # anteriores no hay promedio. El texto del aviso dice "el doble" y "la mitad": va con ratio 2.
+    min-trips: 3
+    recent-trips: 10
+    ratio: 2
   maintenance-alerts:
     # CAM-118: revisión diaria de vencimientos por fecha, a las 8 de Argentina (los de km se revisan
     # además cada vez que sube el km del vehículo).

@@ -20,6 +20,13 @@ public final class ChecklistCatalog {
     public static final String ODOMETER_ITEM_ID_PRE_TRIP = "int-km";
     public static final String ODOMETER_ITEM_ID_POST_TRIP = "post-km";
 
+    /**
+     * CAM-139: lo que el chofer elige al reportar en viaje un problema que no es ningún control del
+     * checklist. No cuenta para los defectos recurrentes: "otro" no es un control.
+     */
+    public static final ChecklistItemDef ROAD_OTHER_ITEM =
+            new ChecklistItemDef("road-otro", "Otro problema", CHECK, INTERIOR);
+
     public static final List<ChecklistItemDef> PRE_TRIP_EXTERIOR_ITEMS = List.of(
             new ChecklistItemDef("ext-luces", "Luces", CHECK, EXTERIOR),
             new ChecklistItemDef("ext-neumaticos", "Neumáticos", CHECK, EXTERIOR),

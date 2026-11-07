@@ -5,6 +5,7 @@ import org.fleetguard.dto.OccurredOnTripDto;
 import org.fleetguard.dto.VehicleHistoryDto;
 import org.fleetguard.entity.Defect;
 import org.fleetguard.entity.Inspection;
+import org.fleetguard.entity.InspectionType;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.mapper.DefectMapper;
@@ -55,7 +56,8 @@ public class VehicleHistoryService {
 
         // Todo defecto sale de una inspección del mismo vehículo: con los choferes de las
         // inspecciones alcanza para resolver también quién reportó cada defecto.
-        List<Inspection> inspections = inspectionRepository.findByVehicleIdOrderByTimestampDesc(vehicleId);
+        // Con el viaje ya cargado: el post-viaje muestra la marca de km de su viaje (CAM-152).
+        List<Inspection> inspections = inspectionRepository.findByVehicleIdWithTripOrderByTimestampDesc(vehicleId);
         Map<String, String> driverNames = userNameService.currentNames(
                 inspections.stream().map(Inspection::getDriverId).toList());
 
@@ -67,7 +69,9 @@ public class VehicleHistoryService {
                 .toList();
 
         return new VehicleHistoryDto(
+                // CAM-139: el reporte en viaje no es una inspección; su defecto sí está en defects.
                 inspections.stream()
+                        .filter(inspection -> inspection.getType() != InspectionType.ON_ROAD)
                         .map(inspection -> historyMapper.toInspectionItem(inspection, driverNames))
                         .toList(),
                 defects,

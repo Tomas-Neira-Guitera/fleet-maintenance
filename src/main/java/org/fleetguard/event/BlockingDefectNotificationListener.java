@@ -33,8 +33,13 @@ public class BlockingDefectNotificationListener {
     }
 
     static String message(BlockingDefectReportedEvent event) {
-        String inspection = event.inspectionType() == InspectionType.PRE_TRIP ? "pre-viaje" : "post-viaje";
         String reporter = event.driverName() == null ? "" : " por " + event.driverName();
+        // CAM-139: en viaje el vehículo ya salió; queda no disponible para el próximo viaje.
+        if (event.inspectionType() == InspectionType.ON_ROAD) {
+            return String.join("; ", event.defectTitles()) + ". Reportado durante el viaje" + reporter
+                    + ". El viaje sigue abierto, y el vehículo no puede volver a salir hasta resolverlo.";
+        }
+        String inspection = event.inspectionType() == InspectionType.PRE_TRIP ? "pre-viaje" : "post-viaje";
         return String.join("; ", event.defectTitles()) + ". Reportado en el " + inspection + reporter
                 + ". El vehículo no puede salir hasta resolverlo.";
     }
