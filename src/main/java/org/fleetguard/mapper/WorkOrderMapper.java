@@ -3,6 +3,7 @@ package org.fleetguard.mapper;
 import org.fleetguard.dto.DefectDto;
 import org.fleetguard.dto.WorkOrderDto;
 import org.fleetguard.dto.WorkOrderExpenseDto;
+import org.fleetguard.dto.WorkOrderPauseDto;
 import org.fleetguard.dto.WorkOrderPhotoDto;
 import org.fleetguard.entity.WorkOrder;
 import org.fleetguard.entity.WorkOrderExpense;
@@ -10,6 +11,7 @@ import org.fleetguard.entity.WorkOrderPhoto;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 @Component
@@ -44,7 +46,10 @@ public class WorkOrderMapper {
                 photoDtos,
                 workOrder.getCreatedAt().toString(),
                 workOrder.getUpdatedAt().toString(),
-                workOrder.getFinalizedAt() == null ? null : workOrder.getFinalizedAt().toString()
+                workOrder.getFinalizedAt() == null ? null : workOrder.getFinalizedAt().toString(),
+                workOrder.getPausedAt() == null ? null : new WorkOrderPauseDto(workOrder.getPauseReason().toJson(),
+                        workOrder.getPauseComment(), workOrder.getPausedAt().toString()),
+                workOrder.pausedSecondsUntil(Instant.now())
         );
     }
 

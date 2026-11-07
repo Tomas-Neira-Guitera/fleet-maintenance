@@ -1,14 +1,21 @@
 package org.fleetguard.entity;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -80,6 +87,27 @@ public class WorkOrder {
 
     @Column(name = "finalized_at")
     private Instant finalizedAt;
+
+    // CAM-148: la pausa actual, mientras la OT está en espera (null si no lo está), y los segundos
+    // que estuvo en espera en las pausas ya terminadas (null es 0: las OTs de antes no lo tienen,
+    // y una columna nueva NOT NULL no se agrega bien con ddl-auto en una base que ya existe).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pause_reason", length = 30)
+    private WorkOrderPauseReason pauseReason;
+
+    @Column(name = "pause_comment", columnDefinition = "text")
+    private String pauseComment;
+
+    @Column(name = "paused_at")
+    private Instant pausedAt;
+
+    @Column(name = "paused_seconds")
+    private Long pausedSeconds;
+
+    /** CAM-148: el registro de cada pausa. Lo maneja la OT, así se cierra la pausa venga de donde venga el cambio. */
+    @OneToMany(mappedBy = "workOrder", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OrderBy("startedAt")
+    private List<WorkOrderPause> pauses = new ArrayList<>();
 
     protected WorkOrder() {
         // JPA
@@ -203,9 +231,39 @@ public class WorkOrder {
         return finalizedAt;
     }
 
+    /** De asignada a en proceso, o de vuelta desde en espera (CAM-148), que cierra la pausa. */
     public void start() {
+        endPause(Instant.now());
         this.status = WorkOrderStatus.EN_PROCESO;
         touch();
+    }
+
+    /** CAM-148: pasa a en espera, con el motivo. Queda registrada la pausa. */
+    public void pause(WorkOrderPauseReason reason, String comment) {
+        Instant now = Instant.now();
+        this.status = WorkOrderStatus.EN_ESPERA;
+        this.pauseReason = reason;
+        this.pauseComment = comment;
+        this.pausedAt = now;
+        pauses.add(new WorkOrderPause(this, reason, comment, now));
+        touch();
+    }
+
+    /** Suma la pausa en curso al total, cierra su registro y la limpia. Sin pausa en curso no hace nada. */
+    private void endPause(Instant at) {
+        if (pausedAt == null) {
+            return;
+        }
+        long seconds = Math.max(0, Duration.between(pausedAt, at).getSeconds());
+        this.pausedSeconds = (pausedSeconds == null ? 0 : pausedSeconds) + seconds;
+        pauses.stream().filter(pause -> pause.getEndedAt() == null).forEach(pause -> pause.end(at));
+        this.pauseReason = null;
+        this.pauseComment = null;
+        this.pausedAt = null;
+    }
+
+    public List<WorkOrderPause> getPauses() {
+        return pauses;
     }
 
     public void finalizeOrder(String closingDescription) {
@@ -215,14 +273,37 @@ public class WorkOrder {
         touch();
     }
 
+    /** Desde en espera también (CAM-148): la pausa se cierra en el momento de cancelar. */
     public void cancel() {
+        endPause(Instant.now());
         this.status = WorkOrderStatus.CANCELADA;
         touch();
     }
 
-    /** true mientras se puede seguir editando/agregando gastos y fotos (asignada o en_proceso). */
+    /** true mientras se puede seguir editando/agregando gastos y fotos (asignada, en proceso o en espera). */
     public boolean isOpen() {
-        return status == WorkOrderStatus.ASIGNADA || status == WorkOrderStatus.EN_PROCESO;
+        return status.isOpen();
+    }
+
+    public WorkOrderPauseReason getPauseReason() {
+        return pauseReason;
+    }
+
+    public String getPauseComment() {
+        return pauseComment;
+    }
+
+    public Instant getPausedAt() {
+        return pausedAt;
+    }
+
+    /** Segundos en espera hasta {@code now}: las pausas terminadas más la actual, si sigue en espera. */
+    public long pausedSecondsUntil(Instant now) {
+        long total = pausedSeconds == null ? 0 : pausedSeconds;
+        if (pausedAt != null) {
+            total += Math.max(0, Duration.between(pausedAt, now).getSeconds());
+        }
+        return total;
     }
 
     private void touch() {

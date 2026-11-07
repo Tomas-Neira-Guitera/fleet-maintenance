@@ -9,6 +9,7 @@ import org.fleetguard.entity.ScheduledMaintenance;
 import org.fleetguard.entity.User;
 import org.fleetguard.entity.WorkOrder;
 import org.fleetguard.entity.WorkOrderExecutionType;
+import org.fleetguard.entity.WorkOrderPauseReason;
 import org.fleetguard.entity.WorkOrderSourceType;
 import org.fleetguard.entity.WorkOrderStatus;
 import org.fleetguard.exception.MaintenanceConflictException;
@@ -34,6 +35,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -139,6 +141,24 @@ class ScheduledMaintenanceServiceTest {
         assertEquals(ScheduleStatus.SCHEDULED, schedule.getStatus());
         assertEquals(WorkOrderStatus.EN_PROCESO, workOrder.getStatus());
         verify(workOrderRepository, never()).save(any());
+    }
+
+    @Test
+    void workOrderOnHoldAlsoRequiresConfirmationAndItsPauseIsClosed() {
+        // CAM-148: en espera ya se empezó a trabajar, igual que en proceso.
+        WorkOrder workOrder = workOrderFor(schedule);
+        workOrder.start();
+        workOrder.pause(WorkOrderPauseReason.ESPERANDO_REPUESTO, null);
+
+        MaintenanceConflictException ex = assertThrows(MaintenanceConflictException.class,
+                () -> service.update(schedule.getId().toString(), cancel(null)));
+        assertEquals("WORK_ORDER_IN_PROGRESS", ex.getErrorCode());
+
+        service.update(schedule.getId().toString(), cancel(true));
+
+        assertEquals(WorkOrderStatus.CANCELADA, workOrder.getStatus());
+        assertNull(workOrder.getPausedAt());
+        assertNotNull(workOrder.getPauses().get(0).getEndedAt());
     }
 
     @Test
