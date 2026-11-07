@@ -163,6 +163,48 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
+  /api/vehicles/import:
+    post:
+      summary: Importar la flota desde un archivo (CAM-154)
+      description: >
+        Solo ADMIN. El navegador lee el CSV o Excel y manda las filas. Cada fila se
+        valida con las mismas reglas que el alta (CAM-25), más la patente repetida
+        dentro del archivo. Con dryRun=true es la vista previa y no guarda nada; sin
+        dryRun crea solo las filas válidas. Ver CAM-154-vehicle-import-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dryRun
+          in: query
+          schema: { type: boolean, default: false }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rows]
+              properties:
+                rows:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    $ref: "#/components/schemas/CreateVehicleRequest"
+      responses:
+        "200":
+          description: El resultado de cada fila.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleImportResult"
+        "401":
+          description: Sin token o con un token inválido.
+        "403":
+          description: El usuario no es ADMIN.
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
   /api/vehicles/{id}/history:
     get:
       summary: Historial de un vehículo (CAM-22)
@@ -2579,7 +2621,32 @@ components:
         vehicleType: { type: string }
         year: { type: integer }
         chassisNumber: { type: string }
-        odometerKm: { type: integer, description: Kilometraje inicial, default 0. }
+        odometerKm: { type: integer, description: Kilometraje inicial, default 0. No puede ser negativo (CAM-154). }
+
+    VehicleImportResult:
+      type: object
+      required: [total, valid, created, rows]
+      properties:
+        total: { type: integer }
+        valid: { type: integer, description: Filas sin errores. }
+        created: { type: integer, description: Vehículos creados; 0 en la vista previa. }
+        rows:
+          type: array
+          items:
+            type: object
+            required: [row, valid, errors]
+            properties:
+              row: { type: integer, description: Posición en el pedido, desde 1. }
+              plate: { type: string, nullable: true, description: La patente como se guarda (sin espacios y en mayúsculas). }
+              valid: { type: boolean }
+              errors:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    field: { type: string }
+                    message: { type: string }
+              vehicleId: { type: string, nullable: true, description: El vehículo creado; null en la vista previa o con errores. }
 
     UpdateVehicleRequest:
       type: object
