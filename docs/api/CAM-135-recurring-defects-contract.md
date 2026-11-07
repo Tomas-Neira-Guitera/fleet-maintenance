@@ -40,6 +40,13 @@ El nombre de un control puede cambiar (los ítems propios del vehículo se edita
 CAM-31), pero el id no. El nombre que se muestra es el que tenía en la falla más
 reciente.
 
+**CAM-144:** dos controles tienen un id en el pre-viaje y otro en el post-viaje:
+Luces (`ext-luces` y `post-luces`) y Fugas (`ext-fugas` y `post-fugas`). Se cuentan
+como un solo control, con la clave del pre-viaje (`ChecklistCatalog.controlKey`):
+el `itemId` del listado y el de `recurring_defect_alerts` es esa clave. Al revisar si
+ya se avisó, se miran también las marcas guardadas con el id del post-viaje, de antes
+de este cambio. `post-danos` no tiene equivalente y sigue contando aparte.
+
 ### 4. Cuándo se avisa, y una sola vez por ventana
 Al guardar una inspección con defectos, después del commit, se revisa cada control
 que falló. Si llegó al umbral y no se avisó ese control de ese vehículo en los

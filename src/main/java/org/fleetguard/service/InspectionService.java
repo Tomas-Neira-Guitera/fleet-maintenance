@@ -30,7 +30,9 @@ import org.fleetguard.repository.VehicleRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -40,6 +42,9 @@ import java.util.stream.Collectors;
 /** Caso de uso central de CAM-11: POST /api/inspections/{vehicleId}. Ver CAM-11-dvir-contract.md secciones 4 y 5. */
 @Service
 public class InspectionService {
+
+    // CAM-153: margen para un reloj del celular apenas adelantado; más que esto es un error.
+    static final Duration MAX_CLOCK_SKEW = Duration.ofMinutes(5);
 
     private final VehicleRepository vehicleRepository;
     private final TripRepository tripRepository;
@@ -83,6 +88,16 @@ public class InspectionService {
                     List.of(new ValidationErrorDetail("type", "Valor inválido.")));
         }
 
+        // CAM-153: un reintento de una inspección que ya llegó devuelve la guardada, sin volver a validar el
+        // estado del vehículo (que ya cambió por esa misma inspección).
+        String clientSubmissionId = parseClientSubmissionId(submission.clientSubmissionId());
+        if (clientSubmissionId != null) {
+            Optional<Inspection> existing = inspectionRepository.findByClientSubmissionId(clientSubmissionId);
+            if (existing.isPresent()) {
+                return replay(existing.get(), vehicleId, driver);
+            }
+        }
+
         Optional<Trip> openTrip = tripRepository.findFirstByVehicle_IdAndStatus(vehicleId, TripStatus.OPEN);
 
         if (type == InspectionType.PRE_TRIP) {
@@ -98,7 +113,8 @@ public class InspectionService {
         Map<String, String> labelById = checklist.stream()
                 .collect(Collectors.toMap(ChecklistItemDef::id, ChecklistItemDef::label));
 
-        Instant now = Instant.now();
+        // CAM-153: el viaje, la inspección y los defectos quedan con la hora en que el chofer la hizo.
+        Instant now = performedAt(submission.performedAt(), openTrip.filter(t -> type == InspectionType.POST_TRIP));
         Trip trip;
         if (type == InspectionType.PRE_TRIP) {
             trip = new Trip(vehicle, now, driver.id(), driver.username());
@@ -115,6 +131,7 @@ public class InspectionService {
 
         Inspection inspection = new Inspection(trip, vehicleId, driver.id().toString(), driver.username(), type, now,
                 outcome.odometerKm(), submission.notes(), outcome.hasBlockingDefect());
+        inspection.setClientSubmissionId(clientSubmissionId);
 
         for (ChecklistAnswerDto answerDto : outcome.recognizedAnswers()) {
             CheckOutcome checkOutcome = CheckOutcome.fromJson(answerDto.outcome());
@@ -163,6 +180,54 @@ public class InspectionService {
         }
 
         return new InspectionResultDto(inspectionMapper.toDto(inspection), tripMapper.toDto(trip));
+    }
+
+    /**
+     * CAM-153: sin performedAt, ahora. Un poco adelantada (reloj del celular) se toma como ahora; más adelantada
+     * es un error. Un post-viaje no puede ser anterior al inicio de su viaje: se lleva a ese momento.
+     */
+    private static Instant performedAt(String raw, Optional<Trip> tripToClose) {
+        Instant now = Instant.now();
+        if (raw == null || raw.isBlank()) {
+            return now;
+        }
+        Instant at;
+        try {
+            at = Instant.parse(raw.trim());
+        } catch (DateTimeParseException e) {
+            throw new InspectionValidationException("El campo performedAt no es una fecha válida.",
+                    List.of(new ValidationErrorDetail("performedAt", "Tiene que ser una fecha ISO-8601 con zona.")));
+        }
+        if (at.isAfter(now.plus(MAX_CLOCK_SKEW))) {
+            throw new InspectionValidationException("La fecha de la inspección es posterior a la actual.",
+                    List.of(new ValidationErrorDetail("performedAt", "No puede ser una fecha futura.")));
+        }
+        if (at.isAfter(now)) {
+            at = now;
+        }
+        Instant tripStart = tripToClose.map(Trip::getStartedAt).orElse(null);
+        return tripStart != null && at.isBefore(tripStart) ? tripStart : at;
+    }
+
+    private static String parseClientSubmissionId(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw.trim()).toString();
+        } catch (IllegalArgumentException e) {
+            throw new InspectionValidationException("El campo clientSubmissionId no es un UUID.",
+                    List.of(new ValidationErrorDetail("clientSubmissionId", "Valor inválido.")));
+        }
+    }
+
+    /** CAM-153: la misma respuesta que la primera vez. Si el id es de otro chofer u otro vehículo, es un conflicto. */
+    private InspectionResultDto replay(Inspection existing, UUID vehicleId, AuthenticatedUser driver) {
+        if (!existing.getVehicleId().equals(vehicleId) || !existing.getDriverId().equals(driver.id().toString())) {
+            throw new VehicleStateConflictException("DUPLICATE_SUBMISSION",
+                    "Ya hay otra inspección guardada con ese clientSubmissionId.");
+        }
+        return new InspectionResultDto(inspectionMapper.toDto(existing), tripMapper.toDto(existing.getTrip()));
     }
 
     /** CAM-89: el servidor es el que impide abrir un viaje con un vehículo que no puede salir. */

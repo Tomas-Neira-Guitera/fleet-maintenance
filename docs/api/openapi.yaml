@@ -163,6 +163,48 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
+  /api/vehicles/import:
+    post:
+      summary: Importar la flota desde un archivo (CAM-154)
+      description: >
+        Solo ADMIN. El navegador lee el CSV o Excel y manda las filas. Cada fila se
+        valida con las mismas reglas que el alta (CAM-25), más la patente repetida
+        dentro del archivo. Con dryRun=true es la vista previa y no guarda nada; sin
+        dryRun crea solo las filas válidas. Ver CAM-154-vehicle-import-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dryRun
+          in: query
+          schema: { type: boolean, default: false }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rows]
+              properties:
+                rows:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    $ref: "#/components/schemas/CreateVehicleRequest"
+      responses:
+        "200":
+          description: El resultado de cada fila.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleImportResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
   /api/vehicles/{id}/history:
     get:
       summary: Historial de un vehículo (CAM-22)
@@ -891,6 +933,44 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           description: VEHICLE_NOT_FOUND -- vehicleId no existe o no es un UUID
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/maintenance-compliance:
+    get:
+      summary: Indicadores de cumplimiento del mantenimiento (CAM-155)
+      description: >
+        Solo ADMIN, solo lectura. Para el período [from, to): cuántos
+        mantenimientos preventivos se hicieron a tiempo y cuántos después de
+        vencer, y las horas promedio entre que se reporta un defecto y se
+        resuelve. Las OTs abiertas por antigüedad son la foto de hoy y no
+        dependen del período. Ver CAM-155-maintenance-compliance-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Inicio del período (incluido). Instante ISO o fecha sola (YYYY-MM-DD, UTC).
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: true
+          description: Fin del período (excluido). Instante ISO, o fecha sola que incluye ese día entero.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceCompliance"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
@@ -2579,7 +2659,32 @@ components:
         vehicleType: { type: string }
         year: { type: integer }
         chassisNumber: { type: string }
-        odometerKm: { type: integer, description: Kilometraje inicial, default 0. }
+        odometerKm: { type: integer, description: Kilometraje inicial, default 0. No puede ser negativo (CAM-154). }
+
+    VehicleImportResult:
+      type: object
+      required: [total, valid, created, rows]
+      properties:
+        total: { type: integer }
+        valid: { type: integer, description: Filas sin errores. }
+        created: { type: integer, description: Vehículos creados; 0 en la vista previa. }
+        rows:
+          type: array
+          items:
+            type: object
+            required: [row, valid, errors]
+            properties:
+              row: { type: integer, description: Posición en el pedido, desde 1. }
+              plate: { type: string, nullable: true, description: La patente como se guarda (sin espacios y en mayúsculas). }
+              valid: { type: boolean }
+              errors:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    field: { type: string }
+                    message: { type: string }
+              vehicleId: { type: string, nullable: true, description: El vehículo creado; null en la vista previa o con errores. }
 
     UpdateVehicleRequest:
       type: object
@@ -2699,6 +2804,21 @@ components:
         notes:
           type: string
           description: Campo general de novedades, opcional (típicamente post-trip).
+        performedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            CAM-153: cuándo la hizo el chofer. Una inspección hecha sin conexión llega más tarde y el viaje,
+            la inspección y sus defectos quedan con esta hora. Sin el campo, la hora del servidor. Más de 5
+            minutos en el futuro es un 422. Ver CAM-153-offline-inspections-contract.md.
+        clientSubmissionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            CAM-153: id que arma el celular. Si llega otra vez (reintento después de un corte), se devuelve la
+            inspección ya guardada sin crear otra. Con el id de otro chofer u otro vehículo, 409 DUPLICATE_SUBMISSION.
 
     Trip:
       type: object
@@ -2761,6 +2881,23 @@ components:
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
         reportedBy: { type: string, nullable: true, description: "Nombre actual del chofer que reportó el defecto (CAM-85); en inspecciones anteriores, el nombre con el que se guardaron." }
         details: { type: string, nullable: true, description: "Descripción larga del defecto (CAM-32). description es el título corto." }
+        occurredOnTrip:
+          nullable: true
+          description: >-
+            CAM-146: presente si el defecto es del post-viaje y ese control dio OK en el pre-viaje del mismo viaje
+            (Daños nuevos en la carrocería, siempre). Null en el resto. Ver CAM-146-occurred-on-trip-contract.md.
+          allOf:
+            - $ref: "#/components/schemas/OccurredOnTrip"
+
+    OccurredOnTrip:
+      type: object
+      required: [tripId]
+      properties:
+        tripId: { type: string, format: uuid }
+        tripStartedAt: { type: string, format: date-time, nullable: true }
+        tripEndedAt: { type: string, format: date-time, nullable: true }
+        preTripInspectionId: { type: string, format: uuid, nullable: true, description: El pre-viaje en que el control dio OK. }
+        preTripAt: { type: string, format: date-time, nullable: true }
 
     VehicleHistory:
       type: object
@@ -3389,6 +3526,39 @@ components:
           nullable: true
           description: totalAmount / kmDriven, redondeado a 2 decimales; null cuando kmDriven es null.
 
+    MaintenanceCompliance:
+      type: object
+      description: GET /api/maintenance-compliance (CAM-155).
+      required: [from, to, preventive, defects, openWorkOrders]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        preventive:
+          type: object
+          description: >-
+            Mantenimientos hechos en el período. Cada uno se compara con el anterior del mismo plan en el mismo
+            vehículo más el intervalo del plan; el primero de cada plan no cuenta.
+          required: [onTime, late]
+          properties:
+            onTime: { type: integer }
+            late: { type: integer }
+            onTimePct: { type: number, nullable: true, description: Null si no hay ninguno. }
+        defects:
+          type: object
+          required: [resolved]
+          properties:
+            resolved: { type: integer, description: Defectos resueltos en el período. }
+            avgHours: { type: number, nullable: true, description: Horas promedio entre el reporte y la resolución. }
+        openWorkOrders:
+          type: object
+          description: OTs asignadas o en proceso hoy, por días desde que se crearon.
+          required: [total, under7Days, from7To30Days, over30Days]
+          properties:
+            total: { type: integer }
+            under7Days: { type: integer }
+            from7To30Days: { type: integer }
+            over30Days: { type: integer }
+
     Downtime:
       type: object
       description: Disponibilidad y reparaciones de GET /api/downtime (CAM-134).
@@ -3466,7 +3636,11 @@ components:
       properties:
         vehicleId: { type: string, format: uuid }
         plate: { type: string }
-        itemId: { type: string, description: Id del control del checklist. }
+        itemId:
+          type: string
+          description: >-
+            Id del control del checklist. CAM-144: Luces y Fugas del post-viaje cuentan con las del pre-viaje,
+            bajo el id del pre-viaje (ext-luces, ext-fugas).
         itemLabel: { type: string, description: Nombre del control en la falla más reciente (o el id, si no se guardó). }
         count: { type: integer, description: Fallas en la ventana. }
         lastReportedAt: { type: string, format: date-time }

@@ -304,6 +304,24 @@ for v in VEHICLES:
         assert a["status"] == target
         assignments.append(a)
 
+# CAM-155: en una flota real algunos mantenimientos se hacen después de vencer. A cerca de un tercio de los
+# intermedios (ni el primero, que no tiene con qué compararse, ni el último, que define el estado de hoy) se
+# los corre a un día con el 104-120 % del intervalo consumido. Generador aparte: el resto del seed no cambia.
+late_rng = random.Random(20261106)
+late_count = 0
+for a in assignments:
+    k, p, comps = a["vehicle"], PBY[a["plan"]], a["completions"]
+    for i in range(1, len(comps) - 1):
+        if late_rng.random() >= 0.35:
+            continue
+        prev_day, prev_km = comps[i - 1]
+        options = [d for d in range(comps[i][0] + 1, comps[i + 1][0] - 7)
+                   if is_idle(k, d) and 1.04 <= usage(p, prev_km, prev_day, km_at(k, d), d) <= 1.2]
+        if options:
+            d = late_rng.choice(options)
+            comps[i] = (d, km_at(k, d))
+            late_count += 1
+
 ABY = {(a["vehicle"], a["plan"]): a for a in assignments}
 
 # ---------------------------------------------------------------- inspecciones y defectos
@@ -632,6 +650,8 @@ for d in defects:
     else:
         new_wo(k, "DEFECT", title, work, "FINALIZADA", (d["day"], min(d["hh"] + 1, 21)), day_done=fix_day,
                defect=d["id"], started=(fix_day, 8))
+    # CAM-134/CAM-155: el defecto queda resuelto cuando se finalizó su OT.
+    d["resolved"] = work_orders[-1]["finalized"]
 
 # OTs manuales del historial
 MANUAL = [
@@ -783,7 +803,7 @@ KNOWN_COLUMNS = {
     "trips": "id vehicle_id status started_at ended_at opened_by_id opened_by_name closed_by_id closed_by_name",
     "inspections": "id trip_id vehicle_id driver_id driver_name type timestamp odometer_km notes has_blocking_defect",
     "inspection_answers": "id inspection_id item_id item_label outcome number_value",
-    "defects": "id inspection_answer_id severity description details photo_url created_at status",
+    "defects": "id inspection_answer_id severity description details photo_url created_at status resolved_at",
     "maintenance_plans": "id name category interval_type interval_km interval_days active document_type",
     "vehicle_maintenance_assignments": "id vehicle_id maintenance_plan_id last_done_km last_done_date next_due_km next_due_date active",
     "maintenance_completions": "id assignment_id completed_at completed_km work_order_id notes",
@@ -900,10 +920,11 @@ insert("vehicle_checklist_items", ["id", "vehicle_id", "label", "type", "section
        [[q(c["id"]), q(VBY[c["vehicle"]]["id"]), q(c["label"]), q(c["type"]), q(c["section"]), "true" if c["active"] else "false", ts(-30, 10)]
         for c in checklist_extras])
 w("-- Defectos")
-insert("defects", ["id", "inspection_answer_id", "severity", "description", "details", "photo_url", "created_at", "status"],
+insert("defects", ["id", "inspection_answer_id", "severity", "description", "details", "photo_url", "created_at", "status",
+                   "resolved_at"],
        [[q(d["id"]), q(d["answer"]), q(d["severity"]), q(d["description"]), q(DEFECT_DETAILS.get(d["description"])),
          q(d["photo"]), ts(d["day"], d["hh"], d["mm"]),
-         q(d["status"])] for d in defects])
+         q(d["status"]), ts(*d["resolved"]) if d.get("resolved") else "null"] for d in defects])
 w("-- Programaciones (calendario)")
 insert("scheduled_maintenances", ["id", "vehicle_id", "source_type", "assignment_id", "defect_id", "title", "scheduled_at",
                                   "status", "notes", "created_at", "updated_at"],
@@ -943,7 +964,7 @@ import collections
 print("trips", len(trips), "open", sum(t["open"] for t in trips), "inspections", len(inspections), "answers",
       sum(len(i["answers"]) for i in inspections))
 print("defects", len(defects), collections.Counter((d["severity"], d["status"]) for d in defects))
-print("assignments", len(assignments), "completions", len(completions))
+print("assignments", len(assignments), "completions", len(completions), "late", late_count)
 print("work orders", len(work_orders), collections.Counter(o["status"] for o in work_orders))
 print("schedules", len(schedules), collections.Counter(s["status"] for s in schedules))
 print("expenses", len(expenses), "total", sum(e["amount"] for e in expenses))

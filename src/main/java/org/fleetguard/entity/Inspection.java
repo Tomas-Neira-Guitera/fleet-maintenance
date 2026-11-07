@@ -55,6 +55,10 @@ public class Inspection {
     @Column(name = "has_blocking_defect", nullable = false)
     private boolean hasBlockingDefect;
 
+    // CAM-153: id que manda el celular, para no guardar dos veces la misma inspección si reintenta.
+    @Column(name = "client_submission_id", unique = true)
+    private String clientSubmissionId;
+
     @OneToMany(mappedBy = "inspection", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<InspectionAnswer> answers = new ArrayList<>();
 
@@ -122,5 +126,13 @@ public class Inspection {
 
     public List<InspectionAnswer> getAnswers() {
         return answers;
+    }
+
+    public String getClientSubmissionId() {
+        return clientSubmissionId;
+    }
+
+    public void setClientSubmissionId(String clientSubmissionId) {
+        this.clientSubmissionId = clientSubmissionId;
     }
 }

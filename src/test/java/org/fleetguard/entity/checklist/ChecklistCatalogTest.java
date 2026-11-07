@@ -27,4 +27,15 @@ class ChecklistCatalogTest {
         List<String> ids = ChecklistCatalog.postTripItems().stream().map(ChecklistItemDef::id).toList();
         assertEquals(List.of("post-danos", "post-luces", "post-fugas", "post-km"), ids);
     }
+
+    @Test
+    void lucesYFugasDelPostViajeSonElMismoControlQueEnElPreViaje() {
+        assertEquals("ext-luces", ChecklistCatalog.controlKey("post-luces"));
+        assertEquals("ext-fugas", ChecklistCatalog.controlKey("post-fugas"));
+        assertEquals("ext-luces", ChecklistCatalog.controlKey("ext-luces"));
+        assertEquals("post-danos", ChecklistCatalog.controlKey("post-danos"));
+        assertEquals("extra-123", ChecklistCatalog.controlKey("extra-123"));
+        assertEquals(List.of("ext-luces", "post-luces"), ChecklistCatalog.itemIdsOfControl("ext-luces"));
+        assertEquals(List.of("int-testigos"), ChecklistCatalog.itemIdsOfControl("int-testigos"));
+    }
 }

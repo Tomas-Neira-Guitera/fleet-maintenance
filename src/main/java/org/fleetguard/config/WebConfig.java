@@ -41,7 +41,7 @@ public class WebConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(requiring(Role.ADMIN))
                 .addPathPatterns("/users", "/users/**", "/expenses", "/expenses/**", "/vehicles/*/costs", "/defects/recurring",
-                        "/downtime");
+                        "/downtime", "/maintenance-compliance");
         registry.addInterceptor(requiring(Role.CHOFER)).addPathPatterns("/inspections/**");
         registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER, Role.TECNICO))
                 .addPathPatterns("/push/**", "/notifications", "/notifications/**");
@@ -50,6 +50,8 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns("/notification-settings", "/notification-settings/**", "/maintenance-plans/*/notifications");
         // CAM-127: documentación de los vehículos, solo el admin.
         registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/vehicles/*/documents", "/vehicles/*/documents/**");
+        // CAM-154: importar la flota desde un archivo, solo el admin.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/vehicles/import");
     }
 
     private JwtAuthInterceptor requiring(Role... roles) {

@@ -6,12 +6,22 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
 
     List<Inspection> findByVehicleIdOrderByTimestampDesc(UUID vehicleId);
+
+    /** CAM-153: la inspección que ya se guardó con ese id del celular, si llegó antes. */
+    Optional<Inspection> findByClientSubmissionId(String clientSubmissionId);
+
+    /** CAM-146: los pre-viajes de esos viajes, con el viaje y sus respuestas en la misma consulta. */
+    @Query("select distinct i from Inspection i join fetch i.trip t left join fetch i.answers "
+            + "where t.id in :tripIds and i.type = org.fleetguard.entity.InspectionType.PRE_TRIP")
+    List<Inspection> findPreTripsWithAnswersByTripIds(@Param("tripIds") Collection<UUID> tripIds);
 
     /** Inspecciones hechas en [from, to), por chofer -- CAM-91. */
     @Query("select new org.fleetguard.repository.DriverCount(i.driverId, count(i)) from Inspection i "
