@@ -7,6 +7,7 @@ import org.fleetguard.entity.InspectionAnswer;
 import org.fleetguard.entity.NotificationType;
 import org.fleetguard.entity.RecurringDefectAlert;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.checklist.ChecklistCatalog;
 import org.fleetguard.repository.DefectRepository;
 import org.fleetguard.repository.RecurringDefectAlertRepository;
 import org.fleetguard.repository.VehicleRepository;
@@ -27,7 +28,8 @@ import java.util.stream.Collectors;
 /**
  * CAM-135: un control del checklist es recurrente cuando falla en el mismo vehículo
  * {@code threshold} veces en los últimos {@code windowDays} días. Cuentan todos los defectos,
- * bloqueantes o no y resueltos o no. Ver docs/api/CAM-135-recurring-defects-contract.md.
+ * bloqueantes o no y resueltos o no. CAM-144: un control del post-viaje que es el mismo que uno del
+ * pre-viaje cuenta junto con él. Ver docs/api/CAM-135-recurring-defects-contract.md.
  */
 @Service
 public class RecurringDefectService {
@@ -101,10 +103,10 @@ public class RecurringDefectService {
         Map<String, List<Defect>> byItem = defectRepository.findReportedSinceByVehicleIdWithInspection(vehicleId, from)
                 .stream()
                 .filter(RecurringDefectService::isControl)
-                .collect(Collectors.groupingBy(defect -> defect.getInspectionAnswer().getItemId()));
+                .collect(Collectors.groupingBy(RecurringDefectService::controlKey));
 
         int sent = 0;
-        Set<String> reported = new LinkedHashSet<>(itemIds);
+        Set<String> reported = new LinkedHashSet<>(itemIds.stream().map(ChecklistCatalog::controlKey).toList());
         for (String itemId : reported) {
             List<Defect> failures = byItem.getOrDefault(itemId, List.of());
             if (failures.size() < threshold) {
@@ -115,7 +117,8 @@ public class RecurringDefectService {
             // falla, se deshace y el próximo defecto de ese control lo vuelve a intentar.
             boolean[] marked = {false};
             boolean committed = dispatcher.dispatch("defecto recurrente " + itemId + " en " + plate, () -> {
-                if (alertRepository.existsByVehicleIdAndItemIdAndSentAtAfter(vehicleId, itemId, from)) {
+                if (alertRepository.existsByVehicleIdAndItemIdInAndSentAtAfter(vehicleId,
+                        ChecklistCatalog.itemIdsOfControl(itemId), from)) {
                     return;
                 }
                 alertRepository.save(new RecurringDefectAlert(vehicleId, itemId, now));
@@ -160,8 +163,11 @@ public class RecurringDefectService {
     }
 
     private static Key key(Defect defect) {
-        InspectionAnswer answer = defect.getInspectionAnswer();
-        return new Key(answer.getInspection().getVehicleId(), answer.getItemId());
+        return new Key(defect.getInspectionAnswer().getInspection().getVehicleId(), controlKey(defect));
+    }
+
+    private static String controlKey(Defect defect) {
+        return ChecklistCatalog.controlKey(defect.getInspectionAnswer().getItemId());
     }
 
     private record Key(UUID vehicleId, String itemId) {

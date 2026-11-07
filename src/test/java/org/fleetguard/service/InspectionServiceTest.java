@@ -34,6 +34,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.ArgumentCaptor;
 
 import java.lang.reflect.Field;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -166,6 +167,95 @@ class InspectionServiceTest {
         assertEquals(12345.0, saved.getOdometerKm());
         assertEquals(7, saved.getAnswers().size());
         assertFalse(saved.isHasBlockingDefect());
+    }
+
+    // --- CAM-153: inspección hecha sin conexión ---
+
+    @Test
+    void unaInspeccionHechaSinConexionQuedaConLaHoraEnQueSeHizo() {
+        noOpenTrip();
+        Instant performedAt = Instant.now().minus(Duration.ofHours(3));
+        List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-luces", "defect",
+                null, new DefectDetailDto("non-blocking", "Farol roto", null, null)));
+
+        InspectionResultDto result = service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip",
+                answers, null, performedAt.toString(), UUID.randomUUID().toString()), driver);
+
+        Inspection saved = savedInspection();
+        assertEquals(performedAt, saved.getTimestamp());
+        assertEquals(performedAt.toString(), result.trip().startedAt());
+        Defect defect = saved.getAnswers().stream().map(InspectionAnswer::getDefect).filter(d -> d != null)
+                .findFirst().orElseThrow();
+        assertEquals(performedAt, defect.getCreatedAt());
+    }
+
+    @Test
+    void unPostViajeAnteriorAlInicioDelViajeQuedaEnElInicio() throws Exception {
+        Trip trip = openTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("post-trip", postTripAllOk(), null,
+                trip.getStartedAt().minus(Duration.ofMinutes(10)).toString(), null), driver);
+
+        assertEquals(trip.getStartedAt(), savedInspection().getTimestamp());
+        assertEquals(trip.getStartedAt(), trip.getEndedAt());
+    }
+
+    @Test
+    void unaFechaFuturaOInvalidaSeRechaza() {
+        noOpenTrip();
+        String future = Instant.now().plus(Duration.ofHours(1)).toString();
+
+        assertThrows(InspectionValidationException.class, () -> service.submit(vehicle.getId().toString(),
+                new InspectionSubmissionDto("pre-trip", preTripAllOk(), null, future, null), driver));
+        assertThrows(InspectionValidationException.class, () -> service.submit(vehicle.getId().toString(),
+                new InspectionSubmissionDto("pre-trip", preTripAllOk(), null, "ayer", null), driver));
+        verify(inspectionRepository, never()).save(any());
+    }
+
+    @Test
+    void elMismoEnvioRepetidoDevuelveLaInspeccionGuardadaSinCrearOtra() throws Exception {
+        String submissionId = UUID.randomUUID().toString();
+        Trip trip = new Trip(vehicle, Instant.now().minusSeconds(600), driver.id(), driver.username());
+        setId(trip, UUID.randomUUID());
+        Inspection existing = new Inspection(trip, vehicle.getId(), driver.id().toString(), "chofer1",
+                InspectionType.PRE_TRIP, trip.getStartedAt(), 12345.0, null, false);
+        setId(existing, UUID.randomUUID());
+        existing.setClientSubmissionId(submissionId);
+        when(inspectionRepository.findByClientSubmissionId(submissionId)).thenReturn(Optional.of(existing));
+        // El viaje ya está abierto por esa misma inspección: un pre-viaje nuevo daría 409.
+        when(tripRepository.findFirstByVehicle_IdAndStatus(vehicle.getId(), TripStatus.OPEN)).thenReturn(Optional.of(trip));
+
+        InspectionResultDto result = service.submit(vehicle.getId().toString(),
+                new InspectionSubmissionDto("pre-trip", preTripAllOk(), null, null, submissionId), driver);
+
+        assertEquals(existing.getId().toString(), result.inspection().id());
+        verify(inspectionRepository, never()).save(any());
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    void elIdDeEnvioDeOtroChoferEsUnConflicto() throws Exception {
+        String submissionId = UUID.randomUUID().toString();
+        Trip trip = new Trip(vehicle, Instant.now(), otherDriver.id(), otherDriver.username());
+        Inspection existing = new Inspection(trip, vehicle.getId(), otherDriver.id().toString(), "chofer2",
+                InspectionType.PRE_TRIP, Instant.now(), 12345.0, null, false);
+        when(inspectionRepository.findByClientSubmissionId(submissionId)).thenReturn(Optional.of(existing));
+
+        VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class,
+                () -> service.submit(vehicle.getId().toString(),
+                        new InspectionSubmissionDto("pre-trip", preTripAllOk(), null, null, submissionId), driver));
+        assertEquals("DUPLICATE_SUBMISSION", ex.getErrorCode());
+    }
+
+    @Test
+    void elIdDeEnvioSeGuardaConLaInspeccion() {
+        noOpenTrip();
+        String submissionId = UUID.randomUUID().toString();
+
+        service.submit(vehicle.getId().toString(),
+                new InspectionSubmissionDto("pre-trip", preTripAllOk(), null, null, submissionId), driver);
+
+        assertEquals(submissionId, savedInspection().getClientSubmissionId());
     }
 
     @Test

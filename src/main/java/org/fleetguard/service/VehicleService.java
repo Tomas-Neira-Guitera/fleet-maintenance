@@ -269,6 +269,22 @@ public class VehicleService {
     /** POST /api/vehicles -- CAM-25. */
     @Transactional
     public VehicleSummaryDto create(CreateVehicleRequest request) {
+        List<FieldValidationErrorDetail> details = validateNew(request);
+        if (!details.isEmpty()) {
+            throw new VehicleValidationException("Datos inválidos para crear el vehículo", details);
+        }
+
+        if (vehicleRepository.existsByPlateIgnoreCase(request.plate())) {
+            throw new VehicleStateConflictException("DUPLICATE_PLATE",
+                    "Ya existe un vehículo con la patente " + request.plate());
+        }
+
+        Vehicle vehicle = vehicleRepository.save(newVehicle(request));
+        return vehicleMapper.toSummary(vehicle, null, List.of());
+    }
+
+    /** Reglas de un alta (CAM-25); CAM-154 las usa también para cada fila importada. */
+    static List<FieldValidationErrorDetail> validateNew(CreateVehicleRequest request) {
         List<FieldValidationErrorDetail> details = new ArrayList<>();
         if (request.plate() == null || request.plate().isBlank()) {
             details.add(new FieldValidationErrorDetail("plate", "La patente es obligatoria"));
@@ -280,15 +296,13 @@ public class VehicleService {
             details.add(new FieldValidationErrorDetail("model", "El modelo es obligatorio"));
         }
         validateYear(request.year(), details);
-        if (!details.isEmpty()) {
-            throw new VehicleValidationException("Datos inválidos para crear el vehículo", details);
+        if (request.odometerKm() != null && request.odometerKm() < 0) {
+            details.add(new FieldValidationErrorDetail("odometerKm", "Los kilómetros no pueden ser negativos"));
         }
+        return details;
+    }
 
-        if (vehicleRepository.existsByPlateIgnoreCase(request.plate())) {
-            throw new VehicleStateConflictException("DUPLICATE_PLATE",
-                    "Ya existe un vehículo con la patente " + request.plate());
-        }
-
+    static Vehicle newVehicle(CreateVehicleRequest request) {
         Vehicle vehicle = new Vehicle(request.plate(), request.brand(), request.model());
         vehicle.setVehicleType(request.vehicleType());
         vehicle.setYear(request.year());
@@ -296,8 +310,7 @@ public class VehicleService {
         if (request.odometerKm() != null) {
             vehicle.setOdometerKm(request.odometerKm());
         }
-        vehicle = vehicleRepository.save(vehicle);
-        return vehicleMapper.toSummary(vehicle, null, List.of());
+        return vehicle;
     }
 
     /** PATCH /api/vehicles/{id} -- CAM-25. Campos ausentes no se modifican. */
@@ -373,7 +386,7 @@ public class VehicleService {
                 .orElseThrow(() -> new VehicleNotFoundException(id));
     }
 
-    private void validateYear(Integer year, List<FieldValidationErrorDetail> details) {
+    private static void validateYear(Integer year, List<FieldValidationErrorDetail> details) {
         if (year == null) {
             return;
         }

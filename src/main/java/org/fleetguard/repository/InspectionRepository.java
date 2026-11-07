@@ -20,6 +20,14 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
     @Query("select i from Inspection i join fetch i.trip where i.vehicleId = :vehicleId order by i.timestamp desc")
     List<Inspection> findByVehicleIdWithTripOrderByTimestampDesc(@Param("vehicleId") UUID vehicleId);
 
+    /** CAM-153: la inspección que ya se guardó con ese id del celular, si llegó antes. */
+    Optional<Inspection> findByClientSubmissionId(String clientSubmissionId);
+
+    /** CAM-146: los pre-viajes de esos viajes, con el viaje y sus respuestas en la misma consulta. */
+    @Query("select distinct i from Inspection i join fetch i.trip t left join fetch i.answers "
+            + "where t.id in :tripIds and i.type = org.fleetguard.entity.InspectionType.PRE_TRIP")
+    List<Inspection> findPreTripsWithAnswersByTripIds(@Param("tripIds") Collection<UUID> tripIds);
+
     /** Inspecciones hechas en [from, to), por chofer -- CAM-91. Un defecto reportado en viaje no es una (CAM-139). */
     @Query("select new org.fleetguard.repository.DriverCount(i.driverId, count(i)) from Inspection i "
             + "where i.timestamp >= :from and i.timestamp < :to "

@@ -34,6 +34,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -52,7 +53,7 @@ class VehicleHistoryServiceTest {
     private final UserRepository userRepository = mock(UserRepository.class);
     private final VehicleHistoryService service = new VehicleHistoryService(vehicleRepository, inspectionRepository,
             defectRepository, completionRepository, new UserNameService(userRepository), new VehicleHistoryMapper(),
-            new DefectMapper());
+            new DefectMapper(), new TripDamageService(inspectionRepository));
 
     @Test
     void vehiculoSinHistorialDevuelveTresListasVacias() {
@@ -185,6 +186,39 @@ class VehicleHistoryServiceTest {
 
         assertEquals("Juan Pérez", result.inspections().get(0).driverName());
         assertEquals("Juan Pérez", result.defects().get(0).reportedBy());
+    }
+
+    @Test
+    void unDefectoDelPostViajeQueDioOkEnElPreViajeVieneMarcadoComoOcurridoEnElViaje() throws Exception {
+        UUID id = UUID.randomUUID();
+        Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
+        when(vehicleRepository.findById(id)).thenReturn(Optional.of(vehicle));
+        Trip trip = new Trip(vehicle, Instant.parse("2026-11-02T11:00:00Z"));
+        setId(trip, UUID.randomUUID());
+
+        Inspection preTrip = new Inspection(trip, id, "driver-1", "Carlos Gómez", InspectionType.PRE_TRIP,
+                Instant.parse("2026-11-02T11:00:00Z"), 50000.0, null, false);
+        setId(preTrip, UUID.randomUUID());
+        preTrip.addAnswer(new InspectionAnswer("ext-luces", CheckOutcome.OK, null));
+        Inspection postTrip = new Inspection(trip, id, "driver-1", "Carlos Gómez", InspectionType.POST_TRIP,
+                Instant.parse("2026-11-02T20:00:00Z"), 50300.0, null, false);
+        setId(postTrip, UUID.randomUUID());
+        InspectionAnswer answer = new InspectionAnswer("post-luces", CheckOutcome.DEFECT, null);
+        postTrip.addAnswer(answer);
+        Defect defect = new Defect(DefectSeverity.NON_BLOCKING, "Farol trasero roto", null,
+                Instant.parse("2026-11-02T20:00:00Z"));
+        setId(defect, UUID.randomUUID());
+        answer.attachDefect(defect);
+
+        when(inspectionRepository.findByVehicleIdWithTripOrderByTimestampDesc(id)).thenReturn(List.of(postTrip, preTrip));
+        when(inspectionRepository.findPreTripsWithAnswersByTripIds(Set.of(trip.getId()))).thenReturn(List.of(preTrip));
+        when(defectRepository.findByVehicleIdWithInspection(id)).thenReturn(List.of(defect));
+        when(completionRepository.findByVehicleIdWithPlan(id)).thenReturn(List.of());
+
+        VehicleHistoryDto result = service.getHistory(id.toString());
+
+        assertEquals(trip.getId().toString(), result.defects().get(0).occurredOnTrip().tripId());
+        assertEquals(preTrip.getId().toString(), result.defects().get(0).occurredOnTrip().preTripInspectionId());
     }
 
     private static void setId(Object entity, UUID id) throws Exception {
