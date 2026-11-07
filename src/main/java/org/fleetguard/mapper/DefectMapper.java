@@ -1,6 +1,7 @@
 package org.fleetguard.mapper;
 
 import org.fleetguard.dto.DefectDto;
+import org.fleetguard.dto.OccurredOnTripDto;
 import org.fleetguard.entity.Defect;
 import org.fleetguard.entity.Inspection;
 import org.springframework.stereotype.Component;
@@ -12,6 +13,12 @@ public class DefectMapper {
 
     /** currentNames: nombre actual por id de usuario (UserNameService); sin dato, el guardado en la inspección. */
     public DefectDto toDto(Defect defect, String vehicleId, String vehiclePlate, Map<String, String> currentNames) {
+        return toDto(defect, vehicleId, vehiclePlate, currentNames, null);
+    }
+
+    /** CAM-146: occurredOnTrip lo calcula TripDamageService; null si no ocurrió en el viaje. */
+    public DefectDto toDto(Defect defect, String vehicleId, String vehiclePlate, Map<String, String> currentNames,
+                           OccurredOnTripDto occurredOnTrip) {
         Inspection inspection = defect.getInspectionAnswer().getInspection();
         String reportedBy = currentNames.getOrDefault(inspection.getDriverId(), inspection.getDriverName());
         return new DefectDto(
@@ -24,7 +31,8 @@ public class DefectMapper {
                 vehiclePlate,
                 defect.getStatus(),
                 reportedBy,
-                defect.getDetails()
+                defect.getDetails(),
+                occurredOnTrip
         );
     }
 }

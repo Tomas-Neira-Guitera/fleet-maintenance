@@ -2761,6 +2761,23 @@ components:
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
         reportedBy: { type: string, nullable: true, description: "Nombre actual del chofer que reportó el defecto (CAM-85); en inspecciones anteriores, el nombre con el que se guardaron." }
         details: { type: string, nullable: true, description: "Descripción larga del defecto (CAM-32). description es el título corto." }
+        occurredOnTrip:
+          nullable: true
+          description: >-
+            CAM-146: presente si el defecto es del post-viaje y ese control dio OK en el pre-viaje del mismo viaje
+            (Daños nuevos en la carrocería, siempre). Null en el resto. Ver CAM-146-occurred-on-trip-contract.md.
+          allOf:
+            - $ref: "#/components/schemas/OccurredOnTrip"
+
+    OccurredOnTrip:
+      type: object
+      required: [tripId]
+      properties:
+        tripId: { type: string, format: uuid }
+        tripStartedAt: { type: string, format: date-time, nullable: true }
+        tripEndedAt: { type: string, format: date-time, nullable: true }
+        preTripInspectionId: { type: string, format: uuid, nullable: true, description: El pre-viaje en que el control dio OK. }
+        preTripAt: { type: string, format: date-time, nullable: true }
 
     VehicleHistory:
       type: object
