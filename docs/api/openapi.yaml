@@ -2699,6 +2699,21 @@ components:
         notes:
           type: string
           description: Campo general de novedades, opcional (típicamente post-trip).
+        performedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            CAM-153: cuándo la hizo el chofer. Una inspección hecha sin conexión llega más tarde y el viaje,
+            la inspección y sus defectos quedan con esta hora. Sin el campo, la hora del servidor. Más de 5
+            minutos en el futuro es un 422. Ver CAM-153-offline-inspections-contract.md.
+        clientSubmissionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            CAM-153: id que arma el celular. Si llega otra vez (reintento después de un corte), se devuelve la
+            inspección ya guardada sin crear otra. Con el id de otro chofer u otro vehículo, 409 DUPLICATE_SUBMISSION.
 
     Trip:
       type: object
