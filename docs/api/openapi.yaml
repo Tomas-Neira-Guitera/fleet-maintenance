@@ -3466,7 +3466,11 @@ components:
       properties:
         vehicleId: { type: string, format: uuid }
         plate: { type: string }
-        itemId: { type: string, description: Id del control del checklist. }
+        itemId:
+          type: string
+          description: >-
+            Id del control del checklist. CAM-144: Luces y Fugas del post-viaje cuentan con las del pre-viaje,
+            bajo el id del pre-viaje (ext-luces, ext-fugas).
         itemLabel: { type: string, description: Nombre del control en la falla más reciente (o el id, si no se guardó). }
         count: { type: integer, description: Fallas en la ventana. }
         lastReportedAt: { type: string, format: date-time }

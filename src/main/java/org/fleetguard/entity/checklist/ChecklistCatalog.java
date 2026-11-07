@@ -2,6 +2,8 @@ package org.fleetguard.entity.checklist;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.fleetguard.entity.checklist.ChecklistItemType.CHECK;
 import static org.fleetguard.entity.checklist.ChecklistItemType.NUMBER;
@@ -38,7 +40,27 @@ public final class ChecklistCatalog {
             new ChecklistItemDef(ODOMETER_ITEM_ID_POST_TRIP, "Kilómetros finales", NUMBER, POSTTRIP, true)
     );
 
+    // CAM-144: controles del post-viaje que son el mismo control que uno del pre-viaje.
+    private static final Map<String, String> SAME_CONTROL_IN_PRE_TRIP = Map.of(
+            "post-luces", "ext-luces",
+            "post-fugas", "ext-fugas"
+    );
+
     private ChecklistCatalog() {
+    }
+
+    /** La clave del control: el id del pre-viaje si el ítem tiene uno equivalente, si no el mismo id. */
+    public static String controlKey(String itemId) {
+        return SAME_CONTROL_IN_PRE_TRIP.getOrDefault(itemId, itemId);
+    }
+
+    /** Todos los itemIds que son ese control (la clave y sus equivalentes del post-viaje). */
+    public static List<String> itemIdsOfControl(String controlKey) {
+        return Stream.concat(Stream.of(controlKey), SAME_CONTROL_IN_PRE_TRIP.entrySet().stream()
+                        .filter(entry -> entry.getValue().equals(controlKey))
+                        .map(Map.Entry::getKey))
+                .sorted()
+                .toList();
     }
 
     public static List<ChecklistItemDef> preTripItems() {

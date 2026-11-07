@@ -157,8 +157,8 @@ class RecurringDefectServiceTest {
     void unCuartoDefectoDentroDeLaVentanaNoRepiteElAviso() throws Exception {
         when(defectRepository.findReportedSinceByVehicleIdWithInspection(vehicle.getId(), WINDOW_START))
                 .thenReturn(List.of(brakes(vehicle, 20), brakes(vehicle, 10), brakes(vehicle, 5), brakes(vehicle, 0)));
-        when(alertRepository.existsByVehicleIdAndItemIdAndSentAtAfter(vehicle.getId(), "frenos", WINDOW_START))
-                .thenReturn(true);
+        when(alertRepository.existsByVehicleIdAndItemIdInAndSentAtAfter(vehicle.getId(), List.of("frenos"),
+                WINDOW_START)).thenReturn(true);
 
         assertEquals(0, service.alertIfRecurring(vehicle.getId(), "AB123CD", List.of("frenos")));
 
@@ -197,6 +197,55 @@ class RecurringDefectServiceTest {
         verify(notificationService).notifyConfiguredRecipients(NotificationType.RECURRING_DEFECT,
                 "Defecto recurrente en AB123CD", "frenos de AB123CD: 3 defectos en 30 días.",
                 "/vehiculos/" + vehicle.getId());
+    }
+
+    // --- CAM-144: el mismo control en el pre-viaje y el post-viaje ---
+
+    @Test
+    void lasFallasDeLucesDelPreViajeYDelPostViajeSumanJuntas() throws Exception {
+        when(defectRepository.findReportedSinceByVehicleIdWithInspection(vehicle.getId(), WINDOW_START))
+                .thenReturn(List.of(defect(vehicle, "ext-luces", "Luces", DefectSeverity.NON_BLOCKING, 20),
+                        defect(vehicle, "post-luces", "Luces", DefectSeverity.NON_BLOCKING, 10),
+                        defect(vehicle, "post-luces", "Luces", DefectSeverity.NON_BLOCKING, 0)));
+
+        assertEquals(1, service.alertIfRecurring(vehicle.getId(), "AB123CD", List.of("post-luces")));
+
+        ArgumentCaptor<RecurringDefectAlert> saved = ArgumentCaptor.forClass(RecurringDefectAlert.class);
+        verify(alertRepository).save(saved.capture());
+        assertEquals("ext-luces", saved.getValue().getItemId());
+        verify(notificationService).notifyConfiguredRecipients(NotificationType.RECURRING_DEFECT,
+                "Defecto recurrente en AB123CD", "Luces de AB123CD: 3 defectos en 30 días.",
+                "/vehiculos/" + vehicle.getId());
+    }
+
+    @Test
+    void unaMarcaViejaConElIdDelPostViajeEvitaRepetirElAviso() throws Exception {
+        when(defectRepository.findReportedSinceByVehicleIdWithInspection(vehicle.getId(), WINDOW_START))
+                .thenReturn(List.of(defect(vehicle, "post-fugas", "Fugas visibles", DefectSeverity.NON_BLOCKING, 20),
+                        defect(vehicle, "post-fugas", "Fugas visibles", DefectSeverity.NON_BLOCKING, 10),
+                        defect(vehicle, "ext-fugas", "Fugas visibles debajo del vehículo",
+                                DefectSeverity.NON_BLOCKING, 0)));
+        when(alertRepository.existsByVehicleIdAndItemIdInAndSentAtAfter(vehicle.getId(),
+                List.of("ext-fugas", "post-fugas"), WINDOW_START)).thenReturn(true);
+
+        assertEquals(0, service.alertIfRecurring(vehicle.getId(), "AB123CD", List.of("ext-fugas")));
+
+        verify(alertRepository, never()).save(any());
+    }
+
+    @Test
+    void elListadoMuestraLucesDelPreYDelPostViajeComoUnSoloControl() throws Exception {
+        when(defectRepository.findReportedSinceWithInspection(WINDOW_START))
+                .thenReturn(List.of(defect(vehicle, "ext-luces", "Luces", DefectSeverity.NON_BLOCKING, 15),
+                        defect(vehicle, "ext-luces", "Luces", DefectSeverity.NON_BLOCKING, 8),
+                        defect(vehicle, "post-luces", "Luces", DefectSeverity.NON_BLOCKING, 4),
+                        defect(vehicle, "post-luces", "Luces", DefectSeverity.NON_BLOCKING, 1)));
+
+        RecurringDefectsDto result = service.list(null);
+
+        assertEquals(1, result.items().size());
+        assertEquals("ext-luces", result.items().get(0).itemId());
+        assertEquals(4, result.items().get(0).count());
     }
 
     // --- listado ---
