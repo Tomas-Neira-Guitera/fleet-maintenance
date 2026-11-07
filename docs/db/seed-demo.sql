@@ -60,10 +60,12 @@ end $$;
 
 -- ddl-auto no actualiza el CHECK que Hibernate arma para un enum en una base que ya existe: un valor
 -- nuevo da 500. Se borran (el valor lo valida el enum de Java): en_espera de las OTs (CAM-148) y los
--- tipos de aviso nuevos (CAM-152).
+-- tipos de aviso nuevos (CAM-152) y el
+-- reporte en viaje de las inspecciones (CAM-139).
 alter table if exists work_orders drop constraint if exists work_orders_status_check;
 alter table if exists notifications drop constraint if exists notifications_type_check;
 alter table if exists notification_settings drop constraint if exists notification_settings_type_check;
+alter table if exists inspections drop constraint if exists inspections_type_check;
 
 truncate table work_order_photos, work_order_expenses, work_orders, scheduled_maintenances, maintenance_completions,
   vehicle_checklist_items, vehicle_disabled_checklist_items, vehicle_documents, document_alert_log, recurring_defect_alerts,

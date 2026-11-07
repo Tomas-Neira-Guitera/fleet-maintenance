@@ -42,7 +42,8 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(requiring(Role.ADMIN))
                 .addPathPatterns("/users", "/users/**", "/expenses", "/expenses/**", "/vehicles/*/costs", "/defects/recurring",
                         "/downtime", "/vehicles/comparison");
-        registry.addInterceptor(requiring(Role.CHOFER)).addPathPatterns("/inspections/**");
+        // CAM-139: el defecto reportado en viaje también es del chofer.
+        registry.addInterceptor(requiring(Role.CHOFER)).addPathPatterns("/inspections/**", "/vehicles/*/road-defects");
         registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER, Role.TECNICO))
                 .addPathPatterns("/push/**", "/notifications", "/notifications/**");
         // CAM-117/CAM-118: configuración de avisos, solo el admin.

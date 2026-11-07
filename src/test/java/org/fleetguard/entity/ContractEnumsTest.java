@@ -36,8 +36,15 @@ class ContractEnumsTest {
 
     @Test
     void inspeccionesYDefectos() {
-        assertContract(InspectionType.class, InspectionType::toJson, InspectionType::fromJson,
-                Map.of(InspectionType.PRE_TRIP, "pre-trip", InspectionType.POST_TRIP, "post-trip"));
+        // CAM-139: on-road solo sale (source de un defecto); fromJson lee el type de POST /inspections,
+        // que no lo acepta. Por eso no pasa por assertContract, que exige ida y vuelta.
+        assertEquals(Map.of(InspectionType.PRE_TRIP, "pre-trip", InspectionType.POST_TRIP, "post-trip",
+                        InspectionType.ON_ROAD, "on-road"),
+                Arrays.stream(InspectionType.values()).collect(java.util.stream.Collectors.toMap(v -> v, InspectionType::toJson)));
+        assertEquals(InspectionType.PRE_TRIP, InspectionType.fromJson("pre-trip"));
+        assertEquals(InspectionType.POST_TRIP, InspectionType.fromJson("post-trip"));
+        assertNull(InspectionType.fromJson("on-road"));
+        assertNull(InspectionType.fromJson(null));
         assertContract(CheckOutcome.class, CheckOutcome::toJson, CheckOutcome::fromJson,
                 Map.of(CheckOutcome.OK, "ok", CheckOutcome.DEFECT, "defect"));
         assertContract(DefectSeverity.class, DefectSeverity::toJson, DefectSeverity::fromJson,

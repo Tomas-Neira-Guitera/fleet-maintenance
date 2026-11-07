@@ -20,9 +20,10 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
     @Query("select i from Inspection i join fetch i.trip where i.vehicleId = :vehicleId order by i.timestamp desc")
     List<Inspection> findByVehicleIdWithTripOrderByTimestampDesc(@Param("vehicleId") UUID vehicleId);
 
-    /** Inspecciones hechas en [from, to), por chofer -- CAM-91. */
+    /** Inspecciones hechas en [from, to), por chofer -- CAM-91. Un defecto reportado en viaje no es una (CAM-139). */
     @Query("select new org.fleetguard.repository.DriverCount(i.driverId, count(i)) from Inspection i "
-            + "where i.timestamp >= :from and i.timestamp < :to group by i.driverId")
+            + "where i.timestamp >= :from and i.timestamp < :to "
+            + "and i.type <> org.fleetguard.entity.InspectionType.ON_ROAD group by i.driverId")
     List<DriverCount> countByDriver(@Param("from") Instant from, @Param("to") Instant to);
 
     /** Los km cargados en las inspecciones de varios vehículos, de toda su historia -- CAM-137. */

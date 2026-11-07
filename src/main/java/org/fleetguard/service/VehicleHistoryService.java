@@ -3,6 +3,7 @@ package org.fleetguard.service;
 import org.fleetguard.dto.DefectDto;
 import org.fleetguard.dto.VehicleHistoryDto;
 import org.fleetguard.entity.Inspection;
+import org.fleetguard.entity.InspectionType;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.mapper.DefectMapper;
@@ -61,7 +62,9 @@ public class VehicleHistoryService {
                 .toList();
 
         return new VehicleHistoryDto(
+                // CAM-139: el reporte en viaje no es una inspección; su defecto sí está en defects.
                 inspections.stream()
+                        .filter(inspection -> inspection.getType() != InspectionType.ON_ROAD)
                         .map(inspection -> historyMapper.toInspectionItem(inspection, driverNames))
                         .toList(),
                 defects,
