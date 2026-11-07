@@ -223,6 +223,42 @@ paths:
         "404":
           description: VEHICLE_NOT_FOUND
 
+  /api/vehicles/comparison:
+    get:
+      summary: Comparar los vehículos activos en un período (CAM-140)
+      description: >
+        Solo ADMIN, solo lectura. Una fila por vehículo activo con gastos de
+        mantenimiento y operativos del período (los mismos de GET /api/expenses
+        con ese from/to), km recorridos, costo por km, disponibilidad y paradas
+        (los mismos de GET /api/downtime) y controles con fallas recurrentes
+        (los de GET /api/defects/recurring, que miran su propia ventana de 30
+        días y no el período). Incluye el promedio de la flota de cada
+        indicador y la marca "Para revisar". Ver CAM-140-vehicle-comparison-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, description: "Fecha (2026-10-01) o instante ISO-8601, como en /api/downtime." }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, description: "Fecha o instante ISO-8601. Lo que todavía no pasó no cuenta." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleComparison"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: VALIDATION_ERROR -- from o to faltan, son inválidos, o to no es posterior a from.
+
   /api/vehicles/{vehicleId}/checklist:
     get:
       summary: Checklist DVIR efectivo de un vehículo (CAM-31)
@@ -3454,6 +3490,67 @@ components:
           type: number
           nullable: true
           description: totalAmount / kmDriven, redondeado a 2 decimales; null cuando kmDriven es null.
+
+    VehicleComparison:
+      type: object
+      description: Comparación de los vehículos activos de GET /api/vehicles/comparison (CAM-140).
+      required: [from, to, vehicles, fleet]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time, description: Fin efectivo del período, recortado a ahora. }
+        vehicles:
+          type: array
+          description: Ordenados por patente.
+          items:
+            type: object
+            required: [vehicleId, plate, maintenanceCost, operatingCost, totalCost, downtimeHours, stops, recurringControls, review]
+            properties:
+              vehicleId: { type: string }
+              plate: { type: string }
+              brand: { type: string, nullable: true }
+              model: { type: string, nullable: true }
+              vehicleType: { type: string, nullable: true }
+              year: { type: integer, nullable: true }
+              maintenanceCost: { type: number, description: "Gastos de OTs del período (preventivo, correctivo y manual)." }
+              operatingCost: { type: number, description: Gastos operativos del período (CAM-109). }
+              totalCost: { type: number }
+              kmDriven:
+                type: integer
+                nullable: true
+                description: >-
+                  Del km al empezar el período (la última lectura válida hasta el comienzo, o la primera
+                  dentro) al km al terminarlo. Null sin dos lecturas válidas. Ver el contrato, decisión 2.
+              maintenanceCostPerKm: { type: number, nullable: true, description: "Gasto de mantenimiento desde que cuentan los km, sobre kmDriven, a 2 decimales; null sin km o con 0 km." }
+              totalCostPerKm: { type: number, nullable: true, description: "Ídem, con el gasto total." }
+              availabilityPct: { type: number, nullable: true }
+              downtimeHours: { type: number }
+              stops: { type: integer }
+              recurringControls: { type: integer, description: Controles del checklist con fallas recurrentes hoy (CAM-135). }
+              review:
+                type: object
+                required: [flagged, reasons]
+                properties:
+                  flagged: { type: boolean, description: "Para revisar: peor que el promedio en al menos dos indicadores." }
+                  reasons:
+                    type: array
+                    description: Vacío si flagged es false.
+                    items:
+                      type: string
+                      enum: [maintenance_cost_per_km, availability, recurring_defects]
+        fleet:
+          type: object
+          description: El promedio de cada indicador sobre los vehículos que lo tienen; null si ninguno lo tiene.
+          properties:
+            maintenanceCost: { type: number, nullable: true }
+            operatingCost: { type: number, nullable: true }
+            totalCost: { type: number, nullable: true }
+            kmDriven: { type: number, nullable: true }
+            maintenanceCostPerKm: { type: number, nullable: true, description: "El de la flota: gasto de los vehículos con km sobre sus km, no el promedio de los cocientes." }
+            totalCostPerKm: { type: number, nullable: true, description: "Ídem, con el gasto total." }
+            availabilityPct: { type: number, nullable: true }
+            downtimeHours: { type: number, nullable: true }
+            stops: { type: number, nullable: true }
+            recurringControls: { type: number, nullable: true }
 
     Downtime:
       type: object
