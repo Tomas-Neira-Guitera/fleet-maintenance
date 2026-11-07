@@ -18,6 +18,9 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, UUID> {
 
     List<WorkOrder> findAllByOrderByCreatedAtDesc();
 
+    /** CAM-155: las OTs en esos estados (las abiertas, para ver su antigüedad). */
+    List<WorkOrder> findByStatusIn(Collection<WorkOrderStatus> statuses);
+
     // OT abierta (asignada/en proceso) para un mismo origen -- evitan duplicar trabajo al replanificar.
     // Ordenadas por fecha para que, si ya hay duplicados viejos en la base, siempre se reuse la original.
 

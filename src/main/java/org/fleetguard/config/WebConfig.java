@@ -41,7 +41,7 @@ public class WebConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(requiring(Role.ADMIN))
                 .addPathPatterns("/users", "/users/**", "/expenses", "/expenses/**", "/vehicles/*/costs", "/defects/recurring",
-                        "/downtime");
+                        "/downtime", "/maintenance-compliance");
         registry.addInterceptor(requiring(Role.CHOFER)).addPathPatterns("/inspections/**");
         registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER, Role.TECNICO))
                 .addPathPatterns("/push/**", "/notifications", "/notifications/**");

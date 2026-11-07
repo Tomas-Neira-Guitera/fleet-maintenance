@@ -199,9 +199,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/VehicleImportResult"
         "401":
-          description: Sin token o con un token inválido.
+          $ref: "#/components/responses/Unauthorized"
         "403":
-          description: El usuario no es ADMIN.
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
@@ -933,6 +933,44 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           description: VEHICLE_NOT_FOUND -- vehicleId no existe o no es un UUID
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/maintenance-compliance:
+    get:
+      summary: Indicadores de cumplimiento del mantenimiento (CAM-155)
+      description: >
+        Solo ADMIN, solo lectura. Para el período [from, to): cuántos
+        mantenimientos preventivos se hicieron a tiempo y cuántos después de
+        vencer, y las horas promedio entre que se reporta un defecto y se
+        resuelve. Las OTs abiertas por antigüedad son la foto de hoy y no
+        dependen del período. Ver CAM-155-maintenance-compliance-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Inicio del período (incluido). Instante ISO o fecha sola (YYYY-MM-DD, UTC).
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: true
+          description: Fin del período (excluido). Instante ISO, o fecha sola que incluye ese día entero.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceCompliance"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
@@ -3487,6 +3525,39 @@ components:
           type: number
           nullable: true
           description: totalAmount / kmDriven, redondeado a 2 decimales; null cuando kmDriven es null.
+
+    MaintenanceCompliance:
+      type: object
+      description: GET /api/maintenance-compliance (CAM-155).
+      required: [from, to, preventive, defects, openWorkOrders]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        preventive:
+          type: object
+          description: >-
+            Mantenimientos hechos en el período. Cada uno se compara con el anterior del mismo plan en el mismo
+            vehículo más el intervalo del plan; el primero de cada plan no cuenta.
+          required: [onTime, late]
+          properties:
+            onTime: { type: integer }
+            late: { type: integer }
+            onTimePct: { type: number, nullable: true, description: Null si no hay ninguno. }
+        defects:
+          type: object
+          required: [resolved]
+          properties:
+            resolved: { type: integer, description: Defectos resueltos en el período. }
+            avgHours: { type: number, nullable: true, description: Horas promedio entre el reporte y la resolución. }
+        openWorkOrders:
+          type: object
+          description: OTs asignadas o en proceso hoy, por días desde que se crearon.
+          required: [total, under7Days, from7To30Days, over30Days]
+          properties:
+            total: { type: integer }
+            under7Days: { type: integer }
+            from7To30Days: { type: integer }
+            over30Days: { type: integer }
 
     Downtime:
       type: object

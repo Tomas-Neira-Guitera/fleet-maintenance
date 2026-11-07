@@ -52,6 +52,10 @@ public interface DefectRepository extends JpaRepository<Defect, UUID> {
             + "and (d.status = 'open' or d.resolvedAt is null or d.resolvedAt > :after)")
     List<Defect> findBlockingInPeriodWithInspection(@Param("after") Instant after, @Param("before") Instant before);
 
+    /** CAM-155: defectos resueltos en [from, to). Los resueltos antes de CAM-134 no tienen fecha y no entran. */
+    @Query("select d from Defect d where d.resolvedAt >= :from and d.resolvedAt < :to")
+    List<Defect> findResolvedBetween(@Param("from") Instant from, @Param("to") Instant to);
+
     /** Defectos reportados desde {@code from}, con su respuesta e inspección -- CAM-135, todos los vehículos. */
     @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i "
             + "where d.createdAt >= :from")
