@@ -21,6 +21,7 @@ import org.fleetguard.entity.WorkOrder;
 import org.fleetguard.entity.WorkOrderExecutionType;
 import org.fleetguard.entity.WorkOrderExpense;
 import org.fleetguard.entity.WorkOrderExpenseCategory;
+import org.fleetguard.entity.WorkOrderPauseReason;
 import org.fleetguard.entity.WorkOrderPhoto;
 import org.fleetguard.entity.WorkOrderSourceType;
 import org.fleetguard.entity.WorkOrderStatus;
@@ -119,7 +120,10 @@ public class WorkOrderService {
     /** Id de una foto de GET /api/photos/{id}: los mismos caracteres que acepta el almacenamiento. */
     private static final Pattern PHOTO_ID = Pattern.compile("[A-Za-z0-9_-]+");
 
-    private static final List<WorkOrderStatus> OPEN_STATUSES = List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO);
+    private static final List<WorkOrderStatus> OPEN_STATUSES = WorkOrderStatus.OPEN;
+
+    /** Largo máximo del comentario de una pausa (CAM-148). */
+    static final int PAUSE_COMMENT_MAX_LENGTH = 500;
 
     @Transactional
     public CreateResult create(CreateWorkOrderRequest request) {
@@ -384,29 +388,57 @@ public class WorkOrderService {
     private void applyStatusChange(WorkOrder workOrder, UpdateWorkOrderRequest request) {
         WorkOrderStatus newStatus = WorkOrderStatus.fromJson(request.status());
         if (newStatus == null) {
-            throw new WorkOrderValidationException("Estado inválido",
-                    List.of(new FieldValidationErrorDetail("status", "Debe ser 'en_proceso', 'finalizada' o 'cancelada'")));
+            throw new WorkOrderValidationException("Estado inválido", List.of(new FieldValidationErrorDetail("status",
+                    "Debe ser 'en_proceso', 'en_espera', 'finalizada' o 'cancelada'")));
         }
 
+        // CAM-148: en_espera solo desde en_proceso, y se vuelve a en_proceso para seguir. Una OT en
+        // espera no se finaliza sin retomarla, pero sí se cancela.
         WorkOrderStatus current = workOrder.getStatus();
         boolean validTransition = switch (newStatus) {
-            case EN_PROCESO -> current == WorkOrderStatus.ASIGNADA;
+            case EN_PROCESO -> current == WorkOrderStatus.ASIGNADA || current == WorkOrderStatus.EN_ESPERA;
+            case EN_ESPERA -> current == WorkOrderStatus.EN_PROCESO;
             case FINALIZADA -> current == WorkOrderStatus.EN_PROCESO;
-            case CANCELADA -> current == WorkOrderStatus.ASIGNADA || current == WorkOrderStatus.EN_PROCESO;
+            case CANCELADA -> current.isOpen();
             case ASIGNADA -> false;
         };
         if (!validTransition) {
             throw new WorkOrderConflictException("INVALID_STATUS_TRANSITION",
-                    "No se puede pasar de '" + current.toJson() + "' a '" + newStatus.toJson() + "'");
+                    current == WorkOrderStatus.EN_ESPERA && newStatus == WorkOrderStatus.FINALIZADA
+                            ? "La orden de trabajo está en espera: retomala antes de finalizarla"
+                            : "No se puede pasar de '" + current.toJson() + "' a '" + newStatus.toJson() + "'");
         }
 
-        if (newStatus == WorkOrderStatus.EN_PROCESO) {
-            workOrder.start();
-        } else if (newStatus == WorkOrderStatus.CANCELADA) {
-            workOrder.cancel();
-        } else {
-            finalizeWorkOrder(workOrder, request);
+        switch (newStatus) {
+            case EN_PROCESO -> workOrder.start();
+            case EN_ESPERA -> pause(workOrder, request);
+            case CANCELADA -> workOrder.cancel();
+            default -> finalizeWorkOrder(workOrder, request);
         }
+    }
+
+    /** CAM-148: el motivo es obligatorio, y con "otro" también el comentario, que dice cuál. */
+    private void pause(WorkOrder workOrder, UpdateWorkOrderRequest request) {
+        List<FieldValidationErrorDetail> details = new ArrayList<>();
+        WorkOrderPauseReason reason = WorkOrderPauseReason.fromJson(request.pauseReason());
+        if (reason == null) {
+            details.add(new FieldValidationErrorDetail("pauseReason", request.pauseReason() == null
+                    ? "Obligatorio para poner la orden de trabajo en espera"
+                    : "Debe ser 'esperando_repuesto', 'esperando_proveedor', 'esperando_vehiculo' u 'otro'"));
+        }
+        String comment = request.pauseComment() == null || request.pauseComment().isBlank()
+                ? null : request.pauseComment().trim();
+        if (reason == WorkOrderPauseReason.OTRO && comment == null) {
+            details.add(new FieldValidationErrorDetail("pauseComment", "Contá qué está frenando la orden de trabajo"));
+        }
+        if (comment != null && comment.length() > PAUSE_COMMENT_MAX_LENGTH) {
+            details.add(new FieldValidationErrorDetail("pauseComment",
+                    "No puede superar los " + PAUSE_COMMENT_MAX_LENGTH + " caracteres"));
+        }
+        if (!details.isEmpty()) {
+            throw new WorkOrderValidationException("Datos inválidos para poner la orden de trabajo en espera", details);
+        }
+        workOrder.pause(reason, comment);
     }
 
     /**

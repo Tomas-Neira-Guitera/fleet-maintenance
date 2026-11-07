@@ -1376,8 +1376,8 @@ paths:
         de origen assignment se cierra sola al registrar el completion de esa
         asignación (409 USE_COMPLETION_ENDPOINT si se intenta acá).
         status=cancelled cancela también las OTs abiertas de la programación
-        (CAM-77): las asignadas sin preguntar; si hay una en_proceso responde
-        409 WORK_ORDER_IN_PROGRESS salvo que venga cancelWorkOrder=true. Las
+        (CAM-77): las asignadas sin preguntar; si hay una en_proceso o en_espera
+        (CAM-148) responde 409 WORK_ORDER_IN_PROGRESS salvo que venga cancelWorkOrder=true. Las
         finalizadas no se tocan.
       parameters:
         - name: id
@@ -1460,7 +1460,7 @@ paths:
         cliente. Nace en status=asignada. Ver docs/api/CAM-60-technician-contract.md
         para las reglas de technicianId.
 
-        Una sola OT abierta por origen: si ya hay una asignada o en proceso para
+        Una sola OT abierta por origen: si ya hay una asignada, en proceso o en espera (CAM-148) para
         el mismo defecto (directo o vía una programación de origen defecto), la
         misma asignación de plan o la misma programación manual, no se crea otra
         y se devuelve la existente con 200 en vez de 201. Sus datos (técnico,
@@ -1523,6 +1523,9 @@ paths:
       description: >
         Campos parciales: lo que no viene no se toca. Transiciones válidas:
         asignada→en_proceso, en_proceso→finalizada, asignada|en_proceso→cancelada.
+        CAM-148: en_proceso→en_espera (con pauseReason), en_espera→en_proceso
+        (retomar) y en_espera→cancelada. en_espera→finalizada responde 409
+        INVALID_STATUS_TRANSITION: primero se retoma. Ver CAM-148-work-order-pause-contract.md.
         Finalizar exige closingDescription y al menos una foto, valida completedKm
         si viene (CAM-74), y cierra el origen (completion de la asignación, programación o defecto).
         Una OT finalizada o cancelada no se edita más (CAM-75): cualquier PATCH
@@ -3151,10 +3154,10 @@ components:
         workOrder:
           type: object
           nullable: true
-          description: OT abierta (asignada o en proceso) vinculada a la programación, si hay una.
+          description: OT abierta (asignada, en proceso o en espera) vinculada a la programación, si hay una.
           properties:
             id: { type: string }
-            status: { type: string, enum: [asignada, en_proceso] }
+            status: { type: string, enum: [asignada, en_proceso, en_espera] }
             responsible: { type: string, nullable: true, description: "Técnico, proveedor externo o contacto." }
 
     CreateScheduleRequest:
@@ -3206,7 +3209,12 @@ components:
 
     WorkOrderStatus:
       type: string
-      enum: [asignada, en_proceso, finalizada, cancelada]
+      description: "en_espera (CAM-148): pausada con un motivo. Cuenta como abierta, igual que asignada y en_proceso."
+      enum: [asignada, en_proceso, en_espera, finalizada, cancelada]
+
+    WorkOrderPauseReason:
+      type: string
+      enum: [esperando_repuesto, esperando_proveedor, esperando_vehiculo, otro]
 
     WorkOrderExpenseCategory:
       type: string
@@ -3235,7 +3243,7 @@ components:
 
     WorkOrder:
       type: object
-      required: [id, vehicleId, sourceType, title, executionType, status, expenses, totalExpenses, photos, createdAt, updatedAt]
+      required: [id, vehicleId, sourceType, title, executionType, status, expenses, totalExpenses, photos, createdAt, updatedAt, pausedSeconds]
       properties:
         id: { type: string }
         vehicleId: { type: string }
@@ -3274,6 +3282,20 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         finalizedAt: { type: string, format: date-time, nullable: true }
+        pause:
+          type: object
+          nullable: true
+          description: "CAM-148: por qué está en espera y desde cuándo. Null si la OT no está en espera."
+          required: [reason, since]
+          properties:
+            reason:
+              $ref: "#/components/schemas/WorkOrderPauseReason"
+            comment: { type: string, nullable: true }
+            since: { type: string, format: date-time }
+        pausedSeconds:
+          type: integer
+          format: int64
+          description: "CAM-148: segundos que estuvo en espera en total, contando la pausa actual hasta ahora. 0 si nunca se pausó."
 
     CreateWorkOrderRequest:
       type: object
@@ -3303,7 +3325,14 @@ components:
       properties:
         status:
           type: string
-          enum: [en_proceso, finalizada, cancelada]
+          enum: [en_proceso, en_espera, finalizada, cancelada]
+        pauseReason:
+          $ref: "#/components/schemas/WorkOrderPauseReason"
+        pauseComment:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: "Solo con status=en_espera (CAM-148). Obligatorio si pauseReason es otro; si no, opcional."
         closingDescription: { type: string, description: Obligatoria para finalizar. }
         completedKm:
           type: integer
@@ -3662,7 +3691,7 @@ components:
         active: { type: boolean }
         openWorkOrders:
           type: integer
-          description: OTs a su cargo asignadas o en proceso hoy. Es la foto actual, no depende del período.
+          description: OTs a su cargo asignadas, en proceso o en espera (CAM-148) hoy. Es la foto actual, no depende del período.
         finalizedWorkOrders: { type: integer, description: OTs a su cargo finalizadas en el período. }
         avgResolutionHours:
           type: number

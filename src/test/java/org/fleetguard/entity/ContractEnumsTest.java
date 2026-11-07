@@ -69,7 +69,13 @@ class ContractEnumsTest {
     void ordenesDeTrabajo() {
         assertContract(WorkOrderStatus.class, WorkOrderStatus::toJson, WorkOrderStatus::fromJson,
                 Map.of(WorkOrderStatus.ASIGNADA, "asignada", WorkOrderStatus.EN_PROCESO, "en_proceso",
+                        WorkOrderStatus.EN_ESPERA, "en_espera",
                         WorkOrderStatus.FINALIZADA, "finalizada", WorkOrderStatus.CANCELADA, "cancelada"));
+        assertContract(WorkOrderPauseReason.class, WorkOrderPauseReason::toJson, WorkOrderPauseReason::fromJson,
+                Map.of(WorkOrderPauseReason.ESPERANDO_REPUESTO, "esperando_repuesto",
+                        WorkOrderPauseReason.ESPERANDO_PROVEEDOR, "esperando_proveedor",
+                        WorkOrderPauseReason.ESPERANDO_VEHICULO, "esperando_vehiculo",
+                        WorkOrderPauseReason.OTRO, "otro"));
         assertContract(WorkOrderSourceType.class, WorkOrderSourceType::toJson, WorkOrderSourceType::fromJson,
                 Map.of(WorkOrderSourceType.SCHEDULED_MAINTENANCE, "scheduled_maintenance",
                         WorkOrderSourceType.DEFECT, "defect", WorkOrderSourceType.MANUAL, "manual"));

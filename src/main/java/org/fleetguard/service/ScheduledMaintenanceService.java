@@ -244,16 +244,19 @@ public class ScheduledMaintenanceService {
     /**
      * CAM-77: cancelar la programación cancela sus OTs abiertas. Una OT asignada se cancela
      * directo; una en curso exige confirmación (cancelWorkOrder=true). Las finalizadas no se tocan.
+     * Una en espera (CAM-148) ya se empezó, así que también pide confirmación.
      */
     private void cancelOpenWorkOrders(ScheduledMaintenance schedule, boolean confirmInProgress) {
         List<WorkOrder> open = workOrderRepository.findByScheduledMaintenanceIdAndStatusIn(schedule.getId(),
-                List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO));
+                WorkOrderStatus.OPEN);
         Optional<WorkOrder> inProgress = open.stream()
-                .filter(w -> w.getStatus() == WorkOrderStatus.EN_PROCESO)
+                .filter(w -> w.getStatus().isStarted())
                 .findFirst();
         if (inProgress.isPresent() && !confirmInProgress) {
             throw new MaintenanceConflictException("WORK_ORDER_IN_PROGRESS",
-                    "Esta programación tiene una OT en curso asignada a " + responsibleOf(inProgress.get())
+                    "Esta programación tiene una OT "
+                            + (inProgress.get().getStatus() == WorkOrderStatus.EN_ESPERA ? "en espera" : "en curso")
+                            + " asignada a " + responsibleOf(inProgress.get())
                             + ". ¿Cancelar las dos?");
         }
         for (WorkOrder workOrder : open) {
@@ -332,7 +335,7 @@ public class ScheduledMaintenanceService {
 
     private ScheduleWorkOrderDto openWorkOrderOf(ScheduledMaintenance schedule) {
         return workOrderRepository.findFirstByScheduledMaintenanceIdAndStatusInOrderByCreatedAtAsc(schedule.getId(),
-                        List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO))
+                        WorkOrderStatus.OPEN)
                 .map(w -> new ScheduleWorkOrderDto(w.getId().toString(), w.getStatus().toJson(), responsibleNameOf(w)))
                 .orElse(null);
     }
