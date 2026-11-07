@@ -131,6 +131,35 @@ class VehicleHistoryServiceTest {
     }
 
     @Test
+    void unReporteEnViajeNoEsUnaInspeccionPeroSuDefectoSaleMarcado() throws Exception {
+        UUID id = UUID.randomUUID();
+        Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
+        when(vehicleRepository.findById(id)).thenReturn(Optional.of(vehicle));
+        Trip trip = new Trip(vehicle, Instant.parse("2026-10-03T08:00:00Z"));
+        Inspection pre = new Inspection(trip, id, "driver-1", "Carlos", InspectionType.PRE_TRIP,
+                Instant.parse("2026-10-03T08:00:00Z"), 50000.0, null, false);
+        Inspection onRoad = new Inspection(trip, id, "driver-1", "Carlos", InspectionType.ON_ROAD,
+                Instant.parse("2026-10-03T11:00:00Z"), null, null, false);
+        InspectionAnswer answer = new InspectionAnswer("ext-luces", "Luces", CheckOutcome.DEFECT, null);
+        Defect defect = new Defect(DefectSeverity.NON_BLOCKING, "Luz de giro", null, Instant.parse("2026-10-03T11:00:00Z"));
+        answer.attachDefect(defect);
+        onRoad.addAnswer(answer);
+        setId(pre, UUID.randomUUID());
+        setId(onRoad, UUID.randomUUID());
+        setId(defect, UUID.randomUUID());
+        when(inspectionRepository.findByVehicleIdWithTripOrderByTimestampDesc(id)).thenReturn(List.of(onRoad, pre));
+        when(defectRepository.findByVehicleIdWithInspection(id)).thenReturn(List.of(defect));
+        when(completionRepository.findByVehicleIdWithPlan(id)).thenReturn(List.of());
+
+        VehicleHistoryDto result = service.getHistory(id.toString());
+
+        assertEquals(1, result.inspections().size());
+        assertEquals("pre-trip", result.inspections().get(0).type());
+        assertEquals("on-road", result.defects().get(0).source());
+        assertEquals("Carlos", result.defects().get(0).reportedBy());
+    }
+
+    @Test
     void elChoferSeMuestraConSuNombreActualAunqueLaInspeccionGuardeElViejo() throws Exception {
         UUID id = UUID.randomUUID();
         Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");

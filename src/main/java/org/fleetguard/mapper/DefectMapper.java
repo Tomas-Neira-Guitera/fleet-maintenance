@@ -24,7 +24,8 @@ public class DefectMapper {
                 vehiclePlate,
                 defect.getStatus(),
                 reportedBy,
-                defect.getDetails()
+                defect.getDetails(),
+                inspection.getType().toJson()
         );
     }
 }

@@ -866,6 +866,68 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ValidationError"
+  /api/vehicles/{id}/road-defects:
+    post:
+      summary: Reportar un defecto durante el viaje, sin cerrarlo (CAM-139)
+      description: >
+        El chofer que tiene el viaje abierto reporta un problema en el momento en que aparece. El
+        viaje sigue abierto: no pide km ni mueve el km del vehículo, y se cierra después con el
+        post-trip, como siempre. El defecto queda con `source: on-road` y cuenta como cualquier otro
+        para la disponibilidad, los recurrentes, el tiempo fuera de servicio y las OTs.
+
+
+        `itemId` es un control de tipo sí/no del checklist pre-trip del vehículo (el de
+        GET /api/vehicles/{vehicleId}/checklist, sin el de km) o `road-otro` ("Otro problema", que no
+        cuenta para recurrentes). El defecto sigue las mismas reglas que en el checklist: gravedad,
+        título de hasta 30 caracteres, detalle opcional y foto obligatoria si es bloqueante. Un
+        bloqueante avisa al admin (CAM-97) y deja el vehículo no disponible (CAM-102).
+
+
+        Exige el JWT de un CHOFER. Ver CAM-139-road-defect-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoadDefectRequest"
+      responses:
+        "201":
+          description: Defecto registrado; el viaje sigue abierto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DefectSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Vehículo inexistente
+        "409":
+          description: El vehículo no tiene un viaje abierto, o el viaje es de otro chofer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                noOpenTrip:
+                  value: { error: "NO_OPEN_TRIP", message: "El vehículo no tiene un viaje abierto: el problema se reporta en la inspección." }
+                notYourTrip:
+                  value: { error: "NOT_YOUR_TRIP", message: "Solo puede reportar el chofer que tiene el viaje abierto." }
+        "422":
+          description: El control no es del checklist del vehículo, o el defecto no cumple sus reglas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
   /api/defects:
     get:
       summary: Listar defectos reportados en inspecciones
@@ -2800,6 +2862,25 @@ components:
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
         reportedBy: { type: string, nullable: true, description: "Nombre actual del chofer que reportó el defecto (CAM-85); en inspecciones anteriores, el nombre con el que se guardaron." }
         details: { type: string, nullable: true, description: "Descripción larga del defecto (CAM-32). description es el título corto." }
+        source:
+          type: string
+          enum: [pre-trip, post-trip, on-road]
+          description: >-
+            CAM-139. Dónde se reportó: en el checklist del pre-trip o del post-trip, o durante el
+            viaje (on-road, "Reportado en viaje"). Es distinto de occurredOnTrip de CAM-146, que se
+            calcula para los del post-trip.
+
+    RoadDefectRequest:
+      type: object
+      required: [itemId, defect]
+      description: CAM-139. Ver /api/vehicles/{id}/road-defects.
+      properties:
+        itemId:
+          type: string
+          description: Un control sí/no del checklist pre-trip del vehículo, o `road-otro`.
+          example: ext-luces
+        defect:
+          $ref: "#/components/schemas/DefectDetail"
 
     VehicleHistory:
       type: object

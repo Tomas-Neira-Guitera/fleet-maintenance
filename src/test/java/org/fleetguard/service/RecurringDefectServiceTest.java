@@ -124,6 +124,20 @@ class RecurringDefectServiceTest {
     }
 
     @Test
+    void otroProblemaReportadoEnViajeNoEsRecurrenteNiAvisa() throws Exception {
+        List<Defect> others = List.of(defect(vehicle, "road-otro", "Otro problema", DefectSeverity.NON_BLOCKING, 15),
+                defect(vehicle, "road-otro", "Otro problema", DefectSeverity.NON_BLOCKING, 5),
+                defect(vehicle, "road-otro", "Otro problema", DefectSeverity.NON_BLOCKING, 0));
+        when(defectRepository.findReportedSinceByVehicleIdWithInspection(vehicle.getId(), WINDOW_START)).thenReturn(others);
+        when(defectRepository.findReportedSinceWithInspection(WINDOW_START)).thenReturn(others);
+
+        assertEquals(0, service.alertIfRecurring(vehicle.getId(), "AB123CD", List.of("road-otro")));
+        assertTrue(service.list(null).items().isEmpty());
+        assertTrue(service.list(vehicle.getId().toString()).items().isEmpty());
+        verify(notificationService, never()).notifyConfiguredRecipients(any(), any(), any(), any());
+    }
+
+    @Test
     void conDosFallasNoAvisa() throws Exception {
         when(defectRepository.findReportedSinceByVehicleIdWithInspection(vehicle.getId(), WINDOW_START))
                 .thenReturn(List.of(brakes(vehicle, 10), brakes(vehicle, 0)));
