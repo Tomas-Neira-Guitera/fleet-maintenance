@@ -650,6 +650,8 @@ for d in defects:
     else:
         new_wo(k, "DEFECT", title, work, "FINALIZADA", (d["day"], min(d["hh"] + 1, 21)), day_done=fix_day,
                defect=d["id"], started=(fix_day, 8))
+    # CAM-134/CAM-155: el defecto queda resuelto cuando se finalizó su OT.
+    d["resolved"] = work_orders[-1]["finalized"]
 
 # OTs manuales del historial
 MANUAL = [
@@ -801,7 +803,7 @@ KNOWN_COLUMNS = {
     "trips": "id vehicle_id status started_at ended_at opened_by_id opened_by_name closed_by_id closed_by_name",
     "inspections": "id trip_id vehicle_id driver_id driver_name type timestamp odometer_km notes has_blocking_defect",
     "inspection_answers": "id inspection_id item_id item_label outcome number_value",
-    "defects": "id inspection_answer_id severity description details photo_url created_at status",
+    "defects": "id inspection_answer_id severity description details photo_url created_at status resolved_at",
     "maintenance_plans": "id name category interval_type interval_km interval_days active document_type",
     "vehicle_maintenance_assignments": "id vehicle_id maintenance_plan_id last_done_km last_done_date next_due_km next_due_date active",
     "maintenance_completions": "id assignment_id completed_at completed_km work_order_id notes",
@@ -918,10 +920,11 @@ insert("vehicle_checklist_items", ["id", "vehicle_id", "label", "type", "section
        [[q(c["id"]), q(VBY[c["vehicle"]]["id"]), q(c["label"]), q(c["type"]), q(c["section"]), "true" if c["active"] else "false", ts(-30, 10)]
         for c in checklist_extras])
 w("-- Defectos")
-insert("defects", ["id", "inspection_answer_id", "severity", "description", "details", "photo_url", "created_at", "status"],
+insert("defects", ["id", "inspection_answer_id", "severity", "description", "details", "photo_url", "created_at", "status",
+                   "resolved_at"],
        [[q(d["id"]), q(d["answer"]), q(d["severity"]), q(d["description"]), q(DEFECT_DETAILS.get(d["description"])),
          q(d["photo"]), ts(d["day"], d["hh"], d["mm"]),
-         q(d["status"])] for d in defects])
+         q(d["status"]), ts(*d["resolved"]) if d.get("resolved") else "null"] for d in defects])
 w("-- Programaciones (calendario)")
 insert("scheduled_maintenances", ["id", "vehicle_id", "source_type", "assignment_id", "defect_id", "title", "scheduled_at",
                                   "status", "notes", "created_at", "updated_at"],
