@@ -1828,6 +1828,293 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Sprint 9 (CAM-146, CAM-153, CAM-154, CAM-155)",
+      "item": [
+        {
+          "name": "Pre-trip hecho sin señal (CAM-153)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"performedAt\": \"{{offlinePerformedAt}}\",\n  \"clientSubmissionId\": \"{{offlineSubmissionId}}\",\n  \"answers\": [\n    { \"itemId\": \"ext-luces\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-neumaticos\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-carroceria\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-km\", \"numberValue\": 82430 },\n    { \"itemId\": \"int-documentacion\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-testigos\", \"outcome\": \"ok\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
+            },
+            "description": "La inspección llega más tarde con la hora en que se hizo (performedAt) y un id del celular (clientSubmissionId). El viaje queda con esa hora. Requiere 'Login — chofer' y 'Listar vehículos', con el vehículo sin viaje abierto. Ver docs/api/CAM-153-offline-inspections-contract.md."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Una hora atrás, como si se hubiera hecho sin señal; y un id nuevo para este envío.",
+                  "pm.environment.set('offlinePerformedAt', new Date(Date.now() - 3600 * 1000).toISOString());",
+                  "pm.environment.set('offlineSubmissionId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('el viaje arranca a la hora en que se hizo', () => pm.expect(new Date(body.trip.startedAt).getTime()).to.eql(new Date(pm.environment.get('offlinePerformedAt')).getTime()));",
+                  "pm.environment.set('offlineInspectionId', body.inspection.id);",
+                  "if (body.trip) pm.environment.set('tripId', body.trip.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reintento del mismo envío no duplica (CAM-153)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"performedAt\": \"{{offlinePerformedAt}}\",\n  \"clientSubmissionId\": \"{{offlineSubmissionId}}\",\n  \"answers\": [\n    { \"itemId\": \"ext-luces\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-neumaticos\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-carroceria\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-km\", \"numberValue\": 82430 },\n    { \"itemId\": \"int-documentacion\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-testigos\", \"outcome\": \"ok\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
+            },
+            "description": "El celular vuelve a mandar la misma inspección (mismo clientSubmissionId) porque no recibió la respuesta. Devuelve la ya guardada, aunque el vehículo ahora esté en viaje. Correr después del anterior."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('es la misma inspección', () => pm.expect(pm.response.json().inspection.id).to.eql(pm.environment.get('offlineInspectionId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Defectos ocurridos en el viaje (CAM-146)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/defects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "defects"
+              ]
+            },
+            "description": "Los defectos del post-viaje cuyo control dio OK en el pre-viaje del mismo viaje traen occurredOnTrip. Ver docs/api/CAM-146-occurred-on-trip-contract.md."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const onTrip = pm.response.json().filter((d) => d.occurredOnTrip);",
+                  "pm.test('cada marcado trae su viaje', () => onTrip.every((d) => d.occurredOnTrip.tripId));",
+                  "console.log(onTrip.length + ' defectos ocurridos en el viaje');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Importar flota — vista previa (CAM-154)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rows\": [\n    { \"plate\": \"ZZ901AA\", \"brand\": \"Ford\", \"model\": \"Cargo 1723\", \"year\": 2020, \"odometerKm\": 98000 },\n    { \"plate\": \"ZZ902AA\", \"brand\": \"\", \"model\": \"Daily\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/import?dryRun=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "import"
+              ],
+              "query": [
+                {
+                  "key": "dryRun",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "dryRun=true: valida cada fila como el alta manual sin guardar nada. La segunda fila no tiene marca. Ver docs/api/CAM-154-vehicle-import-contract.md."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('no crea nada', () => pm.expect(body.created).to.eql(0));",
+                  "pm.test('marca la fila sin marca', () => pm.expect(body.rows[1].valid).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Importar flota (CAM-154)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rows\": [\n    { \"plate\": \"ZZ901AA\", \"brand\": \"Ford\", \"model\": \"Cargo 1723\", \"year\": 2020, \"odometerKm\": 98000 },\n    { \"plate\": \"ZZ902AA\", \"brand\": \"\", \"model\": \"Daily\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/import",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "import"
+              ]
+            },
+            "description": "Sin dryRun crea solo las filas válidas. Volver a correrlo da error de patente existente en la primera fila."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('crea solo la válida', () => pm.expect(body.created).to.be.at.most(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cumplimiento del mantenimiento (CAM-155)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-compliance?from=2026-01-01&to=2026-12-31",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "maintenance-compliance"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-01-01"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-12-31"
+                }
+              ]
+            },
+            "description": "Mantenimientos a tiempo, tiempo de resolución de defectos y OTs abiertas por antigüedad. Solo ADMIN. Ver docs/api/CAM-155-maintenance-compliance-contract.md."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('trae los tres indicadores', () => body.preventive && body.defects && body.openWorkOrders);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }
