@@ -304,6 +304,24 @@ for v in VEHICLES:
         assert a["status"] == target
         assignments.append(a)
 
+# CAM-155: en una flota real algunos mantenimientos se hacen después de vencer. A cerca de un tercio de los
+# intermedios (ni el primero, que no tiene con qué compararse, ni el último, que define el estado de hoy) se
+# los corre a un día con el 104-120 % del intervalo consumido. Generador aparte: el resto del seed no cambia.
+late_rng = random.Random(20261106)
+late_count = 0
+for a in assignments:
+    k, p, comps = a["vehicle"], PBY[a["plan"]], a["completions"]
+    for i in range(1, len(comps) - 1):
+        if late_rng.random() >= 0.35:
+            continue
+        prev_day, prev_km = comps[i - 1]
+        options = [d for d in range(comps[i][0] + 1, comps[i + 1][0] - 7)
+                   if is_idle(k, d) and 1.04 <= usage(p, prev_km, prev_day, km_at(k, d), d) <= 1.2]
+        if options:
+            d = late_rng.choice(options)
+            comps[i] = (d, km_at(k, d))
+            late_count += 1
+
 ABY = {(a["vehicle"], a["plan"]): a for a in assignments}
 
 # ---------------------------------------------------------------- inspecciones y defectos
@@ -943,7 +961,7 @@ import collections
 print("trips", len(trips), "open", sum(t["open"] for t in trips), "inspections", len(inspections), "answers",
       sum(len(i["answers"]) for i in inspections))
 print("defects", len(defects), collections.Counter((d["severity"], d["status"]) for d in defects))
-print("assignments", len(assignments), "completions", len(completions))
+print("assignments", len(assignments), "completions", len(completions), "late", late_count)
 print("work orders", len(work_orders), collections.Counter(o["status"] for o in work_orders))
 print("schedules", len(schedules), collections.Counter(s["status"] for s in schedules))
 print("expenses", len(expenses), "total", sum(e["amount"] for e in expenses))
