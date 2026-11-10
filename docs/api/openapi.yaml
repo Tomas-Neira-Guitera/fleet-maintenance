@@ -345,6 +345,387 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
+  /api/tires:
+    get:
+      summary: Cubiertas (CAM-157)
+      description: Solo ADMIN. Ver CAM-157-tires-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [stock, mounted, retired] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Tire"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      summary: Cargar una cubierta (CAM-157)
+      description: Queda en stock.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TireRequest"
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tire"
+        "409":
+          description: DUPLICATE_TIRE_CODE
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/tires/brand-comparison:
+    get:
+      summary: Costo por km por marca de cubierta (CAM-157)
+      description: >
+        Solo ADMIN. Costo total sobre km totales de las cubiertas de cada marca con al menos minKm km,
+        del más barato por km al más caro.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  minKm: { type: integer }
+                  brands:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        brand: { type: string }
+                        tires: { type: integer }
+                        retired: { type: integer }
+                        totalKm: { type: integer }
+                        totalCost: { type: number }
+                        costPerKm: { type: number }
+                        averageKm: { type: integer }
+
+  /api/tires/{tireId}:
+    parameters:
+      - name: tireId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Una cubierta con dónde estuvo y sus mediciones (CAM-157)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tire: { $ref: "#/components/schemas/Tire" }
+                  mountings:
+                    type: array
+                    items: { $ref: "#/components/schemas/TireMounting" }
+                  treads:
+                    type: array
+                    items: { $ref: "#/components/schemas/TreadMeasurement" }
+        "404":
+          description: TIRE_NOT_FOUND
+    put:
+      summary: Editar los datos de una cubierta (CAM-157)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TireRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tire"
+        "404":
+          description: TIRE_NOT_FOUND
+        "409":
+          description: DUPLICATE_TIRE_CODE
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Borrar una cubierta cargada por error (CAM-157)
+      description: Si ya estuvo montada, 409 TIRE_HAS_HISTORY (se da de baja).
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Borrada
+        "404":
+          description: TIRE_NOT_FOUND
+        "409":
+          description: TIRE_HAS_HISTORY
+
+  /api/tires/{tireId}/retire:
+    post:
+      summary: Dar de baja una cubierta del stock (CAM-157)
+      description: Una montada se da de baja al sacarla (409 TIRE_MOUNTED).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tireId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, nullable: true }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tire"
+        "409":
+          description: TIRE_MOUNTED / TIRE_RETIRED
+
+  /api/vehicles/{id}/tires:
+    get:
+      summary: Cubiertas del vehículo por posición, con su historial (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "404":
+          description: VEHICLE_NOT_FOUND
+
+  /api/vehicles/{id}/tire-layout:
+    put:
+      summary: Elegir la configuración de ejes del vehículo (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [layout]
+              properties:
+                layout: { type: string, enum: [4_ruedas, 6_ruedas, 10_ruedas] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "409":
+          description: TIRES_ON_REMOVED_POSITIONS
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{id}/tires/mount:
+    post:
+      summary: Montar una cubierta del stock, o cambiar la que hay (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tireId, position]
+              properties:
+                tireId: { type: string }
+                position: { $ref: "#/components/schemas/TirePosition" }
+                replaced:
+                  type: string
+                  enum: [stock, retired]
+                  nullable: true
+                  description: Si la posición está ocupada, qué pasa con la cubierta que estaba. Sin esto, 409 POSITION_OCCUPIED.
+                retiredReason: { type: string, nullable: true }
+      responses:
+        "200":
+          description: El vehículo actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "409":
+          description: NO_TIRE_LAYOUT / TIRE_NOT_IN_STOCK / POSITION_OCCUPIED / VEHICLE_INACTIVE
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{id}/tires/unmount:
+    post:
+      summary: Sacar una cubierta al stock o darla de baja (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [position]
+              properties:
+                position: { $ref: "#/components/schemas/TirePosition" }
+                retire: { type: boolean, default: false }
+                reason: { type: string, nullable: true }
+      responses:
+        "200":
+          description: El vehículo actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "409":
+          description: POSITION_EMPTY / NO_TIRE_LAYOUT
+
+  /api/vehicles/{id}/tires/rotate:
+    post:
+      summary: Rotar una cubierta a otra posición; si está ocupada, se intercambian (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from: { $ref: "#/components/schemas/TirePosition" }
+                to: { $ref: "#/components/schemas/TirePosition" }
+      responses:
+        "200":
+          description: El vehículo actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "409":
+          description: POSITION_EMPTY / NO_TIRE_LAYOUT / VEHICLE_INACTIVE
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{id}/tire-treads:
+    post:
+      summary: El admin carga mediciones del dibujo (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [readings]
+              properties:
+                readings:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/TreadReading"
+      responses:
+        "200":
+          description: El vehículo actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{id}/tire-positions:
+    get:
+      summary: Posiciones con cubierta, para el dibujo del pre-viaje (CAM-157)
+      description: ADMIN o CHOFER. Las que ruedan (sin el auxilio) y tienen una cubierta montada.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        position: { $ref: "#/components/schemas/TirePosition" }
+                        label: { type: string }
+
   /api/vehicles/{id}/costs:
     get:
       summary: Costo total de un vehículo (CAM-105, CAM-109)
@@ -3272,6 +3653,15 @@ components:
           description: >-
             CAM-153: id que arma el celular. Si llega otra vez (reintento después de un corte), se devuelve la
             inspección ya guardada sin crear otra. Con el id de otro chofer u otro vehículo, 409 DUPLICATE_SUBMISSION.
+        treadReadings:
+          type: array
+          nullable: true
+          description: >-
+            CAM-157: opcional, solo en el pre-viaje (en el post-viaje se ignora). Profundidad del dibujo de las
+            cubiertas montadas, por posición (GET /api/vehicles/{id}/tire-positions). Una posición sin cubierta,
+            repetida o un valor fuera de 0-30 mm da 422 con itemId treadReadings[i].position o .depthMm.
+          items:
+            $ref: "#/components/schemas/TreadReading"
 
     Trip:
       type: object
@@ -4404,6 +4794,113 @@ components:
           description: Promedio de horas entre que se creó y se finalizó cada una de esas OTs. null si no finalizó ninguna.
         expensesTotal: { type: number, description: Suma de los gastos cargados en el período en las OTs a su cargo. }
 
+    TreadReading:
+      type: object
+      required: [position, depthMm]
+      properties:
+        position: { $ref: "#/components/schemas/TirePosition" }
+        depthMm: { type: number, minimum: 0, maximum: 30, description: Hasta 1 decimal. }
+
+    TirePosition:
+      type: string
+      description: CAM-157. Las de cada configuración, en CAM-157-tires-contract.md §1.
+      enum: [del-izq, del-der, tras-izq, tras-der, e2-izq-ext, e2-izq-int, e2-der-int, e2-der-ext,
+             e3-izq-ext, e3-izq-int, e3-der-int, e3-der-ext, auxilio]
+
+    TireRequest:
+      type: object
+      required: [brand, size, purchaseDate, cost]
+      properties:
+        code: { type: string, maxLength: 40, nullable: true, description: Número de serie o el del taller. Único. }
+        brand: { type: string, maxLength: 60 }
+        model: { type: string, maxLength: 60, nullable: true }
+        size: { type: string, maxLength: 30, example: 295/80 R22.5 }
+        purchaseDate: { type: string, format: date }
+        cost: { type: number, exclusiveMinimum: 0 }
+        initialTreadMm: { type: number, nullable: true, maximum: 30 }
+
+    Tire:
+      type: object
+      properties:
+        id: { type: string }
+        code: { type: string, nullable: true }
+        brand: { type: string }
+        model: { type: string, nullable: true }
+        size: { type: string }
+        purchaseDate: { type: string, format: date }
+        cost: { type: number }
+        initialTreadMm: { type: number, nullable: true }
+        status: { type: string, enum: [stock, mounted, retired] }
+        retiredAt: { type: string, format: date-time, nullable: true }
+        retiredReason: { type: string, nullable: true }
+        km: { type: integer, description: Lo que rodó en todos sus montajes; el auxilio no suma. }
+        costPerKm: { type: number, nullable: true }
+        current:
+          type: object
+          nullable: true
+          description: Dónde está montada; null si no.
+          properties:
+            vehicleId: { type: string }
+            plate: { type: string }
+            position: { $ref: "#/components/schemas/TirePosition" }
+            positionLabel: { type: string }
+            mountedAt: { type: string, format: date-time }
+            mountedKm: { type: integer }
+        lastTread:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/TreadMeasurement"
+
+    TreadMeasurement:
+      type: object
+      properties:
+        depthMm: { type: number }
+        measuredAt: { type: string, format: date-time }
+        measuredBy: { type: string, nullable: true }
+        belowMinimum: { type: boolean }
+
+    TireMounting:
+      type: object
+      properties:
+        tireId: { type: string }
+        tireLabel: { type: string }
+        vehicleId: { type: string }
+        plate: { type: string }
+        position: { $ref: "#/components/schemas/TirePosition" }
+        positionLabel: { type: string }
+        mountedAt: { type: string, format: date-time }
+        mountedKm: { type: integer }
+        removedAt: { type: string, format: date-time, nullable: true }
+        removedKm: { type: integer, nullable: true }
+        km: { type: integer }
+
+    VehicleTires:
+      type: object
+      properties:
+        vehicleId: { type: string }
+        plate: { type: string }
+        layout: { type: string, enum: [4_ruedas, 6_ruedas, 10_ruedas], nullable: true }
+        odometerKm: { type: integer }
+        minTreadMm: { type: number }
+        positions:
+          type: array
+          items:
+            type: object
+            properties:
+              position: { $ref: "#/components/schemas/TirePosition" }
+              label: { type: string }
+              axle: { type: integer, description: 1 el delantero, 0 el auxilio. }
+              side: { type: string, enum: [izq, der], nullable: true }
+              inner: { type: boolean }
+              tire:
+                nullable: true
+                allOf:
+                  - $ref: "#/components/schemas/Tire"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/TireMounting"
+
     FuelLoadRequest:
       type: object
       required: [vehicleId, liters, amount, odometerKm]
@@ -4491,7 +4988,7 @@ components:
       enum: [work_order_assigned, work_order_unassigned, work_order_cancelled, trip_open_reminder,
              blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue,
              recurring_defect, document_due_soon, document_expired, vehicle_unavailable, vehicle_available,
-             trip_km_anomaly, fuel_consumption_anomaly]
+             trip_km_anomaly, fuel_consumption_anomaly, tire_tread_low]
 
     NotificationChannel:
       type: string

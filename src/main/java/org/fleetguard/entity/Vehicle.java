@@ -2,6 +2,8 @@ package org.fleetguard.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -61,6 +63,11 @@ public class Vehicle {
     // VehicleAvailabilityService para detectar el cambio y a quién avisarle cuando vuelve.
     @Column(name = "unavailable_since")
     private Instant unavailableSince;
+
+    // CAM-157: configuración de ejes, de la que salen las posiciones de sus cubiertas. Null: sin configurar.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tire_layout")
+    private TireLayout tireLayout;
 
     protected Vehicle() {
         // JPA
@@ -146,5 +153,13 @@ public class Vehicle {
 
     public void setUnavailableSince(Instant unavailableSince) {
         this.unavailableSince = unavailableSince;
+    }
+
+    public TireLayout getTireLayout() {
+        return tireLayout;
+    }
+
+    public void setTireLayout(TireLayout tireLayout) {
+        this.tireLayout = tireLayout;
     }
 }

@@ -56,6 +56,7 @@ public class InspectionService {
     private final OdometerReadings odometerReadings;
     private final VehicleAvailabilityService availabilityService;
     private final TripKmAlertService tripKmAlertService;
+    private final TireService tireService;
 
     private final ApplicationEventPublisher eventPublisher;
 
@@ -64,8 +65,9 @@ public class InspectionService {
                               InspectionMapper inspectionMapper, TripMapper tripMapper,
                               VehicleChecklistService checklistService, OdometerReadings odometerReadings,
                               VehicleAvailabilityService availabilityService, TripKmAlertService tripKmAlertService,
-                              ApplicationEventPublisher eventPublisher) {
+                              ApplicationEventPublisher eventPublisher, TireService tireService) {
         this.tripKmAlertService = tripKmAlertService;
+        this.tireService = tireService;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.inspectionRepository = inspectionRepository;
@@ -113,6 +115,10 @@ public class InspectionService {
         List<ChecklistAnswerDto> answers = submission.answers() == null ? List.of() : submission.answers();
         List<ChecklistItemDef> checklist = checklistService.resolve(vehicleId, type);
         InspectionValidator.ValidationOutcome outcome = validator.validate(type, checklist, answers);
+        // CAM-157: el dibujo de las cubiertas va solo en el pre-viaje; en el post-viaje se ignora.
+        List<TireService.Reading> treads = type == InspectionType.PRE_TRIP
+                ? tireService.validateInspectionReadings(vehicle, submission.treadReadings())
+                : List.of();
         Map<String, String> labelById = checklist.stream()
                 .collect(Collectors.toMap(ChecklistItemDef::id, ChecklistItemDef::label));
 
@@ -153,6 +159,7 @@ public class InspectionService {
         }
 
         inspectionRepository.save(inspection);
+        tireService.recordInspectionReadings(vehicle, treads, now, driver, inspection.getId());
 
         // CAM-97: el aviso sale después del commit (BlockingDefectNotificationListener).
         List<String> blockingTitles = inspection.getAnswers().stream()

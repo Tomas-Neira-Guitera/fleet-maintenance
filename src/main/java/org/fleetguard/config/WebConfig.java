@@ -58,6 +58,10 @@ public class WebConfig implements WebMvcConfigurer {
         // CAM-156: el chofer y el admin cargan combustible; editar, borrar y ver el consumo es del admin.
         registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER)).addPathPatterns("/fuel-loads");
         registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/fuel-loads/**", "/vehicles/*/fuel");
+        // CAM-157: neumáticos, del admin; las posiciones montadas también las lee el chofer para el pre-viaje.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/tires", "/tires/**", "/vehicles/*/tires",
+                "/vehicles/*/tires/**", "/vehicles/*/tire-layout", "/vehicles/*/tire-treads");
+        registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER)).addPathPatterns("/vehicles/*/tire-positions");
     }
 
     private JwtAuthInterceptor requiring(Role... roles) {
