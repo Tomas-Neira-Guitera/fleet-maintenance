@@ -55,12 +55,14 @@ public class VehicleService {
     private static final int MIN_YEAR = 1980;
 
     private final ApplicationEventPublisher eventPublisher;
+    private final ChecklistTemplateService checklistTemplateService;
 
     public VehicleService(VehicleRepository vehicleRepository, TripRepository tripRepository,
                            VehicleMaintenanceAssignmentRepository assignmentRepository,
                            VehicleAvailabilityService availabilityService, UserNameService userNameService,
                            VehicleMapper vehicleMapper, KmPerDayEstimator kmPerDayEstimator,
-                           ApplicationEventPublisher eventPublisher) {
+                           ApplicationEventPublisher eventPublisher, ChecklistTemplateService checklistTemplateService) {
+        this.checklistTemplateService = checklistTemplateService;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.assignmentRepository = assignmentRepository;
@@ -274,12 +276,21 @@ public class VehicleService {
             throw new VehicleValidationException("Datos inválidos para crear el vehículo", details);
         }
 
+        String templateId = request.checklistTemplateId() == null || request.checklistTemplateId().isBlank()
+                ? null : request.checklistTemplateId().trim();
+        if (templateId != null) {
+            checklistTemplateService.requireExists(templateId, "checklistTemplateId");
+        }
+
         if (vehicleRepository.existsByPlateIgnoreCase(request.plate())) {
             throw new VehicleStateConflictException("DUPLICATE_PLATE",
                     "Ya existe un vehículo con la patente " + request.plate());
         }
 
         Vehicle vehicle = vehicleRepository.save(newVehicle(request));
+        if (templateId != null) {
+            checklistTemplateService.applyToNewVehicle(templateId, vehicle.getId());
+        }
         return vehicleMapper.toSummary(vehicle, null, List.of());
     }
 

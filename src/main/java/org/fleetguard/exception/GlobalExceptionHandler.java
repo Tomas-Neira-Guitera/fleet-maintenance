@@ -41,6 +41,12 @@ public class GlobalExceptionHandler {
                 .body(new ApiError("CHECKLIST_ITEM_NOT_FOUND", ex.getMessage()));
     }
 
+    @ExceptionHandler(ChecklistTemplateNotFoundException.class)
+    public ResponseEntity<ApiError> handleChecklistTemplateNotFound(ChecklistTemplateNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("CHECKLIST_TEMPLATE_NOT_FOUND", ex.getMessage()));
+    }
+
     @ExceptionHandler(VehicleStateConflictException.class)
     public ResponseEntity<ApiError> handleVehicleStateConflict(VehicleStateConflictException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)

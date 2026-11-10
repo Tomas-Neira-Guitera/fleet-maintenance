@@ -32,7 +32,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class VehicleServiceTest {
@@ -43,9 +47,10 @@ class VehicleServiceTest {
     private final VehicleAvailabilityService availabilityService = mock(VehicleAvailabilityService.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final VehicleMapper vehicleMapper = new VehicleMapper();
+    private final ChecklistTemplateService checklistTemplateService = mock(ChecklistTemplateService.class);
     private final VehicleService service = new VehicleService(vehicleRepository, tripRepository, assignmentRepository,
             availabilityService, new UserNameService(userRepository), vehicleMapper, mock(KmPerDayEstimator.class),
-            event -> { });
+            event -> { }, checklistTemplateService);
 
     /** El id es @GeneratedValue; en el test se setea por reflexión, sin persistencia real (mismo patrón que DefectServiceTest). */
     private static void setId(Object entity, UUID id) throws Exception {
@@ -216,6 +221,30 @@ class VehicleServiceTest {
         assertEquals("CHASSIS-1", result.chassisNumber());
         assertEquals(5000L, result.odometerKm());
         assertEquals(true, result.active());
+    }
+
+    // CAM-150: la plantilla elegida en el alta se copia al vehículo nuevo.
+    @Test
+    void altaConPlantillaCopiaSusControles() throws Exception {
+        stubSaveReturnsSameEntityWithId();
+        String templateId = UUID.randomUUID().toString();
+
+        VehicleSummaryDto result = service.create(new CreateVehicleRequest("AB123CD", "Iveco", "Daily", null, null,
+                null, null, templateId));
+
+        verify(checklistTemplateService).requireExists(templateId, "checklistTemplateId");
+        verify(checklistTemplateService).applyToNewVehicle(eq(templateId), eq(UUID.fromString(result.id())));
+    }
+
+    @Test
+    void altaConPlantillaInexistenteNoCreaElVehiculo() {
+        String templateId = UUID.randomUUID().toString();
+        doThrow(new VehicleValidationException("Datos inválidos", List.of()))
+                .when(checklistTemplateService).requireExists(templateId, "checklistTemplateId");
+
+        assertThrows(VehicleValidationException.class, () -> service.create(new CreateVehicleRequest("AB123CD",
+                "Iveco", "Daily", null, null, null, null, templateId)));
+        verify(vehicleRepository, never()).save(any(Vehicle.class));
     }
 
     @Test

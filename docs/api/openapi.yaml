@@ -390,6 +390,179 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
+  /api/checklist-templates:
+    get:
+      summary: Plantillas de checklist (CAM-150)
+      description: Solo ADMIN. Ordenadas por nombre. Ver CAM-31-vehicle-checklist-contract.md §7.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChecklistTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      summary: Crear una plantilla de checklist (CAM-150)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChecklistTemplateRequest"
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: DUPLICATE_TEMPLATE_NAME
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/checklist-templates/{templateId}:
+    parameters:
+      - name: templateId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Una plantilla de checklist (CAM-150)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND
+    put:
+      summary: Editar una plantilla (CAM-150)
+      description: Reemplaza el nombre y todos los controles. Los vehículos donde ya se aplicó no cambian.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChecklistTemplateRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND
+        "409":
+          description: DUPLICATE_TEMPLATE_NAME
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Borrar una plantilla (CAM-150)
+      description: Los controles ya copiados siguen en los vehículos.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Borrada
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND
+
+  /api/checklist-templates/{templateId}/apply:
+    post:
+      summary: Copiar los controles de una plantilla a varios vehículos (CAM-150)
+      description: >
+        Se saltea el control que el vehículo ya tiene con la misma etiqueta y sección
+        (sin importar mayúsculas ni acentos), así que aplicar dos veces no duplica.
+        Un vehículo dado de baja da 409 VEHICLE_INACTIVE y no se copia nada.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vehicleIds]
+              properties:
+                vehicleIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items: { type: string }
+      responses:
+        "200":
+          description: Lo agregado y lo salteado, por vehículo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplyChecklistTemplateResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND / VEHICLE_NOT_FOUND
+        "409":
+          description: VEHICLE_INACTIVE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
   /api/vehicles/{vehicleId}/checklist-items/{itemId}:
     patch:
       summary: Quitar del checklist o volver a incluir un ítem del vehículo (CAM-31)
@@ -2761,6 +2934,68 @@ components:
         year: { type: integer }
         chassisNumber: { type: string }
         odometerKm: { type: integer, description: Kilometraje inicial, default 0. No puede ser negativo (CAM-154). }
+        checklistTemplateId:
+          type: string
+          nullable: true
+          description: >
+            CAM-150. Plantilla cuyos controles se copian al vehículo nuevo. Si no existe, 422
+            con field checklistTemplateId y el vehículo no se crea. La importación (CAM-154) lo ignora.
+
+    ChecklistTemplateRequest:
+      type: object
+      required: [name, items]
+      properties:
+        name: { type: string, maxLength: 60 }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: object
+            required: [label, section]
+            properties:
+              label: { type: string, maxLength: 60 }
+              type: { type: string, enum: [check, number], default: check }
+              section: { type: string, enum: [exterior, interior] }
+
+    ChecklistTemplate:
+      type: object
+      required: [id, name, items, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, label, type, section]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              type: { type: string, enum: [check, number] }
+              section: { type: string, enum: [exterior, interior] }
+        createdAt: { type: string, format: date-time }
+
+    ApplyChecklistTemplateResult:
+      type: object
+      required: [templateId, added, skipped, vehicles]
+      properties:
+        templateId: { type: string }
+        added: { type: integer, description: Controles agregados en total. }
+        skipped: { type: integer, description: Controles salteados en total porque el vehículo ya los tenía. }
+        vehicles:
+          type: array
+          items:
+            type: object
+            required: [vehicleId, plate, added, skipped, skippedLabels]
+            properties:
+              vehicleId: { type: string }
+              plate: { type: string }
+              added: { type: integer }
+              skipped: { type: integer }
+              skippedLabels:
+                type: array
+                items: { type: string }
 
     VehicleImportResult:
       type: object

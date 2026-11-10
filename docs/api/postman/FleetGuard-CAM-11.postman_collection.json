@@ -2115,6 +2115,255 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Plantillas de checklist (CAM-150)",
+      "item": [
+        {
+          "name": "Crear plantilla",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checklist-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checklist-templates"
+              ]
+            },
+            "description": "Requiere 'Login — admin'. Ver docs/api/CAM-31-vehicle-checklist-contract.md §7.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Frigorífico\",\n  \"items\": [\n    {\n      \"label\": \"Temperatura de la cámara\",\n      \"type\": \"number\",\n      \"section\": \"interior\"\n    },\n    {\n      \"label\": \"Equipo de frío\",\n      \"section\": \"exterior\"\n    },\n    {\n      \"label\": \"Burletes de la puerta\",\n      \"section\": \"exterior\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('templateId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar plantillas",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checklist-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checklist-templates"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aplicar plantilla a un vehículo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checklist-templates/{{templateId}}/apply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checklist-templates",
+                "{{templateId}}",
+                "apply"
+              ]
+            },
+            "description": "Correrlo dos veces: la segunda no agrega nada y lo dice en skipped.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleIds\": [\n    \"{{vehicleId}}\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('dice lo agregado y lo salteado', () => pm.expect(pm.response.json().added + pm.response.json().skipped).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Editar plantilla",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checklist-templates/{{templateId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checklist-templates",
+                "{{templateId}}"
+              ]
+            },
+            "description": "Los vehículos donde ya se aplicó no cambian.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Frigorífico\",\n  \"items\": [\n    {\n      \"label\": \"Temperatura de la cámara\",\n      \"type\": \"number\",\n      \"section\": \"interior\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aplicar plantilla siendo chofer (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checklist-templates/{{templateId}}/apply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checklist-templates",
+                "{{templateId}}",
+                "apply"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleIds\": [\n    \"{{vehicleId}}\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Borrar plantilla",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checklist-templates/{{templateId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checklist-templates",
+                "{{templateId}}"
+              ]
+            },
+            "description": "Los controles ya copiados siguen en los vehículos."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

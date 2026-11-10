@@ -53,6 +53,8 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/vehicles/*/documents", "/vehicles/*/documents/**");
         // CAM-154: importar la flota desde un archivo, solo el admin.
         registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/vehicles/import");
+        // CAM-150: plantillas de checklist, solo el admin.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/checklist-templates", "/checklist-templates/**");
     }
 
     private JwtAuthInterceptor requiring(Role... roles) {
