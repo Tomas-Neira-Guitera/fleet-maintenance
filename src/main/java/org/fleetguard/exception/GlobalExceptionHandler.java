@@ -47,6 +47,12 @@ public class GlobalExceptionHandler {
                 .body(new ApiError("CHECKLIST_TEMPLATE_NOT_FOUND", ex.getMessage()));
     }
 
+    @ExceptionHandler(FuelLoadNotFoundException.class)
+    public ResponseEntity<ApiError> handleFuelLoadNotFound(FuelLoadNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("FUEL_LOAD_NOT_FOUND", ex.getMessage()));
+    }
+
     @ExceptionHandler(VehicleStateConflictException.class)
     public ResponseEntity<ApiError> handleVehicleStateConflict(VehicleStateConflictException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)

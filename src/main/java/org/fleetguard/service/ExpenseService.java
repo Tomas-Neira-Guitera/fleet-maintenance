@@ -3,6 +3,7 @@ package org.fleetguard.service;
 import org.fleetguard.dto.ExpenseDto;
 import org.fleetguard.dto.FieldValidationErrorDetail;
 import org.fleetguard.dto.VehicleExpenseRequest;
+import org.fleetguard.entity.FuelLoad;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleExpense;
 import org.fleetguard.entity.VehicleExpenseCategory;
@@ -11,6 +12,7 @@ import org.fleetguard.entity.WorkOrderExpense;
 import org.fleetguard.exception.ExpenseNotFoundException;
 import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.WorkOrderValidationException;
+import org.fleetguard.repository.FuelLoadRepository;
 import org.fleetguard.repository.VehicleExpenseRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderExpenseRepository;
@@ -33,25 +35,34 @@ import java.util.stream.Stream;
 /**
  * Lógica de /api/expenses: los gastos que se cargan dentro de cada orden de trabajo (CAM-63), solo
  * lectura acá (CAM-52), y los gastos operativos del vehículo, con su alta, edición y baja (CAM-109).
- * Los totales los calcula el cliente sobre el listado.
+ * CAM-156 suma las cargas de combustible (origin "fuel", solo lectura acá). Los totales los calcula el
+ * cliente sobre el listado.
  */
 @Service
 public class ExpenseService {
 
     private static final ZoneId FLEET_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
     private static final String OPERATING_ORIGIN = "operating";
+    public static final String FUEL_ORIGIN = "fuel";
     // Lo que entra en la columna: numeric(12, 2).
     private static final BigDecimal MAX_AMOUNT = new BigDecimal("9999999999.99");
 
     private final WorkOrderExpenseRepository expenseRepository;
     private final VehicleExpenseRepository vehicleExpenseRepository;
     private final VehicleRepository vehicleRepository;
+    private final FuelLoadRepository fuelLoadRepository;
 
     public ExpenseService(WorkOrderExpenseRepository expenseRepository, VehicleExpenseRepository vehicleExpenseRepository,
-                          VehicleRepository vehicleRepository) {
+                          VehicleRepository vehicleRepository, FuelLoadRepository fuelLoadRepository) {
         this.expenseRepository = expenseRepository;
         this.vehicleExpenseRepository = vehicleExpenseRepository;
         this.vehicleRepository = vehicleRepository;
+        this.fuelLoadRepository = fuelLoadRepository;
+    }
+
+    /** CAM-156: un gasto operativo o una carga de combustible, que no salen de una OT. */
+    public static boolean isOperating(ExpenseDto expense) {
+        return OPERATING_ORIGIN.equals(expense.origin()) || FUEL_ORIGIN.equals(expense.origin());
     }
 
     /** Todos los filtros son opcionales. Un vehicleId, category u origin que no existe da lista vacía, no error. */
@@ -63,7 +74,8 @@ public class ExpenseService {
             throw new WorkOrderValidationException("Período inválido", details);
         }
 
-        Stream<ExpenseDto> expenses = Stream.concat(workOrderExpenses(range), operatingExpenses(range));
+        Stream<ExpenseDto> expenses = Stream.concat(Stream.concat(workOrderExpenses(range), operatingExpenses(range)),
+                fuelExpenses(range));
         if (vehicleIdParam != null && !vehicleIdParam.isBlank()) {
             String vehicleId = Uuids.parse(vehicleIdParam.trim()).map(UUID::toString).orElse(null);
             expenses = expenses.filter(e -> e.vehicleId().equals(vehicleId));
@@ -80,6 +92,9 @@ public class ExpenseService {
     @Transactional
     public ExpenseDto create(VehicleExpenseRequest request) {
         Valid valid = validate(request);
+        if (valid.category() == VehicleExpenseCategory.COMBUSTIBLE) {
+            throw fuelGoesToFuelLoads();
+        }
         VehicleExpense expense = new VehicleExpense(valid.vehicle(), valid.date(), valid.category(),
                 request.description().trim(), request.amount());
         return toDto(vehicleExpenseRepository.save(expense));
@@ -89,6 +104,10 @@ public class ExpenseService {
     public ExpenseDto update(String id, VehicleExpenseRequest request) {
         VehicleExpense expense = findOperating(id);
         Valid valid = validate(request);
+        // Los de combustible anteriores a CAM-156 se pueden seguir editando; uno nuevo, no.
+        if (valid.category() == VehicleExpenseCategory.COMBUSTIBLE && expense.getCategory() != VehicleExpenseCategory.COMBUSTIBLE) {
+            throw fuelGoesToFuelLoads();
+        }
         expense.update(valid.vehicle(), valid.date(), valid.category(), request.description().trim(), request.amount());
         return toDto(expense);
     }
@@ -96,6 +115,11 @@ public class ExpenseService {
     @Transactional
     public void delete(String id) {
         vehicleExpenseRepository.delete(findOperating(id));
+    }
+
+    private static WorkOrderValidationException fuelGoesToFuelLoads() {
+        return new WorkOrderValidationException("Datos inválidos para el gasto", List.of(new FieldValidationErrorDetail(
+                "category", "El combustible se carga en Combustible, con los litros y los km (CAM-156)")));
     }
 
     /** Un id de gasto de OT tampoco existe acá: esos se manejan desde su orden de trabajo. */
@@ -177,6 +201,17 @@ public class ExpenseService {
                     return !date.isBefore(range.from()) && date.isBefore(range.to());
                 })
                 .map(ExpenseService::toDto);
+    }
+
+    private Stream<ExpenseDto> fuelExpenses(DateRange range) {
+        return fuelLoadRepository.findInRangeWithVehicle(range.from(), range.to()).stream().map(ExpenseService::toDto);
+    }
+
+    private static ExpenseDto toDto(FuelLoad load) {
+        return new ExpenseDto(load.getId().toString(), load.getLoadedAt().toString(), load.getVehicle().getId().toString(),
+                load.getVehicle().getPlate(), VehicleExpenseCategory.COMBUSTIBLE.toJson(),
+                FuelLoadService.expenseDescription(load), load.getAmount(), null, null, null, FUEL_ORIGIN, null, null,
+                null);
     }
 
     private static Instant instantOf(VehicleExpense expense) {

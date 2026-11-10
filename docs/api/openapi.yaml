@@ -230,6 +230,121 @@ paths:
         "404":
           description: VEHICLE_NOT_FOUND
 
+  /api/fuel-loads:
+    post:
+      summary: Registrar una carga de combustible (CAM-156)
+      description: >
+        ADMIN o CHOFER. La carga anterior por fecha no puede tener más km (422 en odometerKm). Su km
+        mueve el odómetro del vehículo (CAM-90). Si es de tanque lleno y el tramo que cierra consume
+        más de 1,3 veces el promedio de los últimos tramos, se avisa. Ver CAM-156-fuel-contract.md.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FuelLoadRequest"
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FuelLoad"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "409":
+          description: VEHICLE_INACTIVE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/fuel-loads/{fuelLoadId}:
+    parameters:
+      - name: fuelLoadId
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Corregir una carga de combustible (CAM-156)
+      description: Solo ADMIN. vehicleId se ignora. No mueve el odómetro ni vuelve a avisar.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FuelLoadRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FuelLoad"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: FUEL_LOAD_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Borrar una carga de combustible (CAM-156)
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Borrada
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: FUEL_LOAD_NOT_FOUND
+
+  /api/vehicles/{id}/fuel:
+    get:
+      summary: Consumo de combustible del vehículo (CAM-156)
+      description: >
+        Solo ADMIN. Los últimos `months` meses contando el actual: resumen, un elemento por mes y
+        las cargas del período, de la más reciente a la más antigua.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: months
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 24, default: 6 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleFuel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
   /api/vehicles/{id}/costs:
     get:
       summary: Costo total de un vehículo (CAM-105, CAM-109)
@@ -2184,10 +2299,12 @@ paths:
             $ref: "#/components/schemas/ExpenseCategory"
         - name: origin
           in: query
-          description: Separa los gastos operativos (`operating`) de los de OT (`plan`, `defect`, `manual`).
+          description: >
+            Separa los gastos operativos (`operating`) y las cargas de combustible (`fuel`, CAM-156)
+            de los de OT (`plan`, `defect`, `manual`).
           schema:
             type: string
-            enum: [plan, defect, manual, operating]
+            enum: [plan, defect, manual, operating, fuel]
         - $ref: "#/components/parameters/PeriodFrom"
         - $ref: "#/components/parameters/PeriodTo"
       responses:
@@ -3902,9 +4019,10 @@ components:
             - $ref: "#/components/schemas/WorkOrderStatus"
         origin:
           type: string
-          enum: [plan, defect, manual, operating]
+          enum: [plan, defect, manual, operating, fuel]
           description: >
-            De dónde nació el gasto: `operating` es un gasto operativo, sin OT.
+            De dónde nació el gasto: `operating` es un gasto operativo, sin OT; `fuel`, una carga de
+            combustible (CAM-156), que se edita desde /api/fuel-loads.
             Los otros dicen de dónde nació su OT: de un plan de mantenimiento
             (gasto preventivo), de un defecto (correctivo) o suelta. No es
             `sourceType`: una OT creada desde el calendario conserva el plan
@@ -4286,6 +4404,85 @@ components:
           description: Promedio de horas entre que se creó y se finalizó cada una de esas OTs. null si no finalizó ninguna.
         expensesTotal: { type: number, description: Suma de los gastos cargados en el período en las OTs a su cargo. }
 
+    FuelLoadRequest:
+      type: object
+      required: [vehicleId, liters, amount, odometerKm]
+      properties:
+        vehicleId: { type: string, description: Solo en el alta. }
+        loadedAt: { type: string, format: date-time, description: Sin valor, ahora. }
+        liters: { type: number, exclusiveMinimum: 0, maximum: 2000 }
+        amount: { type: number, exclusiveMinimum: 0 }
+        odometerKm: { type: integer, minimum: 0 }
+        fullTank: { type: boolean, default: true }
+
+    FuelLoad:
+      type: object
+      required: [id, vehicleId, plate, loadedAt, liters, amount, odometerKm, fullTank, createdBy, consumption, alert]
+      properties:
+        id: { type: string }
+        vehicleId: { type: string }
+        plate: { type: string }
+        loadedAt: { type: string, format: date-time }
+        liters: { type: number }
+        amount: { type: number }
+        odometerKm: { type: integer }
+        fullTank: { type: boolean }
+        createdBy:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/UserRef"
+        consumption:
+          type: object
+          nullable: true
+          description: El tramo que cierra esta carga (de tanque lleno a tanque lleno); null si no cierra ninguno.
+          properties:
+            km: { type: integer }
+            liters: { type: number }
+            litersPer100Km: { type: number }
+            costPerKm: { type: number }
+        alert:
+          type: object
+          nullable: true
+          description: Si al cargarla se avisó de un consumo anormal.
+          properties:
+            litersPer100Km: { type: number }
+            averageLitersPer100Km: { type: number }
+
+    VehicleFuel:
+      type: object
+      required: [vehicleId, plate, months, summary, monthly, loads]
+      properties:
+        vehicleId: { type: string }
+        plate: { type: string }
+        months: { type: integer }
+        summary:
+          $ref: "#/components/schemas/FuelPeriod"
+        monthly:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/FuelPeriod"
+              - type: object
+                properties:
+                  month: { type: string, example: "2026-06" }
+        loads:
+          type: array
+          items:
+            $ref: "#/components/schemas/FuelLoad"
+
+    FuelPeriod:
+      type: object
+      description: >
+        Litros y monto de las cargas del período; km medidos, L/100 km y costo por km de los
+        tramos que cierran en el período (null si no cierra ninguno).
+      properties:
+        loadCount: { type: integer, description: Solo en summary. }
+        liters: { type: number }
+        amount: { type: number }
+        measuredKm: { type: integer }
+        litersPer100Km: { type: number, nullable: true }
+        costPerKm: { type: number, nullable: true }
+
     NotificationType:
       type: string
       description: >
@@ -4294,7 +4491,7 @@ components:
       enum: [work_order_assigned, work_order_unassigned, work_order_cancelled, trip_open_reminder,
              blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue,
              recurring_defect, document_due_soon, document_expired, vehicle_unavailable, vehicle_available,
-             trip_km_anomaly]
+             trip_km_anomaly, fuel_consumption_anomaly]
 
     NotificationChannel:
       type: string

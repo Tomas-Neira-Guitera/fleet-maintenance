@@ -103,8 +103,9 @@ public class VehicleComparisonService {
         for (Vehicle vehicle : vehicles) {
             String id = vehicle.getId().toString();
             List<ExpenseDto> expenses = expensesById.getOrDefault(id, List.of());
-            BigDecimal operating = sum(expenses.stream().filter(e -> "operating".equals(e.origin())).toList());
-            BigDecimal maintenance = sum(expenses.stream().filter(e -> !"operating".equals(e.origin())).toList());
+            // CAM-156: las cargas de combustible cuentan como gasto operativo.
+            BigDecimal operating = sum(expenses.stream().filter(ExpenseService::isOperating).toList());
+            BigDecimal maintenance = sum(expenses.stream().filter(e -> !ExpenseService.isOperating(e)).toList());
             BigDecimal total = maintenance.add(operating);
             KmSpan span = kmDriven(KmPerDayEstimator.validReadings(readings.getOrDefault(vehicle.getId(), List.of()),
                     vehicle.getOdometerKm(), now), start, end, maxJumpKm);
@@ -114,7 +115,7 @@ public class VehicleComparisonService {
             List<ExpenseDto> withKm = span == null ? List.of() : expenses.stream()
                     .filter(e -> !Instant.parse(e.date()).isBefore(span.from()))
                     .toList();
-            BigDecimal maintenanceWithKm = sum(withKm.stream().filter(e -> !"operating".equals(e.origin())).toList());
+            BigDecimal maintenanceWithKm = sum(withKm.stream().filter(e -> !ExpenseService.isOperating(e)).toList());
             BigDecimal totalWithKm = sum(withKm);
             DowntimeDto.Vehicle down = downtimeById.get(id);
             rows.add(new Row(id, vehicle.getPlate(), vehicle.getBrand(), vehicle.getModel(), vehicle.getVehicleType(),
