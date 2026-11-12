@@ -21,6 +21,7 @@ import org.fleetguard.entity.WorkOrderExpenseCategory;
 import org.fleetguard.entity.WorkOrderPhoto;
 import org.fleetguard.entity.WorkOrderSourceType;
 import org.fleetguard.entity.WorkOrderStatus;
+import org.fleetguard.event.DefectResolvedEvent;
 import org.fleetguard.exception.WorkOrderConflictException;
 import org.fleetguard.exception.WorkOrderNotFoundException;
 import org.fleetguard.exception.WorkOrderValidationException;
@@ -80,10 +81,11 @@ class WorkOrderLifecycleServiceTest {
     private final ScheduledMaintenanceService scheduledMaintenanceService = mock(ScheduledMaintenanceService.class);
     private final MaintenanceCompletionService completionService = mock(MaintenanceCompletionService.class);
     private final VehicleAvailabilityService availabilityService = mock(VehicleAvailabilityService.class);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final WorkOrderService service = new WorkOrderService(workOrderRepository, expenseRepository, photoRepository,
             vehicleRepository, defectRepository, scheduleRepository, scheduledMaintenanceService, completionService,
             mock(UserRepository.class), new WorkOrderMapper(), new DefectMapper(), new OdometerReadings(5000),
-            mock(ApplicationEventPublisher.class), availabilityService);
+            eventPublisher, availabilityService);
 
     private final UUID vehicleId = UUID.randomUUID();
     private final Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
@@ -318,6 +320,71 @@ class WorkOrderLifecycleServiceTest {
         assertNotNull(defect.getResolvedAt());
         // CAM-103: se revisa la disponibilidad, con la OT que lo liberó para el aviso al chofer.
         verify(availabilityService).sync(vehicle, workOrder.getId());
+    }
+
+    // --- CAM-141: aviso al chofer de que se resolvió su defecto ---
+
+    private Defect openDefect(DefectSeverity severity) throws Exception {
+        Defect defect = new Defect(severity, "Luz de freno", "http://localhost/f.jpg", Instant.now());
+        setId(defect, UUID.randomUUID());
+        when(defectRepository.findById(defect.getId())).thenReturn(Optional.of(defect));
+        return defect;
+    }
+
+    @Test
+    void finalizarLaOtDeUnDefectoAbiertoPublicaQueSeResolvio() throws Exception {
+        Defect defect = openDefect(DefectSeverity.NON_BLOCKING);
+        WorkOrder workOrder = inProgress(null, defect.getId(), null);
+        withPhotos(workOrder, 1);
+
+        service.update(workOrder.getId().toString(), finalizeWith("Lámpara reemplazada", null));
+
+        verify(eventPublisher).publishEvent(new DefectResolvedEvent(defect.getId(), workOrder.getId(), false));
+    }
+
+    @Test
+    void elEventoDiceSiElVehiculoVolvioAEstarDisponible() throws Exception {
+        Defect defect = openDefect(DefectSeverity.BLOCKING);
+        WorkOrder workOrder = inProgress(null, defect.getId(), null);
+        withPhotos(workOrder, 1);
+        when(availabilityService.sync(vehicle, workOrder.getId())).thenReturn(true);
+
+        service.update(workOrder.getId().toString(), finalizeWith("Neumático reemplazado", null));
+
+        verify(eventPublisher).publishEvent(new DefectResolvedEvent(defect.getId(), workOrder.getId(), true));
+    }
+
+    @Test
+    void unaSegundaOtDeUnDefectoYaResueltoNoVuelveAPublicarlo() throws Exception {
+        Defect defect = openDefect(DefectSeverity.NON_BLOCKING);
+        defect.resolve(Instant.now());
+        WorkOrder workOrder = inProgress(null, defect.getId(), null);
+        withPhotos(workOrder, 1);
+
+        service.update(workOrder.getId().toString(), finalizeWith("Revisado otra vez", null));
+
+        verify(eventPublisher, never()).publishEvent(any(DefectResolvedEvent.class));
+    }
+
+    @Test
+    void cancelarLaOtDeUnDefectoNoPublicaQueSeResolvio() throws Exception {
+        Defect defect = openDefect(DefectSeverity.NON_BLOCKING);
+        WorkOrder ofDefect = inProgress(null, defect.getId(), null);
+
+        service.update(ofDefect.getId().toString(), status("cancelada"));
+
+        assertEquals("open", defect.getStatus());
+        verify(eventPublisher, never()).publishEvent(any(DefectResolvedEvent.class));
+    }
+
+    @Test
+    void finalizarUnaOtSinDefectoNoPublicaQueSeResolvio() throws Exception {
+        WorkOrder manual = inProgress(null, null, null);
+        withPhotos(manual, 1);
+
+        service.update(manual.getId().toString(), finalizeWith("Revisado", null));
+
+        verify(eventPublisher, never()).publishEvent(any(DefectResolvedEvent.class));
     }
 
     @Test

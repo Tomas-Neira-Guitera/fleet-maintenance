@@ -25,6 +25,7 @@ import org.fleetguard.entity.WorkOrderPauseReason;
 import org.fleetguard.entity.WorkOrderPhoto;
 import org.fleetguard.entity.WorkOrderSourceType;
 import org.fleetguard.entity.WorkOrderStatus;
+import org.fleetguard.event.DefectResolvedEvent;
 import org.fleetguard.event.WorkOrderCancelledEvent;
 import org.fleetguard.event.WorkOrderFinalizedEvent;
 import org.fleetguard.event.WorkOrderTechnicianChangedEvent;
@@ -481,11 +482,17 @@ public class WorkOrderService {
 
         if (workOrder.getDefectId() != null) {
             defectRepository.findById(workOrder.getDefectId()).ifPresent(defect -> {
+                boolean wasOpen = "open".equals(defect.getStatus());
                 defect.resolve(workOrder.getFinalizedAt());
                 defectRepository.saveAndFlush(defect);
                 // CAM-103: si era el último bloqueante, el vehículo vuelve a estar disponible.
-                vehicleRepository.findById(workOrder.getVehicleId())
-                        .ifPresent(vehicle -> availabilityService.sync(vehicle, workOrder.getId()));
+                boolean becameAvailable = vehicleRepository.findById(workOrder.getVehicleId())
+                        .map(vehicle -> availabilityService.sync(vehicle, workOrder.getId()))
+                        .orElse(false);
+                // CAM-141: una segunda OT de un defecto ya resuelto no le vuelve a avisar al chofer.
+                if (wasOpen) {
+                    eventPublisher.publishEvent(new DefectResolvedEvent(defect.getId(), workOrder.getId(), becameAvailable));
+                }
             });
         }
 

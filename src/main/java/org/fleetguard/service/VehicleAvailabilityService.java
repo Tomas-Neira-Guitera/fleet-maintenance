@@ -98,12 +98,13 @@ public class VehicleAvailabilityService {
 
     /**
      * Recalcula la disponibilidad y, si cambió desde la última vez, la guarda y publica el evento (sale
-     * después del commit). workOrderId: la OT que se acaba de finalizar, si es lo que la originó.
+     * después del commit). workOrderId: la OT que se acaba de finalizar, si es lo que la originó. Devuelve
+     * true si el vehículo volvió a estar disponible en esta llamada (CAM-141 lo usa para no avisar dos veces).
      */
     @Transactional
-    public void sync(Vehicle vehicle, UUID workOrderId) {
+    public boolean sync(Vehicle vehicle, UUID workOrderId) {
         if (!vehicle.isActive()) {
-            return;
+            return false;
         }
         List<BlockReasonDto> reasons = reasons(vehicle.getId());
         Instant since = vehicle.getUnavailableSince();
@@ -118,7 +119,9 @@ public class VehicleAvailabilityService {
             vehicleRepository.save(vehicle);
             eventPublisher.publishEvent(new VehicleAvailabilityChangedEvent(vehicle.getId(), vehicle.getPlate(), true,
                     List.of(), since, workOrderId));
+            return true;
         }
+        return false;
     }
 
     /** Lo más viejo que lo bloquea hoy: el primer bloqueante reportado o el día siguiente al vencimiento. */
