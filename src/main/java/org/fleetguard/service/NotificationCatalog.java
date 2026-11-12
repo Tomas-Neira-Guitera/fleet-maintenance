@@ -61,6 +61,9 @@ public final class NotificationCatalog {
                 "Un chofer reporta un defecto que deja al vehículo sin poder salir.", Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.RECURRING_DEFECT, "Defecto recurrente",
                 "El mismo control del checklist falla varias veces en el mismo vehículo.", Audience.CONFIGURABLE, null, Lead.NONE);
+        add(NotificationType.DEFECT_UNATTENDED, "Defecto sin atender",
+                "Un defecto lleva días abierto sin una orden de trabajo ni un turno. Un aviso por vehículo, una sola vez por defecto.",
+                Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.TRIP_KM_ANOMALY, "Kilometraje fuera de lo normal",
                 "Un viaje se cierra con muchos más o muchos menos km que el promedio del vehículo, o con menos km de los que ya tenía.",
                 Audience.CONFIGURABLE, null, Lead.NONE);
@@ -121,6 +124,7 @@ public final class NotificationCatalog {
 
     private static int order(NotificationType type) {
         return List.of(NotificationType.BLOCKING_DEFECT_REPORTED, NotificationType.RECURRING_DEFECT,
+                NotificationType.DEFECT_UNATTENDED,
                 NotificationType.TRIP_KM_ANOMALY, NotificationType.WORK_ORDER_FINALIZED,
                 NotificationType.MAINTENANCE_DUE_SOON, NotificationType.MAINTENANCE_OVERDUE,
                 NotificationType.DOCUMENT_DUE_SOON, NotificationType.DOCUMENT_EXPIRED,
