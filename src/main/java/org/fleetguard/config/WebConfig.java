@@ -57,7 +57,8 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/checklist-templates", "/checklist-templates/**");
         // CAM-156: el chofer y el admin cargan combustible; editar, borrar y ver el consumo es del admin.
         registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER)).addPathPatterns("/fuel-loads");
-        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/fuel-loads/**", "/vehicles/*/fuel");
+        // "/fuel-loads/*" y no "/**": ese también matchea "/fuel-loads" y dejaría al chofer sin cargar.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/fuel-loads/*", "/vehicles/*/fuel");
         // CAM-157: neumáticos, del admin; las posiciones montadas también las lee el chofer para el pre-viaje.
         registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/tires", "/tires/**", "/vehicles/*/tires",
                 "/vehicles/*/tires/**", "/vehicles/*/tire-layout", "/vehicles/*/tire-treads");
