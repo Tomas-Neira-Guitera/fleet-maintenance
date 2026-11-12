@@ -2663,7 +2663,32 @@
       "name": "Neumáticos (CAM-157)",
       "item": [
         {
-          "name": "Configuración de ejes: 6 ruedas",
+          "name": "Enganche: ver (remolque o tractor)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{trailerId}}/coupling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{trailerId}}",
+                "coupling"
+              ]
+            },
+            "description": "CAM-157. Admin o chofer."
+          }
+        },
+        {
+          "name": "Enganche: enganchar remolque",
           "request": {
             "method": "PUT",
             "header": [
@@ -2677,35 +2702,48 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/tire-layout",
+              "raw": "{{baseUrl}}/api/vehicles/{{trailerId}}/coupling",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "vehicles",
-                "{{vehicleId}}",
-                "tire-layout"
+                "{{trailerId}}",
+                "coupling"
               ]
             },
-            "description": "Requiere 'Login — admin'. Ver docs/api/CAM-157-tires-contract.md.",
+            "description": "CAM-157. Tractor → semirremolque; camión rígido → acoplado. 409 NOT_A_TRAILER / CANNOT_TOW.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"layout\": \"6_ruedas\"\n}"
+              "raw": "{\n  \"towingId\": \"{{vehicleId}}\"\n}"
             }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('7 posiciones', () => pm.expect(pm.response.json().positions.length).to.eql(7));"
-                ]
+          }
+        },
+        {
+          "name": "Enganche: desenganchar",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
               }
-            }
-          ]
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{trailerId}}/coupling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{trailerId}}",
+                "coupling"
+              ]
+            },
+            "description": "CAM-157."
+          }
         },
         {
           "name": "Cargar cubierta",
@@ -2780,7 +2818,7 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"tireId\": \"{{tireId}}\",\n  \"position\": \"del-izq\"\n}"
+              "raw": "{\n  \"tireId\": \"{{tireId}}\",\n  \"position\": \"e1-izq\"\n}"
             }
           },
           "event": [
@@ -2825,7 +2863,7 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"from\": \"del-izq\",\n  \"to\": \"e2-der-ext\"\n}"
+              "raw": "{\n  \"from\": \"e1-izq\",\n  \"to\": \"e2-der-ext\"\n}"
             }
           },
           "event": [

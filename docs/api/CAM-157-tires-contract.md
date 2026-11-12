@@ -6,30 +6,44 @@
 |---|---|
 | `/api/tires` (ADMIN) | Nuevo: alta, edición, baja y borrado de cubiertas, y su detalle |
 | `GET /api/tires/brand-comparison` (ADMIN) | Nuevo: costo por km por marca |
-| `/api/vehicles/{id}/tires`, `/tire-layout`, `/tires/mount`, `/tires/unmount`, `/tires/rotate`, `/tire-treads` (ADMIN) | Nuevos: configuración de ejes, qué cubierta hay en cada posición, montar, sacar, rotar y medir |
+| `/api/vehicles/{id}/tires`, `/tires/mount`, `/tires/unmount`, `/tires/rotate`, `/tire-treads` (ADMIN) | Nuevos: qué cubierta hay en cada posición, montar, sacar, rotar y medir |
+| `vehicleType` (alta, edición, importación) | Pasa a ser un catálogo cerrado y obligatorio al crear: define ejes y cubiertas |
+| `/api/vehicles/{id}/coupling` (GET admin o chofer; PUT y DELETE admin) | Nuevo: enganche de un semirremolque o acoplado al que lo arrastra |
 | `GET /api/vehicles/{id}/tire-positions` (ADMIN o CHOFER) | Nuevo: posiciones montadas, para anotar el dibujo en el pre-viaje |
-| `POST /api/inspections/{vehicleId}` | Acepta `treadReadings` opcional en el pre-viaje |
-| `vehicles.tire_layout` | Columna nueva, nullable |
+| `POST /api/inspections/{vehicleId}` | Acepta `treadReadings` y `trailerId` opcionales en el pre-viaje; rechaza remolques |
+| `POST /api/fuel-loads` | Rechaza remolques (`409 VEHICLE_IS_TRAILER`) |
+| `trailer_couplings` | Tabla nueva |
 | Avisos | Tipo nuevo `tire_tread_low`, configurable, por defecto al admin (in-app y push) |
 
-## 1. Configuración de ejes y posiciones
+## 1. Tipo de vehículo, ejes y posiciones
 
-Cada vehículo tiene una configuración fija (`PUT /api/vehicles/{id}/tire-layout` con `{ "layout": ... }`).
-Las posiciones salen de ahí, siempre con auxilio:
+El tipo es un catálogo cerrado y **define las cubiertas** (S = rueda simple, D = dual), siempre con auxilio:
 
-| `layout` | Posiciones |
-|---|---|
-| `4_ruedas` | `del-izq`, `del-der`, `tras-izq`, `tras-der`, `auxilio` |
-| `6_ruedas` (trasero dual) | `del-izq`, `del-der`, `e2-izq-ext`, `e2-izq-int`, `e2-der-int`, `e2-der-ext`, `auxilio` |
-| `10_ruedas` (dos ejes traseros duales) | las de `6_ruedas` más `e3-izq-ext`, `e3-izq-int`, `e3-der-int`, `e3-der-ext` |
+| `vehicleType` | Nombre | Ejes | Arrastra |
+|---|---|---|---|
+| `utilitario` | Utilitario (furgón, pickup, camioneta) | S · S | — |
+| `camion_4x2` | Camión rígido 4x2 | S · D | acoplado |
+| `camion_6x4` | Camión rígido 6x2 / 6x4 | S · D · D | acoplado |
+| `tractor_4x2` | Tractor 4x2 | S · D | semirremolque |
+| `tractor_6x4` | Tractor 6x4 | S · D · D | semirremolque |
+| `semirremolque_2_ejes` | Semirremolque 2 ejes | D · D | — |
+| `semirremolque_3_ejes` | Semirremolque 3 ejes | D · D · D | — |
+| `acoplado` | Acoplado | D · D | — |
 
-El nombre que se muestra depende de la configuración: con un solo eje trasero se dice "Trasera derecha
-interior"; con dos, "Eje 3 derecha interior". Cada posición trae `axle` (1 el delantero, 0 el auxilio),
-`side` (`izq`/`der`) e `inner`, para dibujar el esquema.
+Posición = eje + lado (+ `ext`/`int` en una dual): `e1-izq`, `e2-der-int`, `e3-izq-ext`... y `auxilio`.
+Cada una trae `axle` (1 el de adelante, 0 el auxilio), `side` (`izq`/`der`) y `wheel`
+(`simple`/`exterior`/`interior`), para dibujar el vehículo visto de arriba.
 
-`vehicleType` sigue siendo texto libre: la configuración la elige el admin. Cambiarla cuando quedan
-cubiertas en posiciones que desaparecen da `409 TIRES_ON_REMOVED_POSITIONS`. Montar sin configuración da
-`409 NO_TIRE_LAYOUT`; una posición que no es de la configuración, `422`.
+El nombre que se muestra: en un vehículo con motor de 2 ejes, "Delantera" / "Trasera"; con 3 ejes o en un
+remolque, "Eje n". La dual agrega "exterior"/"interior" ("Eje 3 derecha interior").
+
+- Al crear (alta o importación) el tipo es **obligatorio**. Se acepta el código, el nombre o un alias
+  (furgón, pickup, camioneta, van → `utilitario`; camión → `camion_4x2`; balancín → `camion_6x4`;
+  tractor → `tractor_4x2`; semi → `semirremolque_3_ejes`). Otro valor da `422` en `vehicleType`.
+- Cambiar el tipo con cubiertas en posiciones que el nuevo no tiene da `409 TIRES_ON_REMOVED_POSITIONS`;
+  estando enganchado, `409 VEHICLE_COUPLED`.
+- Un vehículo viejo cuyo tipo de texto libre no es del catálogo se lee como `null` ("Sin definir"): sin
+  posiciones, y montar da `409 NO_VEHICLE_TYPE`. Una posición que no es de su tipo, `422`.
 
 ## 2. Cubiertas
 
@@ -97,14 +111,49 @@ dadas de baja. Entran solo las que llevan al menos 1.000 km: una recién montada
 engañoso. Ordenado del más barato por km al más caro, con cantidad de cubiertas, dadas de baja y km
 promedio por cubierta.
 
-## 7. Base de datos ya creada
+## 7. Remolques y enganche
 
-`ddl-auto: update` crea las tablas y la columna nuevas, pero no actualiza el `CHECK` del tipo de aviso:
+Semirremolques y acoplados son vehículos (tienen cubiertas, documentación, mantenimiento, órdenes de
+trabajo), pero **solo los ve el admin**: no aparecen en el listado del chofer, no se inspeccionan desde la
+app (`409 VEHICLE_IS_TRAILER`) ni cargan combustible (ídem).
+
+- `PUT /vehicles/{trailerId}/coupling` con `{ towingId }` lo engancha. Un tractor arrastra semirremolques y
+  un camión rígido acoplados (`409 CANNOT_TOW`); `{trailerId}` tiene que ser un remolque
+  (`409 NOT_A_TRAILER`); los dos activos (`409 VEHICLE_INACTIVE`). Si el remolque estaba con otro, o el otro
+  ya arrastraba uno, esos enganches se cierran. `DELETE` lo desengancha.
+- `GET /vehicles/{id}/coupling` en un remolque trae `towedBy`; en un tractor o camión, `towing`. También
+  `canTow` y el historial (`trailer_couplings`).
+- En el **pre-viaje** de un tractor o camión el chofer elige qué remolque lleva: `trailerId` con un id lo
+  engancha, `"none"` desengancha, sin el campo no cambia nada. Se valida antes de guardar la inspección.
+- **Km del remolque**: no tiene odómetro. Cada km que suma el que arrastra (inspecciones, CAM-90) se le
+  suma también al remolque enganchado. Así sus cubiertas suman km y su mantenimiento por km vence solo.
+
+## 8. Base de datos ya creada
+
+`ddl-auto: update` crea las tablas y columnas nuevas, pero no actualiza los `CHECK` de los enums. Con
+datos de una versión anterior de esta rama (posiciones `del-*`/`tras-*` y `tire_layout`):
 
 ```sql
 ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
 ALTER TABLE notification_settings DROP CONSTRAINT IF EXISTS notification_settings_type_check;
+ALTER TABLE tire_mountings DROP CONSTRAINT IF EXISTS tire_mountings_position_check;
+ALTER TABLE tire_tread_readings DROP CONSTRAINT IF EXISTS tire_tread_readings_position_check;
+
+UPDATE tire_mountings SET position = CASE position WHEN 'DEL_IZQ' THEN 'E1_IZQ' WHEN 'DEL_DER' THEN 'E1_DER'
+  WHEN 'TRAS_IZQ' THEN 'E2_IZQ' WHEN 'TRAS_DER' THEN 'E2_DER' ELSE position END;
+UPDATE tire_tread_readings SET position = CASE position WHEN 'DEL_IZQ' THEN 'E1_IZQ' WHEN 'DEL_DER' THEN 'E1_DER'
+  WHEN 'TRAS_IZQ' THEN 'E2_IZQ' WHEN 'TRAS_DER' THEN 'E2_DER' ELSE position END;
+
+-- El tipo sale de la configuración que tenía; los demás se eligen desde la pantalla de edición.
+UPDATE vehicles SET vehicle_type = CASE tire_layout WHEN 'CUATRO_RUEDAS' THEN 'utilitario'
+  WHEN 'SEIS_RUEDAS' THEN 'camion_4x2' WHEN 'DIEZ_RUEDAS' THEN 'camion_6x4' END
+  WHERE tire_layout IS NOT NULL;
+ALTER TABLE vehicles DROP COLUMN IF EXISTS tire_layout;
 ```
+
+El `vehicle_type` de texto libre anterior no hace falta migrarlo: se lee con los alias (`furgon` →
+utilitario, `camion` → camión rígido 4x2) y se guarda con el código la próxima vez que se edita. El seed
+demo (`docs/db/seed-demo.sql`) ya hace todo esto.
 
 ## Fuera de alcance
 
@@ -112,3 +161,5 @@ ALTER TABLE notification_settings DROP CONSTRAINT IF EXISTS notification_setting
 - Recapados y cubiertas compradas usadas (con km previos).
 - Pasar una cubierta de un vehículo a otro en un solo paso (se saca al stock y se monta en el otro).
 - Presión de inflado.
+- Tipos con más ejes (bitrén, 8x4) o ruedas superanchas (single wide) en lugar de duales.
+- El chofer no ve ni engancha remolques fuera del pre-viaje; el admin sí.

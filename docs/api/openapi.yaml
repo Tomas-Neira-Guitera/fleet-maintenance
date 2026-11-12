@@ -259,7 +259,7 @@ paths:
         "404":
           description: VEHICLE_NOT_FOUND
         "409":
-          description: VEHICLE_INACTIVE
+          description: VEHICLE_INACTIVE / VEHICLE_IS_TRAILER (los remolques no cargan combustible, CAM-157)
           content:
             application/json:
               schema:
@@ -535,36 +535,81 @@ paths:
         "404":
           description: VEHICLE_NOT_FOUND
 
-  /api/vehicles/{id}/tire-layout:
-    put:
-      summary: Elegir la configuración de ejes del vehículo (CAM-157)
+  /api/vehicles/{id}/coupling:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Con qué está enganchado el vehículo (CAM-157)
+      description: >
+        Admin y chofer. En un remolque, towedBy; en un tractor o camión rígido, towing. Ver
+        CAM-157-tires-contract.md §6.
       security:
         - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [layout]
-              properties:
-                layout: { type: string, enum: [4_ruedas, 6_ruedas, 10_ruedas] }
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VehicleTires"
+                $ref: "#/components/schemas/Coupling"
+        "404":
+          description: VEHICLE_NOT_FOUND
+    put:
+      summary: Enganchar el remolque {id} a un tractor o camión (CAM-157, solo admin)
+      description: >
+        Si el remolque ya estaba con otro, o el otro ya arrastraba uno, esos enganches se cierran.
+        Desde ahí, los km que suma el que arrastra se le suman también al remolque.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [towingId]
+              properties:
+                towingId: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Coupling"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
         "409":
-          description: TIRES_ON_REMOVED_POSITIONS
+          description: >
+            NOT_A_TRAILER -- {id} no es un semirremolque ni un acoplado.
+            CANNOT_TOW -- el tractor arrastra semirremolques y el camión rígido acoplados.
+            VEHICLE_INACTIVE -- alguno de los dos está dado de baja.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Desenganchar el remolque {id} (CAM-157, solo admin)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK (sin enganche abierto no hace nada)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Coupling"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
 
   /api/vehicles/{id}/tires/mount:
     post:
@@ -600,7 +645,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/VehicleTires"
         "409":
-          description: NO_TIRE_LAYOUT / TIRE_NOT_IN_STOCK / POSITION_OCCUPIED / VEHICLE_INACTIVE
+          description: NO_VEHICLE_TYPE / TIRE_NOT_IN_STOCK / POSITION_OCCUPIED / VEHICLE_INACTIVE
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
@@ -633,7 +678,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/VehicleTires"
         "409":
-          description: POSITION_EMPTY / NO_TIRE_LAYOUT
+          description: POSITION_EMPTY / NO_VEHICLE_TYPE
 
   /api/vehicles/{id}/tires/rotate:
     post:
@@ -663,7 +708,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/VehicleTires"
         "409":
-          description: POSITION_EMPTY / NO_TIRE_LAYOUT / VEHICLE_INACTIVE
+          description: POSITION_EMPTY / NO_VEHICLE_TYPE / VEHICLE_INACTIVE
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
@@ -1181,6 +1226,8 @@ paths:
             DUPLICATE_PLATE -- si se cambia la patente a una que ya existe.
             VEHICLE_INACTIVE -- si se edita cualquier campo de un vehículo
             dado de baja sin reactivarlo primero.
+            TIRES_ON_REMOVED_POSITIONS / VEHICLE_COUPLED -- cambio de tipo
+            con cubiertas en posiciones que el nuevo no tiene, o enganchado (CAM-157).
           content:
             application/json:
               schema:
@@ -1558,6 +1605,8 @@ paths:
             (ej. pre-trip sobre un vehículo que ya está "en viaje", o post-trip
             sobre uno sin viaje abierto), o es un pre-trip sobre un vehículo
             que no puede salir (bloqueado o dado de baja, CAM-89).
+            VEHICLE_IS_TRAILER -- los remolques no se inspeccionan desde la app
+            del chofer; NOT_A_TRAILER / CANNOT_TOW por el trailerId (CAM-157).
           content:
             application/json:
               schema:
@@ -3267,7 +3316,11 @@ components:
         model: { type: string, example: "Sprinter" }
         status:
           $ref: "#/components/schemas/VehicleStatus"
-        vehicleType: { type: string, nullable: true, example: "furgon" }
+        vehicleType:
+          allOf:
+            - $ref: "#/components/schemas/VehicleType"
+          nullable: true
+          description: null en vehículos viejos con un tipo que no es del catálogo.
         year: { type: integer, nullable: true, example: 2022 }
         chassisNumber: { type: string, nullable: true }
         odometerKm: { type: integer }
@@ -3421,14 +3474,22 @@ components:
           nullable: true
           description: Chofer que abrió el viaje. null en viajes anteriores a CAM-87, que no lo guardaban.
 
+    VehicleType:
+      type: string
+      description: >
+        CAM-157. Catálogo de tipos: define los ejes y cubiertas (CAM-157-tires-contract.md §1). Al crear o
+        editar también se aceptan el nombre ("Camión rígido 4x2") y alias (furgón, pickup, camioneta, semi...).
+      enum: [utilitario, camion_4x2, camion_6x4, tractor_4x2, tractor_6x4, semirremolque_2_ejes,
+             semirremolque_3_ejes, acoplado]
+
     CreateVehicleRequest:
       type: object
-      required: [plate, brand, model]
+      required: [plate, brand, model, vehicleType]
       properties:
         plate: { type: string }
         brand: { type: string }
         model: { type: string }
-        vehicleType: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
         year: { type: integer }
         chassisNumber: { type: string }
         odometerKm: { type: integer, description: Kilometraje inicial, default 0. No puede ser negativo (CAM-154). }
@@ -3527,7 +3588,10 @@ components:
         plate: { type: string }
         brand: { type: string }
         model: { type: string }
-        vehicleType: { type: string }
+        vehicleType:
+          allOf:
+            - $ref: "#/components/schemas/VehicleType"
+          description: No se puede cambiar si quedan cubiertas en posiciones que el nuevo no tiene o si está enganchado (409).
         year: { type: integer }
         chassisNumber: { type: string }
         active:
@@ -3662,6 +3726,12 @@ components:
             repetida o un valor fuera de 0-30 mm da 422 con itemId treadReadings[i].position o .depthMm.
           items:
             $ref: "#/components/schemas/TreadReading"
+        trailerId:
+          type: string
+          nullable: true
+          description: >-
+            CAM-157: solo en el pre-viaje de un tractor o camión rígido. El id de un remolque lo engancha,
+            "none" desengancha el que tenía, sin el campo no cambia nada. Errores como en PUT /coupling.
 
     Trip:
       type: object
@@ -4803,9 +4873,48 @@ components:
 
     TirePosition:
       type: string
-      description: CAM-157. Las de cada configuración, en CAM-157-tires-contract.md §1.
-      enum: [del-izq, del-der, tras-izq, tras-der, e2-izq-ext, e2-izq-int, e2-der-int, e2-der-ext,
-             e3-izq-ext, e3-izq-int, e3-der-int, e3-der-ext, auxilio]
+      description: CAM-157. Eje + lado (+ exterior/interior en rueda doble). Las de cada tipo, en CAM-157-tires-contract.md §1.
+      enum: [e1-izq, e1-der, e1-izq-ext, e1-izq-int, e1-der-int, e1-der-ext,
+             e2-izq, e2-der, e2-izq-ext, e2-izq-int, e2-der-int, e2-der-ext,
+             e3-izq, e3-der, e3-izq-ext, e3-izq-int, e3-der-int, e3-der-ext, auxilio]
+
+    Coupling:
+      type: object
+      properties:
+        vehicleId: { type: string }
+        towedBy:
+          nullable: true
+          description: En un remolque, quién lo arrastra.
+          allOf:
+            - $ref: "#/components/schemas/CouplingRef"
+        towing:
+          nullable: true
+          description: En un tractor o camión, qué remolque lleva.
+          allOf:
+            - $ref: "#/components/schemas/CouplingRef"
+        canTow:
+          type: array
+          items: { $ref: "#/components/schemas/VehicleType" }
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              trailerId: { type: string }
+              trailerPlate: { type: string }
+              towingId: { type: string }
+              towingPlate: { type: string }
+              coupledAt: { type: string, format: date-time }
+              uncoupledAt: { type: string, format: date-time, nullable: true }
+              coupledBy: { type: string, nullable: true }
+
+    CouplingRef:
+      type: object
+      properties:
+        id: { type: string }
+        plate: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        coupledAt: { type: string, format: date-time }
 
     TireRequest:
       type: object
@@ -4879,7 +4988,11 @@ components:
       properties:
         vehicleId: { type: string }
         plate: { type: string }
-        layout: { type: string, enum: [4_ruedas, 6_ruedas, 10_ruedas], nullable: true }
+        vehicleType:
+          allOf:
+            - $ref: "#/components/schemas/VehicleType"
+          nullable: true
+          description: Sin tipo, positions vacío y montar da 409 NO_VEHICLE_TYPE.
         odometerKm: { type: integer }
         minTreadMm: { type: number }
         positions:
@@ -4891,7 +5004,7 @@ components:
               label: { type: string }
               axle: { type: integer, description: 1 el delantero, 0 el auxilio. }
               side: { type: string, enum: [izq, der], nullable: true }
-              inner: { type: boolean }
+              wheel: { type: string, enum: [simple, exterior, interior] }
               tire:
                 nullable: true
                 allOf:
