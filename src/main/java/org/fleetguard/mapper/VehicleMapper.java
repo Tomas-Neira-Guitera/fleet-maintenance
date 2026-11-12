@@ -4,6 +4,7 @@ import org.fleetguard.dto.BlockReasonDto;
 import org.fleetguard.dto.CurrentTripDto;
 import org.fleetguard.dto.VehicleSummaryDto;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.VehicleType;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -19,7 +20,7 @@ public class VehicleMapper {
                 vehicle.getBrand(),
                 vehicle.getModel(),
                 currentTrip != null ? "on-trip" : "available",
-                vehicle.getVehicleType(),
+                VehicleType.toJson(vehicle.getVehicleType()),
                 vehicle.getYear(),
                 vehicle.getChassisNumber(),
                 vehicle.getOdometerKm(),

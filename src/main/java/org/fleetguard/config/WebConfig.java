@@ -63,6 +63,8 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/tires", "/tires/**", "/vehicles/*/tires",
                 "/vehicles/*/tires/**", "/vehicles/*/tire-layout", "/vehicles/*/tire-treads");
         registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER)).addPathPatterns("/vehicles/*/tire-positions");
+        // El enganche lo lee también el chofer (pre-viaje); cambiarlo es del admin, y eso lo chequea CouplingController.
+        registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER)).addPathPatterns("/vehicles/*/coupling");
     }
 
     private JwtAuthInterceptor requiring(Role... roles) {

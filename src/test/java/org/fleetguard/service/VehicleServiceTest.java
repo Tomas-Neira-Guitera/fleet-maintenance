@@ -8,7 +8,14 @@ import org.fleetguard.entity.Trip;
 import org.fleetguard.entity.Role;
 import org.fleetguard.entity.TripStatus;
 import org.fleetguard.entity.User;
+import org.fleetguard.entity.Tire;
+import org.fleetguard.entity.TireMounting;
+import org.fleetguard.entity.TirePosition;
+import org.fleetguard.entity.TrailerCoupling;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.VehicleType;
+import org.fleetguard.repository.TireMountingRepository;
+import org.fleetguard.repository.TrailerCouplingRepository;
 import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.exception.VehicleValidationException;
@@ -48,9 +55,11 @@ class VehicleServiceTest {
     private final UserRepository userRepository = mock(UserRepository.class);
     private final VehicleMapper vehicleMapper = new VehicleMapper();
     private final ChecklistTemplateService checklistTemplateService = mock(ChecklistTemplateService.class);
+    private final TireMountingRepository tireMountingRepository = mock(TireMountingRepository.class);
+    private final TrailerCouplingRepository couplingRepository = mock(TrailerCouplingRepository.class);
     private final VehicleService service = new VehicleService(vehicleRepository, tripRepository, assignmentRepository,
             availabilityService, new UserNameService(userRepository), vehicleMapper, mock(KmPerDayEstimator.class),
-            event -> { }, checklistTemplateService);
+            event -> { }, checklistTemplateService, tireMountingRepository, couplingRepository);
 
     /** El id es @GeneratedValue; en el test se setea por reflexión, sin persistencia real (mismo patrón que DefectServiceTest). */
     private static void setId(Object entity, UUID id) throws Exception {
@@ -216,11 +225,59 @@ class VehicleServiceTest {
 
         assertEquals("AB123CD", result.plate());
         assertEquals("Mercedes-Benz", result.brand());
-        assertEquals("furgon", result.vehicleType());
+        // "furgon" es un alias del catálogo: se guarda como utilitario.
+        assertEquals("utilitario", result.vehicleType());
         assertEquals(2022, result.year());
         assertEquals("CHASSIS-1", result.chassisNumber());
         assertEquals(5000L, result.odometerKm());
         assertEquals(true, result.active());
+    }
+
+    // CAM-157: el tipo es del catálogo y define las cubiertas.
+    @Test
+    void elTipoEsObligatorioYDelCatalogo() {
+        VehicleValidationException missing = assertThrows(VehicleValidationException.class,
+                () -> service.create(new CreateVehicleRequest("AB123CD", "Iveco", "Daily", null, null, null, null)));
+        assertEquals("vehicleType", missing.getDetails().get(0).field());
+
+        VehicleValidationException unknown = assertThrows(VehicleValidationException.class,
+                () -> service.create(new CreateVehicleRequest("AB123CD", "Iveco", "Daily", "colectivo", null, null, null)));
+        assertEquals("vehicleType", unknown.getDetails().get(0).field());
+    }
+
+    @Test
+    void noSeCambiaElTipoSiQuedanCubiertasEnPosicionesQueElNuevoNoTiene() throws Exception {
+        Vehicle truck = new Vehicle("AB123CD", "Iveco", "Tector");
+        truck.setVehicleType(VehicleType.CAMION_6X4);
+        UUID id = UUID.randomUUID();
+        setId(truck, id);
+        when(vehicleRepository.findById(id)).thenReturn(Optional.of(truck));
+        Tire tire = new Tire(null, "Fate", null, "295/80 R22.5", java.time.LocalDate.parse("2026-01-01"),
+                java.math.BigDecimal.TEN, null);
+        when(tireMountingRepository.findByVehicle_IdAndRemovedAtIsNull(id)).thenReturn(List.of(
+                new TireMounting(tire, truck, TirePosition.E3_IZQ_EXT, java.time.Instant.now(), 0)));
+
+        VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class,
+                () -> service.update(id.toString(), new UpdateVehicleRequest(null, null, null, "camion_4x2", null, null, null)));
+
+        assertEquals("TIRES_ON_REMOVED_POSITIONS", ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("Eje 3 izquierda exterior"));
+    }
+
+    @Test
+    void noSeCambiaElTipoMientrasEstaEnganchado() throws Exception {
+        Vehicle tractor = new Vehicle("AB123CD", "Scania", "R450");
+        tractor.setVehicleType(VehicleType.TRACTOR_6X4);
+        UUID id = UUID.randomUUID();
+        setId(tractor, id);
+        when(vehicleRepository.findById(id)).thenReturn(Optional.of(tractor));
+        when(couplingRepository.findFirstByTowing_IdAndUncoupledAtIsNull(id)).thenReturn(Optional.of(
+                new TrailerCoupling(new Vehicle("ZZ999ZZ", "Helvética", "Tri-eje"), tractor, java.time.Instant.now(), "admin")));
+
+        VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class,
+                () -> service.update(id.toString(), new UpdateVehicleRequest(null, null, null, "tractor_4x2", null, null, null)));
+
+        assertEquals("VEHICLE_COUPLED", ex.getErrorCode());
     }
 
     // CAM-150: la plantilla elegida en el alta se copia al vehículo nuevo.
@@ -229,7 +286,7 @@ class VehicleServiceTest {
         stubSaveReturnsSameEntityWithId();
         String templateId = UUID.randomUUID().toString();
 
-        VehicleSummaryDto result = service.create(new CreateVehicleRequest("AB123CD", "Iveco", "Daily", null, null,
+        VehicleSummaryDto result = service.create(new CreateVehicleRequest("AB123CD", "Iveco", "Daily", "utilitario", null,
                 null, null, templateId));
 
         verify(checklistTemplateService).requireExists(templateId, "checklistTemplateId");
@@ -243,7 +300,7 @@ class VehicleServiceTest {
                 .when(checklistTemplateService).requireExists(templateId, "checklistTemplateId");
 
         assertThrows(VehicleValidationException.class, () -> service.create(new CreateVehicleRequest("AB123CD",
-                "Iveco", "Daily", null, null, null, null, templateId)));
+                "Iveco", "Daily", "utilitario", null, null, null, templateId)));
         verify(vehicleRepository, never()).save(any(Vehicle.class));
     }
 
@@ -252,14 +309,14 @@ class VehicleServiceTest {
         when(vehicleRepository.existsByPlateIgnoreCase("AB123CD")).thenReturn(true);
 
         VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class,
-                () -> service.create(new CreateVehicleRequest("AB123CD", "Iveco", "Daily", null, null, null, null)));
+                () -> service.create(new CreateVehicleRequest("AB123CD", "Iveco", "Daily", "utilitario", null, null, null)));
         assertEquals("DUPLICATE_PLATE", ex.getErrorCode());
     }
 
     @Test
     void altaConAñoFueraDeRangoLanza422() {
         VehicleValidationException ex = assertThrows(VehicleValidationException.class,
-                () -> service.create(new CreateVehicleRequest("AC456EF", "Iveco", "Daily", null, 1900, null, null)));
+                () -> service.create(new CreateVehicleRequest("AC456EF", "Iveco", "Daily", "utilitario", 1900, null, null)));
         assertEquals(1, ex.getDetails().size());
         assertEquals("year", ex.getDetails().get(0).field());
     }
@@ -267,7 +324,7 @@ class VehicleServiceTest {
     @Test
     void ediciónParcialSoloCambiaLosCamposEnviados() throws Exception {
         Vehicle vehicle = new Vehicle("AD789GH", "Ford", "Cargo 1723");
-        vehicle.setVehicleType("camion");
+        vehicle.setVehicleType(VehicleType.CAMION_4X2);
         UUID id = UUID.randomUUID();
         setId(vehicle, id);
         when(vehicleRepository.findById(id)).thenReturn(Optional.of(vehicle));
@@ -277,7 +334,7 @@ class VehicleServiceTest {
 
         assertEquals("AD789GH", result.plate());
         assertEquals("Cargo 1723", result.model());
-        assertEquals("camion", result.vehicleType());
+        assertEquals("camion_4x2", result.vehicleType());
         assertEquals(2019, result.year());
     }
 

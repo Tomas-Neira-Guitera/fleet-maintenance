@@ -8,6 +8,7 @@ import org.fleetguard.dto.VehicleComparisonDto.Averages;
 import org.fleetguard.dto.VehicleComparisonDto.Review;
 import org.fleetguard.dto.VehicleComparisonDto.Row;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.VehicleType;
 import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.service.KmPerDayEstimator.Reading;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -118,7 +119,8 @@ public class VehicleComparisonService {
             BigDecimal maintenanceWithKm = sum(withKm.stream().filter(e -> !ExpenseService.isOperating(e)).toList());
             BigDecimal totalWithKm = sum(withKm);
             DowntimeDto.Vehicle down = downtimeById.get(id);
-            rows.add(new Row(id, vehicle.getPlate(), vehicle.getBrand(), vehicle.getModel(), vehicle.getVehicleType(),
+            rows.add(new Row(id, vehicle.getPlate(), vehicle.getBrand(), vehicle.getModel(),
+                    VehicleType.toJson(vehicle.getVehicleType()),
                     vehicle.getYear(), maintenance, operating, total, km, perKm(maintenanceWithKm, km),
                     perKm(totalWithKm, km),
                     down == null ? null : down.availabilityPct(), down == null ? 0 : down.downtimeHours(),

@@ -8,7 +8,6 @@ import org.fleetguard.dto.RotateTiresRequest;
 import org.fleetguard.dto.TireBrandComparisonDto;
 import org.fleetguard.dto.TireDetailDto;
 import org.fleetguard.dto.TireDto;
-import org.fleetguard.dto.TireLayoutRequest;
 import org.fleetguard.dto.TireMountingDto;
 import org.fleetguard.dto.TirePositionDto;
 import org.fleetguard.dto.TireRequest;
@@ -18,12 +17,12 @@ import org.fleetguard.dto.UnmountTireRequest;
 import org.fleetguard.dto.ValidationErrorDetail;
 import org.fleetguard.dto.VehicleTiresDto;
 import org.fleetguard.entity.Tire;
-import org.fleetguard.entity.TireLayout;
 import org.fleetguard.entity.TireMounting;
 import org.fleetguard.entity.TirePosition;
 import org.fleetguard.entity.TireStatus;
 import org.fleetguard.entity.TireTreadReading;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.VehicleType;
 import org.fleetguard.event.TireTreadLowEvent;
 import org.fleetguard.exception.InspectionValidationException;
 import org.fleetguard.exception.TireNotFoundException;
@@ -178,27 +177,6 @@ public class TireService {
     }
 
     @Transactional
-    public VehicleTiresDto setLayout(String vehicleId, TireLayoutRequest request) {
-        Vehicle vehicle = findVehicle(vehicleId);
-        TireLayout layout = request == null ? null : TireLayout.fromJson(request.layout());
-        if (layout == null) {
-            throw invalid("Configuración inválida", "layout", "Debe ser '4_ruedas', '6_ruedas' o '10_ruedas'");
-        }
-        List<String> orphan = mountingRepository.findByVehicle_IdAndRemovedAtIsNull(vehicle.getId()).stream()
-                .filter(m -> !layout.has(m.getPosition()))
-                .map(m -> labelOf(vehicle, m.getPosition()))
-                .toList();
-        if (!orphan.isEmpty()) {
-            throw new VehicleStateConflictException("TIRES_ON_REMOVED_POSITIONS",
-                    "Sacá primero las cubiertas de " + String.join(", ", orphan) + ": esas posiciones no existen en "
-                            + layout.label());
-        }
-        vehicle.setTireLayout(layout);
-        vehicleRepository.save(vehicle);
-        return toVehicleDto(vehicle);
-    }
-
-    @Transactional
     public VehicleTiresDto mount(String vehicleId, MountTireRequest request) {
         Vehicle vehicle = findActiveVehicle(vehicleId);
         if (request == null) {
@@ -269,16 +247,16 @@ public class TireService {
     @Transactional(readOnly = true)
     public List<TirePositionDto> mountedPositions(String vehicleId) {
         Vehicle vehicle = findVehicle(vehicleId);
-        if (vehicle.getTireLayout() == null) {
+        if (vehicle.getVehicleType() == null || vehicle.getVehicleType().isTrailer()) {
             return List.of();
         }
         Set<TirePosition> mounted = mountingRepository.findByVehicle_IdAndRemovedAtIsNull(vehicle.getId()).stream()
                 .map(TireMounting::getPosition)
                 .collect(Collectors.toCollection(() -> EnumSet.noneOf(TirePosition.class)));
-        return vehicle.getTireLayout().positions().stream()
+        return vehicle.getVehicleType().positions().stream()
                 .filter(TirePosition::rolls)
                 .filter(mounted::contains)
-                .map(p -> new TirePositionDto(p.toJson(), vehicle.getTireLayout().labelOf(p)))
+                .map(p -> new TirePositionDto(p.toJson(), vehicle.getVehicleType().labelOf(p)))
                 .toList();
     }
 
@@ -426,13 +404,13 @@ public class TireService {
     }
 
     private TirePosition requirePosition(Vehicle vehicle, String raw, String field) {
-        if (vehicle.getTireLayout() == null) {
-            throw new VehicleStateConflictException("NO_TIRE_LAYOUT",
-                    "Primero elegí la configuración de ejes de " + vehicle.getPlate());
+        if (vehicle.getVehicleType() == null) {
+            throw new VehicleStateConflictException("NO_VEHICLE_TYPE",
+                    "Primero elegí el tipo de " + vehicle.getPlate() + ": de ahí salen sus cubiertas");
         }
         TirePosition position = TirePosition.fromJson(raw);
-        if (position == null || !vehicle.getTireLayout().has(position)) {
-            throw invalid("Posición inválida", field, "No es una posición de " + vehicle.getTireLayout().label());
+        if (position == null || !vehicle.getVehicleType().has(position)) {
+            throw invalid("Posición inválida", field, "No es una posición de un " + vehicle.getVehicleType().label());
         }
         return position;
     }
@@ -536,24 +514,24 @@ public class TireService {
     }
 
     private static String labelOf(Vehicle vehicle, TirePosition position) {
-        TireLayout layout = vehicle.getTireLayout() != null ? vehicle.getTireLayout() : TireLayout.DIEZ_RUEDAS;
-        return layout.labelOf(position);
+        VehicleType type = vehicle.getVehicleType() != null ? vehicle.getVehicleType() : VehicleType.CAMION_6X4;
+        return type.labelOf(position);
     }
 
     private VehicleTiresDto toVehicleDto(Vehicle vehicle) {
         Snapshot snapshot = snapshot();
         Map<TirePosition, TireMounting> open = new HashMap<>();
         mountingRepository.findByVehicle_IdAndRemovedAtIsNull(vehicle.getId()).forEach(m -> open.put(m.getPosition(), m));
-        TireLayout layout = vehicle.getTireLayout();
-        List<VehicleTiresDto.Position> positions = layout == null ? List.of() : layout.positions().stream()
-                .map(p -> new VehicleTiresDto.Position(p.toJson(), layout.labelOf(p), p.axle(),
-                        p.side() == null ? null : p.side().name().toLowerCase(), p.inner(),
+        VehicleType type = vehicle.getVehicleType();
+        List<VehicleTiresDto.Position> positions = type == null ? List.of() : type.positions().stream()
+                .map(p -> new VehicleTiresDto.Position(p.toJson(), type.labelOf(p), p.axle(),
+                        p.side() == null ? null : p.side().name().toLowerCase(), p.wheel().name().toLowerCase(),
                         open.containsKey(p) ? snapshot.toDto(open.get(p).getTire()) : null))
                 .toList();
         List<TireMountingDto> history = mountingRepository.findByVehicle_IdOrderByMountedAtDesc(vehicle.getId()).stream()
                 .map(this::toMountingDto)
                 .toList();
-        return new VehicleTiresDto(vehicle.getId().toString(), vehicle.getPlate(), layout == null ? null : layout.toJson(),
+        return new VehicleTiresDto(vehicle.getId().toString(), vehicle.getPlate(), VehicleType.toJson(type),
                 vehicle.getOdometerKm(), minTreadMm, positions, history);
     }
 

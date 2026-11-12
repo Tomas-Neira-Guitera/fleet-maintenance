@@ -73,7 +73,7 @@ class InspectionServiceTest {
     private final TripKmAlertService tripKmAlertService = mock(TripKmAlertService.class);
     private final InspectionService service = new InspectionService(vehicleRepository, tripRepository,
             inspectionRepository, new InspectionMapper(), new TripMapper(), checklistService, new OdometerReadings(5000),
-            availabilityService, tripKmAlertService, eventPublisher, mock(TireService.class));
+            availabilityService, tripKmAlertService, eventPublisher, mock(TireService.class), mock(CouplingService.class));
 
     private final AuthenticatedUser driver = new AuthenticatedUser(UUID.randomUUID(), "chofer1", Role.CHOFER);
     private final AuthenticatedUser otherDriver = new AuthenticatedUser(UUID.randomUUID(), "chofer2", Role.CHOFER);

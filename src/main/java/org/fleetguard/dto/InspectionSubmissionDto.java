@@ -12,14 +12,17 @@ public record InspectionSubmissionDto(
         // CAM-153: UUID que arma el celular. Si llega dos veces, la segunda devuelve la ya guardada.
         String clientSubmissionId,
         // CAM-157: opcional, solo en el pre-viaje. Dibujo de las cubiertas montadas, por posición.
-        List<TreadReadingInput> treadReadings
+        List<TreadReadingInput> treadReadings,
+        // CAM-157: opcional, pre-viaje de un tractor o camión rígido. Id del remolque que lleva, "none" si va sin
+        // remolque; sin el campo, el enganche queda como estaba.
+        String trailerId
 ) {
     public InspectionSubmissionDto(String type, List<ChecklistAnswerDto> answers, String notes) {
-        this(type, answers, notes, null, null, null);
+        this(type, answers, notes, null, null, null, null);
     }
 
     public InspectionSubmissionDto(String type, List<ChecklistAnswerDto> answers, String notes, String performedAt,
                                    String clientSubmissionId) {
-        this(type, answers, notes, performedAt, clientSubmissionId, null);
+        this(type, answers, notes, performedAt, clientSubmissionId, null, null);
     }
 }

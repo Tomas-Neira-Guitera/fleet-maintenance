@@ -1,46 +1,52 @@
 package org.fleetguard.entity;
 
 import java.util.Arrays;
+import java.util.List;
 
 /**
- * CAM-157: posición de una cubierta. axle 1 es el delantero; 0, el auxilio. inner: la de adentro de un
- * par dual. El nombre que se muestra depende de la configuración del vehículo (TireLayout.labelOf).
+ * CAM-157: posición de una cubierta: eje (1 el delantero; 0 el auxilio), lado y, en un eje dual, la exterior o la
+ * interior. Qué posiciones tiene un vehículo y cómo se llaman lo dice su tipo (VehicleType).
  */
 public enum TirePosition {
-    DEL_IZQ("del-izq", 1, Side.IZQ, false),
-    DEL_DER("del-der", 1, Side.DER, false),
-    TRAS_IZQ("tras-izq", 2, Side.IZQ, false),
-    TRAS_DER("tras-der", 2, Side.DER, false),
-    E2_IZQ_EXT("e2-izq-ext", 2, Side.IZQ, false),
-    E2_IZQ_INT("e2-izq-int", 2, Side.IZQ, true),
-    E2_DER_INT("e2-der-int", 2, Side.DER, true),
-    E2_DER_EXT("e2-der-ext", 2, Side.DER, false),
-    E3_IZQ_EXT("e3-izq-ext", 3, Side.IZQ, false),
-    E3_IZQ_INT("e3-izq-int", 3, Side.IZQ, true),
-    E3_DER_INT("e3-der-int", 3, Side.DER, true),
-    E3_DER_EXT("e3-der-ext", 3, Side.DER, false),
-    AUXILIO("auxilio", 0, null, false);
+    E1_IZQ(1, Side.IZQ, Wheel.SIMPLE), E1_DER(1, Side.DER, Wheel.SIMPLE),
+    E1_IZQ_EXT(1, Side.IZQ, Wheel.EXTERIOR), E1_IZQ_INT(1, Side.IZQ, Wheel.INTERIOR),
+    E1_DER_INT(1, Side.DER, Wheel.INTERIOR), E1_DER_EXT(1, Side.DER, Wheel.EXTERIOR),
+    E2_IZQ(2, Side.IZQ, Wheel.SIMPLE), E2_DER(2, Side.DER, Wheel.SIMPLE),
+    E2_IZQ_EXT(2, Side.IZQ, Wheel.EXTERIOR), E2_IZQ_INT(2, Side.IZQ, Wheel.INTERIOR),
+    E2_DER_INT(2, Side.DER, Wheel.INTERIOR), E2_DER_EXT(2, Side.DER, Wheel.EXTERIOR),
+    E3_IZQ(3, Side.IZQ, Wheel.SIMPLE), E3_DER(3, Side.DER, Wheel.SIMPLE),
+    E3_IZQ_EXT(3, Side.IZQ, Wheel.EXTERIOR), E3_IZQ_INT(3, Side.IZQ, Wheel.INTERIOR),
+    E3_DER_INT(3, Side.DER, Wheel.INTERIOR), E3_DER_EXT(3, Side.DER, Wheel.EXTERIOR),
+    AUXILIO(0, null, Wheel.SIMPLE);
 
     public enum Side { IZQ, DER }
 
-    private final String json;
+    public enum Wheel { SIMPLE, EXTERIOR, INTERIOR }
+
     private final int axle;
     private final Side side;
-    private final boolean inner;
+    private final Wheel wheel;
 
-    TirePosition(String json, int axle, Side side, boolean inner) {
-        this.json = json;
+    TirePosition(int axle, Side side, Wheel wheel) {
         this.axle = axle;
         this.side = side;
-        this.inner = inner;
+        this.wheel = wheel;
+    }
+
+    /** De izquierda a derecha mirando el vehículo desde arriba con el frente hacia adelante. */
+    static List<TirePosition> ofAxle(int axle, boolean dual) {
+        return Arrays.stream(values())
+                .filter(p -> p.axle == axle && (p.wheel == Wheel.SIMPLE) != dual)
+                .toList();
+    }
+
+    /** "e2-izq-ext", "e1-der", "auxilio". */
+    public String toJson() {
+        return name().toLowerCase().replace('_', '-');
     }
 
     public static TirePosition fromJson(String value) {
-        return Arrays.stream(values()).filter(p -> p.json.equals(value)).findFirst().orElse(null);
-    }
-
-    public String toJson() {
-        return json;
+        return Arrays.stream(values()).filter(p -> p.toJson().equals(value)).findFirst().orElse(null);
     }
 
     public int axle() {
@@ -51,8 +57,12 @@ public enum TirePosition {
         return side;
     }
 
+    public Wheel wheel() {
+        return wheel;
+    }
+
     public boolean inner() {
-        return inner;
+        return wheel == Wheel.INTERIOR;
     }
 
     /** El auxilio no rueda: mientras está ahí no suma km. */

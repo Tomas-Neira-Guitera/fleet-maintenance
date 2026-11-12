@@ -1,6 +1,8 @@
 package org.fleetguard.service;
 
+import org.fleetguard.entity.TrailerCoupling;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.repository.TrailerCouplingRepository;
 import org.fleetguard.event.OdometerChangedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,12 +27,18 @@ public class OdometerReadings {
 
     private final long maxJumpKm;
     private final ApplicationEventPublisher eventPublisher;
+    private final TrailerCouplingRepository couplingRepository;
 
     @Autowired
     public OdometerReadings(@Value("${fleetguard.odometer.max-jump-km:5000}") long maxJumpKm,
-                            ApplicationEventPublisher eventPublisher) {
+                            ApplicationEventPublisher eventPublisher, TrailerCouplingRepository couplingRepository) {
         this.maxJumpKm = maxJumpKm;
         this.eventPublisher = eventPublisher;
+        this.couplingRepository = couplingRepository;
+    }
+
+    public OdometerReadings(long maxJumpKm, ApplicationEventPublisher eventPublisher) {
+        this(maxJumpKm, eventPublisher, null);
     }
 
     /** Para tests que no miran los avisos de vencimiento (CAM-118). */
@@ -55,6 +63,21 @@ public class OdometerReadings {
         }
         vehicle.setOdometerKm(readingKm);
         eventPublisher.publishEvent(new OdometerChangedEvent(vehicle.getId()));
+        towTrailer(vehicle, readingKm - current);
         return true;
+    }
+
+    // CAM-157: el remolque enganchado no tiene odómetro propio: suma lo que recorrió lo que lo arrastra.
+    private void towTrailer(Vehicle towing, long km) {
+        if (couplingRepository == null) {
+            return;
+        }
+        couplingRepository.findFirstByTowing_IdAndUncoupledAtIsNull(towing.getId())
+                .map(TrailerCoupling::getTrailer)
+                .filter(Vehicle::isActive)
+                .ifPresent(trailer -> {
+                    trailer.setOdometerKm(trailer.getOdometerKm() + km);
+                    eventPublisher.publishEvent(new OdometerChangedEvent(trailer.getId()));
+                });
     }
 }

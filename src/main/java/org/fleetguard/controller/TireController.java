@@ -8,7 +8,6 @@ import org.fleetguard.dto.RotateTiresRequest;
 import org.fleetguard.dto.TireBrandComparisonDto;
 import org.fleetguard.dto.TireDetailDto;
 import org.fleetguard.dto.TireDto;
-import org.fleetguard.dto.TireLayoutRequest;
 import org.fleetguard.dto.TirePositionDto;
 import org.fleetguard.dto.TireRequest;
 import org.fleetguard.dto.TreadReadingsRequest;
@@ -79,11 +78,6 @@ public class TireController {
     @GetMapping("/vehicles/{id}/tires")
     public VehicleTiresDto vehicleTires(@PathVariable String id) {
         return service.vehicleTires(id);
-    }
-
-    @PutMapping("/vehicles/{id}/tire-layout")
-    public VehicleTiresDto setLayout(@PathVariable String id, @RequestBody(required = false) TireLayoutRequest request) {
-        return service.setLayout(id, request);
     }
 
     @PostMapping("/vehicles/{id}/tires/mount")

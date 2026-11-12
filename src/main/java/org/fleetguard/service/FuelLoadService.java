@@ -105,6 +105,9 @@ public class FuelLoadService {
         if (!vehicle.isActive()) {
             throw new VehicleStateConflictException("VEHICLE_INACTIVE", "El vehículo está dado de baja.");
         }
+        if (vehicle.getVehicleType() != null && vehicle.getVehicleType().isTrailer()) {
+            throw new VehicleStateConflictException("VEHICLE_IS_TRAILER", vehicle.getPlate() + " es un remolque: no carga combustible.");
+        }
         List<FuelLoad> history = fuelLoadRepository.findByVehicle_IdOrderByLoadedAtAscOdometerKmAsc(vehicle.getId());
         requireKmInOrder(history, null, valid.loadedAt(), valid.odometerKm());
 

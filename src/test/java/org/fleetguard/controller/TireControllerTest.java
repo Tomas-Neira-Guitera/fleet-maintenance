@@ -28,8 +28,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(TireController.class)
 class TireControllerTest extends WebMvcTestBase {
 
-    private static final VehicleTiresDto VEHICLE = new VehicleTiresDto("v-1", "AB123CD", "4_ruedas", 100000,
-            new BigDecimal("1.6"), List.of(new VehicleTiresDto.Position("del-izq", "Delantera izquierda", 1, "izq", false,
+    private static final VehicleTiresDto VEHICLE = new VehicleTiresDto("v-1", "AB123CD", "utilitario", 100000,
+            new BigDecimal("1.6"), List.of(new VehicleTiresDto.Position("e1-izq", "Delantera izquierda", 1, "izq", "simple",
             null)), List.of());
 
     @MockBean
@@ -43,7 +43,7 @@ class TireControllerTest extends WebMvcTestBase {
 
         mvc.perform(get("/vehicles/v-1/tires").header(HttpHeaders.AUTHORIZATION, admin))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.layout").value("4_ruedas"))
+                .andExpect(jsonPath("$.vehicleType").value("utilitario"))
                 .andExpect(jsonPath("$.positions[0].label").value("Delantera izquierda"));
         mvc.perform(post("/vehicles/v-1/tires/rotate").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"from\": \"del-izq\", \"to\": \"tras-der\"}").header(HttpHeaders.AUTHORIZATION, admin))
@@ -72,11 +72,11 @@ class TireControllerTest extends WebMvcTestBase {
     @Test
     void elChoferSoloLeeLasPosicionesMontadas() throws Exception {
         String chofer = loginAs("chofer1", Role.CHOFER);
-        when(service.mountedPositions("v-1")).thenReturn(List.of(new TirePositionDto("del-izq", "Delantera izquierda")));
+        when(service.mountedPositions("v-1")).thenReturn(List.of(new TirePositionDto("e1-izq", "Delantera izquierda")));
 
         mvc.perform(get("/vehicles/v-1/tire-positions").header(HttpHeaders.AUTHORIZATION, chofer))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[0].position").value("del-izq"));
+                .andExpect(jsonPath("$.items[0].position").value("e1-izq"));
         mvc.perform(get("/vehicles/v-1/tires").header(HttpHeaders.AUTHORIZATION, chofer))
                 .andExpect(status().isForbidden());
         mvc.perform(get("/tires").header(HttpHeaders.AUTHORIZATION, loginAs("tecnico1", Role.TECNICO)))

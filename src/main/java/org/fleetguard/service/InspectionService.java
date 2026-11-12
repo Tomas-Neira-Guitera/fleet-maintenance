@@ -57,6 +57,7 @@ public class InspectionService {
     private final VehicleAvailabilityService availabilityService;
     private final TripKmAlertService tripKmAlertService;
     private final TireService tireService;
+    private final CouplingService couplingService;
 
     private final ApplicationEventPublisher eventPublisher;
 
@@ -65,9 +66,11 @@ public class InspectionService {
                               InspectionMapper inspectionMapper, TripMapper tripMapper,
                               VehicleChecklistService checklistService, OdometerReadings odometerReadings,
                               VehicleAvailabilityService availabilityService, TripKmAlertService tripKmAlertService,
-                              ApplicationEventPublisher eventPublisher, TireService tireService) {
+                              ApplicationEventPublisher eventPublisher, TireService tireService,
+                              CouplingService couplingService) {
         this.tripKmAlertService = tripKmAlertService;
         this.tireService = tireService;
+        this.couplingService = couplingService;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.inspectionRepository = inspectionRepository;
@@ -91,6 +94,11 @@ public class InspectionService {
         if (type == null) {
             throw new InspectionValidationException("El campo type debe ser 'pre-trip' o 'post-trip'.",
                     List.of(new ValidationErrorDetail("type", "Valor inválido.")));
+        }
+        // CAM-157: un remolque no tiene chofer ni viajes propios; se revisa desde el admin.
+        if (vehicle.getVehicleType() != null && vehicle.getVehicleType().isTrailer()) {
+            throw new VehicleStateConflictException("VEHICLE_IS_TRAILER",
+                    vehicle.getPlate() + " es un remolque: no se inspecciona desde el celular.");
         }
 
         // CAM-153: un reintento de una inspección que ya llegó devuelve la guardada, sin volver a validar el
@@ -119,6 +127,8 @@ public class InspectionService {
         List<TireService.Reading> treads = type == InspectionType.PRE_TRIP
                 ? tireService.validateInspectionReadings(vehicle, submission.treadReadings())
                 : List.of();
+        String trailerIdRaw = type == InspectionType.PRE_TRIP ? submission.trailerId() : null;
+        Optional<Vehicle> trailer = couplingService.resolveInspectionTrailer(vehicle, trailerIdRaw);
         Map<String, String> labelById = checklist.stream()
                 .collect(Collectors.toMap(ChecklistItemDef::id, ChecklistItemDef::label));
 
@@ -160,6 +170,7 @@ public class InspectionService {
 
         inspectionRepository.save(inspection);
         tireService.recordInspectionReadings(vehicle, treads, now, driver, inspection.getId());
+        couplingService.applyInspectionTrailer(vehicle, trailerIdRaw, trailer, driver.username());
 
         // CAM-97: el aviso sale después del commit (BlockingDefectNotificationListener).
         List<String> blockingTitles = inspection.getAnswers().stream()

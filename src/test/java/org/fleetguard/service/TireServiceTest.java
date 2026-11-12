@@ -6,7 +6,6 @@ import org.fleetguard.dto.RetireTireRequest;
 import org.fleetguard.dto.RotateTiresRequest;
 import org.fleetguard.dto.TireBrandComparisonDto;
 import org.fleetguard.dto.TireDto;
-import org.fleetguard.dto.TireLayoutRequest;
 import org.fleetguard.dto.TireRequest;
 import org.fleetguard.dto.TreadReadingInput;
 import org.fleetguard.dto.TreadReadingsRequest;
@@ -17,6 +16,7 @@ import org.fleetguard.entity.Tire;
 import org.fleetguard.entity.TireMounting;
 import org.fleetguard.entity.TireTreadReading;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.VehicleType;
 import org.fleetguard.event.TireTreadLowEvent;
 import org.fleetguard.exception.InspectionValidationException;
 import org.fleetguard.exception.VehicleStateConflictException;
@@ -153,46 +153,46 @@ class TireServiceTest {
         return dto.positions().stream().filter(p -> p.position().equals(position)).findFirst().orElseThrow();
     }
 
-    private void layout(String layout) {
-        service.setLayout(truck.getId().toString(), new TireLayoutRequest(layout));
+    private void type(VehicleType type) {
+        truck.setVehicleType(type);
     }
 
     @Test
     void elVehiculoMuestraQueCubiertaHayEnCadaPosicionYCuantosKmLleva() {
-        layout("6_ruedas");
+        type(VehicleType.TRACTOR_4X2);
         TireDto michelin = tire("Michelin", "450000");
-        mount(michelin, "del-izq");
+        mount(michelin, "e1-izq");
         truck.setOdometerKm(101_500);
 
         VehicleTiresDto dto = service.vehicleTires(truck.getId().toString());
 
-        assertEquals("6_ruedas", dto.layout());
+        assertEquals("tractor_4x2", dto.vehicleType());
         assertEquals(7, dto.positions().size());
-        assertEquals("Delantera izquierda", at(dto, "del-izq").label());
+        assertEquals("Delantera izquierda", at(dto, "e1-izq").label());
         assertEquals("Trasera derecha interior", at(dto, "e2-der-int").label());
-        assertEquals(1500, at(dto, "del-izq").tire().km());
-        assertEquals("mounted", at(dto, "del-izq").tire().status());
-        assertEquals(new BigDecimal("300.00"), at(dto, "del-izq").tire().costPerKm());
-        assertNull(at(dto, "del-der").tire());
+        assertEquals(1500, at(dto, "e1-izq").tire().km());
+        assertEquals("mounted", at(dto, "e1-izq").tire().status());
+        assertEquals(new BigDecimal("300.00"), at(dto, "e1-izq").tire().costPerKm());
+        assertNull(at(dto, "e1-der").tire());
     }
 
     @Test
     void alRotarSusKmSeSiguenSumandoEnLaNuevaPosicion() {
-        layout("4_ruedas");
+        type(VehicleType.UTILITARIO);
         TireDto a = tire("Michelin", "100000");
         TireDto b = tire("Pirelli", "100000");
-        mount(a, "del-izq");
-        mount(b, "tras-der");
+        mount(a, "e1-izq");
+        mount(b, "e2-der");
         truck.setOdometerKm(101_000);
 
-        service.rotate(truck.getId().toString(), new RotateTiresRequest("del-izq", "tras-der"));
+        service.rotate(truck.getId().toString(), new RotateTiresRequest("e1-izq", "e2-der"));
         truck.setOdometerKm(102_000);
         VehicleTiresDto dto = service.vehicleTires(truck.getId().toString());
 
-        assertEquals(a.id(), at(dto, "tras-der").tire().id());
-        assertEquals(b.id(), at(dto, "del-izq").tire().id());
-        assertEquals(2000, at(dto, "tras-der").tire().km());
-        assertEquals(2000, at(dto, "del-izq").tire().km());
+        assertEquals(a.id(), at(dto, "e2-der").tire().id());
+        assertEquals(b.id(), at(dto, "e1-izq").tire().id());
+        assertEquals(2000, at(dto, "e2-der").tire().km());
+        assertEquals(2000, at(dto, "e1-izq").tire().km());
         // Queda el historial de dónde estuvo cada una.
         assertEquals(4, dto.history().size());
         assertEquals(2, service.get(a.id()).mountings().size());
@@ -200,7 +200,7 @@ class TireServiceTest {
 
     @Test
     void elAuxilioNoSumaKm() {
-        layout("4_ruedas");
+        type(VehicleType.UTILITARIO);
         TireDto spare = tire("Fate", "80000");
         mount(spare, "auxilio");
         truck.setOdometerKm(105_000);
@@ -210,71 +210,62 @@ class TireServiceTest {
 
     @Test
     void cambiarUnaCubiertaMandaLaAnteriorAlStockOLaDaDeBaja() {
-        layout("4_ruedas");
+        type(VehicleType.UTILITARIO);
         TireDto old = tire("Fate", "80000");
         TireDto fresh = tire("Michelin", "120000");
-        mount(old, "del-izq");
+        mount(old, "e1-izq");
 
         VehicleStateConflictException occupied = assertThrows(VehicleStateConflictException.class,
-                () -> mount(fresh, "del-izq"));
+                () -> mount(fresh, "e1-izq"));
         assertEquals("POSITION_OCCUPIED", occupied.getErrorCode());
 
         VehicleTiresDto dto = service.mount(truck.getId().toString(),
-                new MountTireRequest(fresh.id(), "del-izq", "retired", "Corte lateral"));
+                new MountTireRequest(fresh.id(), "e1-izq", "retired", "Corte lateral"));
 
-        assertEquals(fresh.id(), at(dto, "del-izq").tire().id());
+        assertEquals(fresh.id(), at(dto, "e1-izq").tire().id());
         TireDto retired = service.get(old.id()).tire();
         assertEquals("retired", retired.status());
         assertEquals("Corte lateral", retired.retiredReason());
         assertEquals("TIRE_NOT_IN_STOCK", assertThrows(VehicleStateConflictException.class,
-                () -> mount(old, "del-der")).getErrorCode());
+                () -> mount(old, "e1-der")).getErrorCode());
     }
 
     @Test
     void sacarUnaCubiertaLaDevuelveAlStock() {
-        layout("4_ruedas");
+        type(VehicleType.UTILITARIO);
         TireDto tire = tire("Fate", "80000");
-        mount(tire, "del-izq");
+        mount(tire, "e1-izq");
 
-        service.unmount(truck.getId().toString(), new UnmountTireRequest("del-izq", false, null));
+        service.unmount(truck.getId().toString(), new UnmountTireRequest("e1-izq", false, null));
 
         assertEquals("stock", service.get(tire.id()).tire().status());
         assertEquals("POSITION_EMPTY", assertThrows(VehicleStateConflictException.class,
-                () -> service.unmount(truck.getId().toString(), new UnmountTireRequest("del-izq", false, null)))
+                () -> service.unmount(truck.getId().toString(), new UnmountTireRequest("e1-izq", false, null)))
                 .getErrorCode());
     }
 
     @Test
-    void sinConfiguracionDeEjesNoSeMontaYUnaPosicionAjenaSeRechaza() {
+    void sinTipoNoSeMontaYUnaPosicionQueElTipoNoTieneSeRechaza() {
         TireDto tire = tire("Fate", "80000");
-        assertEquals("NO_TIRE_LAYOUT", assertThrows(VehicleStateConflictException.class,
-                () -> mount(tire, "del-izq")).getErrorCode());
+        truck.setVehicleType(null);
+        assertEquals("NO_VEHICLE_TYPE", assertThrows(VehicleStateConflictException.class,
+                () -> mount(tire, "e1-izq")).getErrorCode());
 
-        layout("4_ruedas");
-        assertThrows(VehicleValidationException.class, () -> mount(tire, "e3-izq-int"));
-    }
-
-    @Test
-    void noSeCambiaLaConfiguracionSiQuedanCubiertasEnPosicionesQueDesaparecen() {
-        layout("10_ruedas");
-        mount(tire("Fate", "80000"), "e3-izq-ext");
-
-        VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class, () -> layout("4_ruedas"));
-        assertEquals("TIRES_ON_REMOVED_POSITIONS", ex.getErrorCode());
-        assertTrue(ex.getMessage().contains("Eje 3 izquierda exterior"));
+        type(VehicleType.UTILITARIO);
+        assertThrows(VehicleValidationException.class, () -> mount(tire, "e2-izq-int"));
     }
 
     @Test
     void unDibujoPorDebajoDelMinimoAvisaUnaSolaVezHastaQueSeMideBien() {
-        layout("4_ruedas");
+        type(VehicleType.UTILITARIO);
         TireDto tire = tire("Fate", "80000");
-        mount(tire, "del-izq");
+        mount(tire, "e1-izq");
         String vehicleId = truck.getId().toString();
 
         service.recordAdminReadings(vehicleId, new TreadReadingsRequest(
-                List.of(new TreadReadingInput("del-izq", new BigDecimal("1.4")))), null);
+                List.of(new TreadReadingInput("e1-izq", new BigDecimal("1.4")))), null);
         service.recordAdminReadings(vehicleId, new TreadReadingsRequest(
-                List.of(new TreadReadingInput("del-izq", new BigDecimal("1.3")))), null);
+                List.of(new TreadReadingInput("e1-izq", new BigDecimal("1.3")))), null);
 
         assertEquals(1, events.size());
         TireTreadLowEvent event = (TireTreadLowEvent) events.get(0);
@@ -283,26 +274,26 @@ class TireServiceTest {
         assertTrue(service.get(tire.id()).tire().lastTread().belowMinimum());
 
         service.recordAdminReadings(vehicleId, new TreadReadingsRequest(
-                List.of(new TreadReadingInput("del-izq", new BigDecimal("8.0")))), null);
+                List.of(new TreadReadingInput("e1-izq", new BigDecimal("8.0")))), null);
         service.recordAdminReadings(vehicleId, new TreadReadingsRequest(
-                List.of(new TreadReadingInput("del-izq", new BigDecimal("1.5")))), null);
+                List.of(new TreadReadingInput("e1-izq", new BigDecimal("1.5")))), null);
         assertEquals(2, events.size());
     }
 
     @Test
     void elDibujoDelPreViajeSeValidaContraLasCubiertasMontadas() {
-        layout("4_ruedas");
-        mount(tire("Fate", "80000"), "del-izq");
+        type(VehicleType.UTILITARIO);
+        mount(tire("Fate", "80000"), "e1-izq");
 
         InspectionValidationException ex = assertThrows(InspectionValidationException.class,
                 () -> service.validateInspectionReadings(truck, List.of(
-                        new TreadReadingInput("del-der", new BigDecimal("5")),
-                        new TreadReadingInput("del-izq", new BigDecimal("5.55")))));
+                        new TreadReadingInput("e1-der", new BigDecimal("5")),
+                        new TreadReadingInput("e1-izq", new BigDecimal("5.55")))));
         assertEquals(List.of("treadReadings[0].position", "treadReadings[1].depthMm"),
                 ex.getDetails().stream().map(d -> d.itemId()).toList());
 
         List<TireService.Reading> valid = service.validateInspectionReadings(truck,
-                List.of(new TreadReadingInput("del-izq", new BigDecimal("1.0"))));
+                List.of(new TreadReadingInput("e1-izq", new BigDecimal("1.0"))));
         service.recordInspectionReadings(truck, valid, Instant.parse("2026-11-02T08:00:00Z"), driver, UUID.randomUUID());
         assertEquals("chofer1", readings.get(0).getMeasuredByName());
         assertEquals("chofer1", ((TireTreadLowEvent) events.get(0)).measuredBy());
@@ -311,24 +302,24 @@ class TireServiceTest {
 
     @Test
     void elChoferVeLasPosicionesQueRuedanYTienenCubierta() {
-        layout("4_ruedas");
-        mount(tire("Fate", "80000"), "del-izq");
+        type(VehicleType.UTILITARIO);
+        mount(tire("Fate", "80000"), "e1-izq");
         mount(tire("Fate", "80000"), "auxilio");
 
-        assertEquals(List.of("del-izq"), service.mountedPositions(truck.getId().toString()).stream()
+        assertEquals(List.of("e1-izq"), service.mountedPositions(truck.getId().toString()).stream()
                 .map(p -> p.position()).toList());
     }
 
     @Test
     void comparaElCostoPorKmEntreMarcas() {
-        layout("4_ruedas");
-        mount(tire("Michelin", "400000"), "del-izq");
-        mount(tire("Michelin", "400000"), "del-der");
-        mount(tire("Fate", "200000"), "tras-izq");
+        type(VehicleType.UTILITARIO);
+        mount(tire("Michelin", "400000"), "e1-izq");
+        mount(tire("Michelin", "400000"), "e1-der");
+        mount(tire("Fate", "200000"), "e2-izq");
         // Con menos de 1.000 km todavía no cuenta.
         TireDto recent = tire("Pirelli", "300000");
         truck.setOdometerKm(110_000);
-        service.mount(truck.getId().toString(), new MountTireRequest(recent.id(), "tras-der", null, null));
+        service.mount(truck.getId().toString(), new MountTireRequest(recent.id(), "e2-der", null, null));
         truck.setOdometerKm(110_500);
 
         TireBrandComparisonDto comparison = service.brandComparison();
@@ -344,9 +335,9 @@ class TireServiceTest {
 
     @Test
     void unaCubiertaMontadaNoSeDaDeBajaNiUnaConHistoriaSeBorra() {
-        layout("4_ruedas");
+        type(VehicleType.UTILITARIO);
         TireDto tire = tire("Fate", "80000");
-        mount(tire, "del-izq");
+        mount(tire, "e1-izq");
 
         assertEquals("TIRE_MOUNTED", assertThrows(VehicleStateConflictException.class,
                 () -> service.retire(tire.id(), new RetireTireRequest("Gastada"))).getErrorCode());
