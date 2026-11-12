@@ -21,6 +21,10 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, UUID> {
     /** CAM-155: las OTs en esos estados (las abiertas, para ver su antigüedad). */
     List<WorkOrder> findByStatusIn(Collection<WorkOrderStatus> statuses);
 
+    /** CAM-142: los defectos que tienen alguna OT en esos estados (las abiertas: el defecto está atendido). */
+    @Query("select distinct w.defectId from WorkOrder w where w.defectId is not null and w.status in :statuses")
+    List<UUID> findDefectIdsWithStatusIn(@Param("statuses") Collection<WorkOrderStatus> statuses);
+
     // OT abierta (asignada/en proceso) para un mismo origen -- evitan duplicar trabajo al replanificar.
     // Ordenadas por fecha para que, si ya hay duplicados viejos en la base, siempre se reuse la original.
 

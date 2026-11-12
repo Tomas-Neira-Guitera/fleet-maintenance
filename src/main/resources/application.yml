@@ -91,6 +91,12 @@ fleetguard:
     # de veces en los últimos window-days días. Se avisa al admin una sola vez por ventana.
     threshold: 3
     window-days: 30
+  unattended-defects:
+    # CAM-142: un defecto abierto está sin atender si lleva más de days días desde que se reportó sin una OT
+    # abierta ni un turno programado. Cada día a las 08:10 (hora de Argentina) se le avisa al admin, un aviso
+    # por vehículo y una sola vez por defecto.
+    days: 7
+    cron: "0 10 8 * * *"
   trip-km-alerts:
     # CAM-152: al cerrar un viaje se avisa si recorrió más de ratio veces el promedio de los últimos
     # recent-trips viajes del vehículo, o menos del promedio dividido ratio. Sin min-trips viajes

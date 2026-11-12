@@ -24,15 +24,17 @@ public class DefectService {
     private final UserNameService userNameService;
     private final DefectMapper defectMapper;
     private final TripDamageService tripDamageService;
+    private final UnattendedDefects unattendedDefects;
 
     public DefectService(DefectRepository defectRepository, VehicleRepository vehicleRepository,
                          UserNameService userNameService, DefectMapper defectMapper,
-                         TripDamageService tripDamageService) {
+                         TripDamageService tripDamageService, UnattendedDefects unattendedDefects) {
         this.defectRepository = defectRepository;
         this.vehicleRepository = vehicleRepository;
         this.userNameService = userNameService;
         this.defectMapper = defectMapper;
         this.tripDamageService = tripDamageService;
+        this.unattendedDefects = unattendedDefects;
     }
 
     /** Ordena por severidad (blocking primero) y luego por fecha, más reciente primero. */
@@ -60,12 +62,14 @@ public class DefectService {
         Map<String, String> reporterNames = userNameService.currentNames(defects.stream()
                 .map(defect -> defect.getInspectionAnswer().getInspection().getDriverId()).toList());
         Map<UUID, OccurredOnTripDto> occurredOnTrip = tripDamageService.occurredOnTrip(defects);
+        Map<UUID, Long> unattendedDays = unattendedDefects.unattendedDays(defects);
 
         return defects.stream()
                 .sorted(Comparator.comparing(Defect::getSeverity).reversed()
                         .thenComparing(Defect::getCreatedAt, Comparator.reverseOrder()))
                 .map(defect -> defectMapper.toDto(defect, vehicleId(defect).toString(),
-                        plateByVehicleId.get(vehicleId(defect)), reporterNames, occurredOnTrip.get(defect.getId())))
+                                plateByVehicleId.get(vehicleId(defect)), reporterNames, occurredOnTrip.get(defect.getId()))
+                        .withUnattendedDays(unattendedDays.get(defect.getId())))
                 .toList();
     }
 
