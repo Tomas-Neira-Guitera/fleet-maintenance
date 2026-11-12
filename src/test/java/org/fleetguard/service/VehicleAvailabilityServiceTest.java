@@ -146,7 +146,8 @@ class VehicleAvailabilityServiceTest {
         vehicle.setUnavailableSince(since);
         UUID workOrderId = UUID.randomUUID();
 
-        service.sync(vehicle, workOrderId);
+        // CAM-141: devuelve true para que el aviso de defecto resuelto no se sume a este.
+        assertTrue(service.sync(vehicle, workOrderId));
 
         assertNull(vehicle.getUnavailableSince());
         ArgumentCaptor<VehicleAvailabilityChangedEvent> event = ArgumentCaptor.forClass(VehicleAvailabilityChangedEvent.class);
@@ -158,13 +159,14 @@ class VehicleAvailabilityServiceTest {
 
     @Test
     void sinCambiosNoPublicaNadaYUnVehiculoDadoDeBajaNoSeRevisa() {
-        service.sync(vehicle, null);
+        assertFalse(service.sync(vehicle, null));
+        // Quedan otros bloqueantes: sigue no disponible y devuelve false (CAM-141 avisa del defecto resuelto).
         vehicle.setUnavailableSince(NOW);
         when(defectRepository.findOpenBlockingWithInspection(any())).thenReturn(List.of(blockingDefect(vehicle, "Sin frenos", NOW)));
-        service.sync(vehicle, null);
+        assertFalse(service.sync(vehicle, null));
         vehicle.setActive(false);
         vehicle.setUnavailableSince(null);
-        service.sync(vehicle, null);
+        assertFalse(service.sync(vehicle, null));
 
         verify(eventPublisher, never()).publishEvent(any());
         verify(vehicleRepository, never()).save(any());

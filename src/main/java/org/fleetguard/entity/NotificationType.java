@@ -17,7 +17,8 @@ public enum NotificationType {
     DOCUMENT_EXPIRED("document_expired"),
     VEHICLE_UNAVAILABLE("vehicle_unavailable"),
     VEHICLE_AVAILABLE("vehicle_available"),
-    TRIP_KM_ANOMALY("trip_km_anomaly");
+    TRIP_KM_ANOMALY("trip_km_anomaly"),
+    DEFECT_RESOLVED("defect_resolved");
 
     private final String json;
 

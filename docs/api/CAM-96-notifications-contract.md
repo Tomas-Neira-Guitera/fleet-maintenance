@@ -24,6 +24,13 @@ reparten, dónde se guardan, cómo los lee cada usuario y la campanita del heade
 | `document_due_soon`, `document_expired` | CAM-127 | Configurable (por defecto, admins) | `/vehiculos/{id}/documentacion` |
 | `vehicle_unavailable` | CAM-102 | El chofer que tiene el vehículo en viaje (solo si lo bloqueó un documento vencido) | `/inspeccion/{vehicleId}` |
 | `vehicle_available` | CAM-103 | Quienes reportaron los bloqueantes resueltos y a quienes se avisó del bloqueo | `/inspeccion/{vehicleId}` |
+| `defect_resolved` | CAM-141 | El chofer que reportó el defecto, al finalizarse su OT. No sale si era bloqueante y el vehículo volvió a estar disponible (ya le llega `vehicle_available`), ni en una segunda OT de un defecto ya resuelto | `/` |
+
+**`defect_resolved` (CAM-141).** El texto es "AF102ZT: se resolvió «Luz de freno». Lámpara
+reemplazada.", con la descripción de cierre de la OT. Si el `driverId` de la inspección no es un
+UUID (los de antes de CAM-85) o el usuario ya no existe, no se avisa y la OT se finaliza igual.
+Si el admin apaga `vehicle_available` y deja prendido este, al resolverse el único bloqueante el
+chofer no recibe ninguno de los dos: se eligió así a propósito, a confirmar con el equipo.
 
 Cómo se configura cada uno (activo, canales, destinatarios): ver
 `CAM-117-118-notification-settings-contract.md`.

@@ -89,6 +89,10 @@ public final class NotificationCatalog {
         add(NotificationType.VEHICLE_AVAILABLE, "Vehículo disponible de nuevo",
                 "El vehículo deja de estar no disponible: se resolvió el defecto bloqueante o se renovó el documento.",
                 Audience.OWNER, "Los choferes que reportaron el defecto o a los que se avisó del bloqueo", Lead.NONE);
+        add(NotificationType.DEFECT_RESOLVED, "Defecto resuelto",
+                "Se finaliza la orden de trabajo de un defecto. Si con eso el vehículo vuelve a estar disponible, "
+                        + "se manda solo \"Vehículo disponible de nuevo\".",
+                Audience.OWNER, "El chofer que reportó el defecto", Lead.NONE);
     }
 
     private NotificationCatalog() {
@@ -122,6 +126,7 @@ public final class NotificationCatalog {
                 NotificationType.DOCUMENT_DUE_SOON, NotificationType.DOCUMENT_EXPIRED,
                 NotificationType.WORK_ORDER_ASSIGNED, NotificationType.WORK_ORDER_UNASSIGNED,
                 NotificationType.WORK_ORDER_CANCELLED, NotificationType.TRIP_OPEN_REMINDER,
-                NotificationType.VEHICLE_UNAVAILABLE, NotificationType.VEHICLE_AVAILABLE).indexOf(type);
+                NotificationType.VEHICLE_UNAVAILABLE, NotificationType.VEHICLE_AVAILABLE,
+                NotificationType.DEFECT_RESOLVED).indexOf(type);
     }
 }
