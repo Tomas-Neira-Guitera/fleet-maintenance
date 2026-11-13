@@ -28,6 +28,13 @@ def q(s):
     return "null" if s is None else "'" + str(s).replace("'", "''") + "'"
 
 
+def qn(s):
+    # Texto con saltos de línea: E'...' con \n, así el archivo (en CRLF) no los convierte.
+    if s is None or "\n" not in s:
+        return q(s)
+    return "E'" + s.replace("\\", "\\\\").replace("'", "''").replace("\n", "\\n") + "'"
+
+
 def ts(day, hh, mm=0):
     return f"pg_temp.ts({day},'{hh:02d}:{mm:02d}')"
 
@@ -977,10 +984,9 @@ for f, cons, avg, _ in FUEL_ALERTS:
     f["alert"], f["avg"] = cons, avg
 
 # ---- CAM-157: cubiertas. Cada vehículo con tipo arranca con todas sus posiciones montadas; después rotaciones,
-# cambios y bajas guionados, mediciones de dibujo en dos pre-viajes y una cubierta por debajo del mínimo.
+# cambios y bajas guionados, y lo que reportaron los choferes en los defectos de "Neumáticos".
 AXLES = {"utilitario": "SS", "camion_4x2": "SD", "camion_6x4": "SDD", "tractor_4x2": "SD", "tractor_6x4": "SDD",
          "semirremolque_2_ejes": "DD", "semirremolque_3_ejes": "DDD", "acoplado": "DD"}
-MIN_TREAD = 1.6
 
 
 def positions_of(t):
@@ -1001,18 +1007,17 @@ def position_label(t, p):
     return base + {"ext": " exterior", "int": " interior"}.get(parts[2] if len(parts) > 2 else "", "")
 
 
-BRANDS = {  # marca: (modelos por uso, factor de costo, desgaste mm cada 1000 km)
-    "Michelin": ({"steer": "X Multi Z", "drive": "X Multi D", "trailer": "X Multi T", "light": "X Multi Z", "util": "Agilis"}, 1.15, 0.070),
-    "Bridgestone": ({"steer": "R268", "drive": "M729", "trailer": "R168", "light": "R268", "util": "Dueler A/T 001"}, 1.08, 0.075),
-    "Pirelli": ({"steer": "FR85", "drive": "TR85", "trailer": "ST01", "light": "FR85", "util": "Chrono"}, 1.05, 0.080),
-    "Fate": ({"steer": "Sentiva Truck", "drive": "Ecoplus", "trailer": "Sentiva Trailer", "light": "Sentiva Truck", "util": "Eximia"}, 0.85, 0.095),
-    "Firestone": ({"steer": "FS591", "drive": "FD691", "trailer": "FT833", "light": "FS591", "util": "Destination"}, 0.92, 0.085),
+BRANDS = {  # marca: (modelos por uso, factor de costo)
+    "Michelin": ({"steer": "X Multi Z", "drive": "X Multi D", "trailer": "X Multi T", "light": "X Multi Z", "util": "Agilis"}, 1.15),
+    "Bridgestone": ({"steer": "R268", "drive": "M729", "trailer": "R168", "light": "R268", "util": "Dueler A/T 001"}, 1.08),
+    "Pirelli": ({"steer": "FR85", "drive": "TR85", "trailer": "ST01", "light": "FR85", "util": "Chrono"}, 1.05),
+    "Fate": ({"steer": "Sentiva Truck", "drive": "Ecoplus", "trailer": "Sentiva Trailer", "light": "Sentiva Truck", "util": "Eximia"}, 0.85),
+    "Firestone": ({"steer": "FS591", "drive": "FD691", "trailer": "FT833", "light": "FS591", "util": "Destination"}, 0.92),
 }
 FLEET_BRANDS = {"larga": ["Michelin", "Bridgestone"], "regional": ["Pirelli", "Fate", "Firestone"],
                 "urbano": ["Fate", "Firestone"], "trailer": ["Bridgestone", "Fate", "Firestone"]}
 SIZE = {"delivery": "215/75 R17.5", "accelo": "215/75 R17.5", "kangoo": "195/65 R15", "hilux": "265/65 R17"}
 BASE_COST = {"295/80 R22.5": 590_000, "215/75 R17.5": 285_000, "195/65 R15": 118_000, "265/65 R17": 215_000}
-INITIAL = {"steer": 16.0, "drive": 19.0, "trailer": 15.0, "light": 14.0, "util": 8.0}
 MOUNT_FROM = {"larga": (-520, -250), "regional": (-640, -320), "urbano": (-720, -380), "util": (-330, -150),
               "trailer": (-420, -200)}
 
@@ -1021,15 +1026,13 @@ _code = [0]
 
 
 def new_tire(k, use, brand, day):
-    v = ALLV[k]
     size = SIZE.get(k, "295/80 R22.5")
     _code[0] += 1
-    models, cost_f, wear = BRANDS[brand]
+    models, cost_f = BRANDS[brand]
     t = dict(id=uid("tire"), code=f"{brand[:2].upper()}-{24 + (day > -120)}-{_code[0]:04d}", brand=brand,
              model=models[use], size=size, purchase=day - rnd.randint(3, 30),
-             cost=round(BASE_COST[size] * cost_f * rnd.uniform(0.95, 1.05), -3), initial=INITIAL[use],
-             wear=1.6 * wear * (1.15 if use == "drive" else 0.8 if use == "trailer" else 1.4 if use == "util" else 1.0),
-             status="STOCK", retired=None, reason=None, alerted=None)
+             cost=round(BASE_COST[size] * cost_f * rnd.uniform(0.95, 1.05), -3),
+             status="STOCK", retired=None, reason=None)
     tires.append(t)
     return t
 
@@ -1115,54 +1118,46 @@ for brand, use, size in [("Michelin", "drive", None), ("Michelin", "drive", None
     TIRE[nt["id"]] = nt
 
 
-def tire_km(tid, day):
-    return sum(vkm(m["vehicle"], min(day, m["removed"][0] if m["removed"] else 0)) - m["km"]
-               for m in mountings if m["tire"] == tid and m["position"] != "auxilio" and m["day"] <= day)
-
-
-def depth(t, day):
-    return max(2.2, round(t["initial"] - t["wear"] * tire_km(t["id"], day) / 1000 + rnd.uniform(-0.3, 0.3), 1))
-
-
 def mounted_on(k, day):
     return [m for m in mountings if m["vehicle"] == k and m["position"] != "auxilio" and m["day"] <= day
             and (m["removed"] is None or m["removed"][0] > day)]
 
 
-def nearest_pre_trip(k, day):
-    pre = [i for i in inspections if i["vehicle"] == k and i["type"] == "PRE_TRIP"]
-    return min(pre, key=lambda i: abs(i["day"] - day)) if pre else None
-
-
-tread_readings = []
-D_TIRE_INS = next(i for i in inspections if any(a["id"] == D_TIRE["answer"] for a in i["answers"]))
+# ---- Estado visual de las cubiertas: cada defecto de "Neumáticos" dice qué cubierta y qué se vio. El del
+# Delivery sigue abierto (la cubierta queda "a revisar"); los del historial están resueltos.
+ANSWER_OF = {a["id"]: (i, a["item"]) for i in inspections for a in i["answers"]}
+D_TIRE_INS = ANSWER_OF[D_TIRE["answer"]][0]
 LOW = current[("delivery", "e2-der-ext")]   # la del defecto "Neumático gastado, se ve tela"
-FORCED = {LOW["tire"]: [2.9, 1.9, 1.2]}
-
-
-def read_all(k, day, hh, mm, by, ins_id, rounds_idx):
-    for m in mounted_on(k, day):
-        d = depth(TIRE[m["tire"]], day)
-        if m["tire"] in FORCED:
-            d = FORCED[m["tire"]][rounds_idx]
-        tread_readings.append(dict(id=uid("treadreading"), tire=m["tire"], vehicle=k, position=m["position"], depth=d,
-                                   day=day, hh=hh, mm=mm + 2 if mm < 57 else mm, by=by, inspection=ins_id))
-
-
-for v in VEHICLES:
-    k = v["key"]
-    seen = set()
-    for idx, target in enumerate([-62, -14]):
-        ins = nearest_pre_trip(k, target)
-        if ins and ins["id"] not in seen and ins["id"] != D_TIRE_INS["id"]:
-            seen.add(ins["id"])
-            read_all(k, ins["day"], ins["hh"], ins["mm"], ins["driver"], ins["id"], idx)
-read_all("delivery", D_TIRE_INS["day"], D_TIRE_INS["hh"], D_TIRE_INS["mm"], D_TIRE_INS["driver"], D_TIRE_INS["id"], 2)
-for k, day in [("kangoo", -35), ("semi_helvetica", -40), ("semi_montenegro", -40), ("acop_ombu", -40)]:
-    read_all(k, day, 15, 0, None, None, 0)
-low = [r for r in tread_readings if r["depth"] < MIN_TREAD]
-assert [r["tire"] for r in low] == [LOW["tire"]], "solo la cubierta del Delivery tiene que quedar bajo el mínimo"
-TIRE[LOW["tire"]]["alerted"] = (low[0]["day"], low[0]["hh"], low[0]["mm"])
+CONDITIONS = {"Neumático gastado, se ve tela": ["SE_VE_LA_TELA", "POCO_DIBUJO"],
+              "Desgaste irregular neumático": ["DESGASTE_IRREGULAR"],
+              "Corte en flanco de neumático": ["CORTE_FLANCO"]}
+LABEL = {"SE_VE_LA_TELA": "se ve la tela o el alambre", "POCO_DIBUJO": "poco dibujo",
+         "DESGASTE_IRREGULAR": "desgaste irregular", "CORTE_FLANCO": "corte o daño en el flanco"}
+condition_reports = []
+for d in defects:
+    ins, item = ANSWER_OF[d["answer"]]
+    if item != "ext-neumaticos" or d["description"] not in CONDITIONS:
+        continue
+    k = d["vehicle"]
+    if d is D_TIRE:
+        m = LOW
+    else:
+        rolling = mounted_on(k, d["day"])
+        if not rolling:
+            continue
+        # El corte es en una delantera; el desgaste, en una trasera, como dicen las descripciones.
+        front = d["description"].startswith("Corte")
+        options = [m for m in rolling if m["position"].startswith("e1-") == front] or rolling
+        m = rnd.choice(options)
+    codes = CONDITIONS[d["description"]]
+    condition_reports.append(dict(id=uid("tirecondition"), tire=m["tire"], vehicle=k, position=m["position"],
+                                  conditions=codes, day=d["day"], hh=d["hh"], mm=d["mm"], by=ins["driver"],
+                                  inspection=ins["id"], defect=d["id"]))
+    # Como el backend: el resumen se suma al detalle del defecto.
+    summary = f"Cubiertas: {position_label(ALLV[k]['type'], m['position'])}: {', '.join(LABEL[c] for c in codes)}."
+    d["details"] = (DEFECT_DETAILS[d["description"]] + "\n\n" + summary) if d["description"] in DEFECT_DETAILS else summary
+active = [r for r in condition_reports if r["defect"] == D_TIRE["id"]]
+assert len(active) == 1 and D_TIRE["status"] == "open", "la cubierta del Delivery tiene que quedar a revisar"
 
 
 def ar(n, decimals=1):
@@ -1182,12 +1177,13 @@ for f, cons, avg, km in FUEL_ALERTS:
                                       f"{round((cons - avg) * 100 / avg)}% más que su promedio de {ar(avg)} L.",
                               link=f"/vehiculos/{ALLV[f['vehicle']]['id']}/combustible", at=(f["day"], f["hh"], f["mm"])))
 lt = TIRE[LOW["tire"]]
-notifications.append(dict(type="TIRE_TREAD_LOW", title=f"Dibujo bajo en {VBY['delivery']['plate']}",
-                          message=f"La cubierta {tire_label(lt)} ({position_label('camion_4x2', 'e2-der-ext')}) de "
-                                  f"{VBY['delivery']['plate']} tiene {ar(1.2)} mm de dibujo, menos del mínimo de "
-                                  f"{ar(MIN_TREAD)} mm. Lo midió {D_TIRE_INS['driver']}.",
-                          link=f"/vehiculos/{VBY['delivery']['id']}/neumaticos", at=lt["alerted"]))
-
+plate = VBY["delivery"]["plate"]
+notifications.append(dict(type="TIRE_PROBLEM_REPORTED", title=f"Cubierta con problemas en {plate}",
+                          message=f"{D_TIRE_INS['driver']} reportó en {plate}: "
+                                  f"{position_label('camion_4x2', 'e2-der-ext')} ({tire_label(lt)}): "
+                                  f"se ve la tela o el alambre, poco dibujo.",
+                          link=f"/vehiculos/{VBY['delivery']['id']}/neumaticos",
+                          at=(active[0]["day"], active[0]["hh"], active[0]["mm"])))
 
 # ---------------------------------------------------------------- SQL
 KNOWN_COLUMNS = {
@@ -1212,9 +1208,9 @@ KNOWN_COLUMNS = {
     "checklist_template_items": "id template_id label type section position",
     "fuel_loads": "id vehicle_id loaded_at liters amount odometer_km full_tank created_by created_at "
                   "alert_liters_per_100_km alert_average_liters_per_100_km",
-    "tires": "id code brand model size purchase_date cost initial_tread_mm status retired_at retired_reason tread_alerted_at created_at",
+    "tires": "id code brand model size purchase_date cost status retired_at retired_reason created_at",
     "tire_mountings": "id tire_id vehicle_id position mounted_at mounted_km removed_at removed_km",
-    "tire_tread_readings": "id tire_id vehicle_id position depth_mm measured_at measured_by measured_by_name inspection_id",
+    "tire_condition_reports": "id tire_id vehicle_id position conditions reported_at reported_by reported_by_name inspection_id defect_id",
     "trailer_couplings": "id trailer_id towing_id coupled_at uncoupled_at coupled_by_name",
 }
 out = []
@@ -1266,15 +1262,20 @@ w("alter table if exists notification_settings drop constraint if exists notific
 w("alter table if exists inspections drop constraint if exists inspections_type_check;")
 w("-- CAM-157: las posiciones de las cubiertas cambiaron de nombre, y el tipo de vehículo reemplazó a tire_layout.")
 w("alter table if exists tire_mountings drop constraint if exists tire_mountings_position_check;")
-w("alter table if exists tire_tread_readings drop constraint if exists tire_tread_readings_position_check;")
+w("alter table if exists tire_condition_reports drop constraint if exists tire_condition_reports_position_check;")
 w("alter table if exists vehicles drop column if exists tire_layout;")
+w("-- CAM-157: la medición del dibujo en mm se reemplazó por el estado visual de la cubierta.")
+w("drop table if exists tire_tread_readings;")
+w("alter table if exists tires drop column if exists initial_tread_mm;")
+w("alter table if exists tires drop column if exists tread_alerted_at;")
+w("delete from notification_settings where type = 'TIRE_TREAD_LOW';")
 w("")
 w("truncate table work_order_photos, work_order_expenses, work_orders, scheduled_maintenances, maintenance_completions,")
 w("  vehicle_checklist_items, vehicle_disabled_checklist_items, vehicle_documents, document_alert_log, recurring_defect_alerts,")
 w("  vehicle_maintenance_assignments, maintenance_plans, defects, inspection_answers, inspections, trips,")
-w("  checklist_template_items, checklist_templates, fuel_loads, tire_tread_readings, tire_mountings, tires,")
+w("  checklist_template_items, checklist_templates, fuel_loads, tire_condition_reports, tire_mountings, tires,")
 w("  trailer_couplings, vehicles cascade;")
-w("delete from notifications where type in ('FUEL_CONSUMPTION_ANOMALY', 'TIRE_TREAD_LOW');")
+w("delete from notifications where type in ('FUEL_CONSUMPTION_ANOMALY', 'TIRE_TREAD_LOW', 'TIRE_PROBLEM_REPORTED');")
 w("")
 w("-- Usuarios")
 w("delete from users where username <> 'admin';")
@@ -1340,7 +1341,7 @@ insert("vehicle_checklist_items", ["id", "vehicle_id", "label", "type", "section
 w("-- Defectos")
 insert("defects", ["id", "inspection_answer_id", "severity", "description", "details", "photo_url", "created_at", "status",
                    "resolved_at"],
-       [[q(d["id"]), q(d["answer"]), q(d["severity"]), q(d["description"]), q(DEFECT_DETAILS.get(d["description"])),
+       [[q(d["id"]), q(d["answer"]), q(d["severity"]), q(d["description"]), qn(d.get("details", DEFECT_DETAILS.get(d["description"]))),
          q(d["photo"]), ts(d["day"], d["hh"], d["mm"]),
          q(d["status"]), ts(*d["resolved"]) if d.get("resolved") else "null"] for d in defects])
 w("-- Programaciones (calendario)")
@@ -1385,22 +1386,22 @@ insert("fuel_loads", ["id", "vehicle_id", "loaded_at", "liters", "amount", "odom
        [[q(f["id"]), q(ALLV[f["vehicle"]]["id"]), ts(f["day"], f["hh"], f["mm"]), f"{f['liters']:.2f}", f"{f['amount']:.2f}",
          str(f["km"]), "true" if f["full"] else "false", q(DRIVER_IDS[f["by"]]), ts(f["day"], f["hh"], f["mm"]),
          f"{f['alert']:.2f}" if "alert" in f else "null", f"{f['avg']:.2f}" if "avg" in f else "null"] for f in fuel_loads])
-w("-- Cubiertas, montajes y mediciones de dibujo (CAM-157)")
-insert("tires", ["id", "code", "brand", "model", "size", "purchase_date", "cost", "initial_tread_mm", "status", "retired_at",
-                 "retired_reason", "tread_alerted_at", "created_at"],
+w("-- Cubiertas, montajes y lo que reportaron los choferes (CAM-157)")
+insert("tires", ["id", "code", "brand", "model", "size", "purchase_date", "cost", "status", "retired_at",
+                 "retired_reason", "created_at"],
        [[q(t["id"]), q(t["code"]), q(t["brand"]), q(t["model"]), q(t["size"]), dt(t["purchase"]), f"{t['cost']:.2f}",
-         f"{t['initial']:.1f}", q(t["status"]), ts(*t["retired"]) if t["retired"] else "null", q(t["reason"]),
-         ts(*t["alerted"]) if t["alerted"] else "null", ts(t["purchase"], 12)] for t in tires])
+         q(t["status"]), ts(*t["retired"]) if t["retired"] else "null", q(t["reason"]), ts(t["purchase"], 12)]
+        for t in tires])
 insert("tire_mountings", ["id", "tire_id", "vehicle_id", "position", "mounted_at", "mounted_km", "removed_at", "removed_km"],
        [[q(m["id"]), q(m["tire"]), q(ALLV[m["vehicle"]]["id"]), q(m["position"].upper().replace("-", "_")),
          ts(m["day"], m["hh"]), str(m["km"]), ts(*m["removed"]) if m["removed"] else "null",
          str(m["removed_km"]) if m["removed"] else "null"] for m in mountings])
-insert("tire_tread_readings", ["id", "tire_id", "vehicle_id", "position", "depth_mm", "measured_at", "measured_by",
-                               "measured_by_name", "inspection_id"],
-       [[q(r["id"]), q(r["tire"]), q(ALLV[r["vehicle"]]["id"]), q(r["position"].upper().replace("-", "_")), f"{r['depth']:.1f}",
-         ts(r["day"], r["hh"], r["mm"]), q(DRIVER_IDS[r["by"]]) if r["by"] else ADMIN_ID, q(r["by"] or "admin"),
-         q(r["inspection"])] for r in tread_readings])
-w("-- Avisos de consumo alto y dibujo bajo, para el admin (los demás los genera el backend)")
+insert("tire_condition_reports", ["id", "tire_id", "vehicle_id", "position", "conditions", "reported_at", "reported_by",
+                                  "reported_by_name", "inspection_id", "defect_id"],
+       [[q(r["id"]), q(r["tire"]), q(ALLV[r["vehicle"]]["id"]), q(r["position"].upper().replace("-", "_")),
+         q(",".join(r["conditions"])), ts(r["day"], r["hh"], r["mm"]), q(DRIVER_IDS[r["by"]]), q(r["by"]),
+         q(r["inspection"]), q(r["defect"])] for r in condition_reports])
+w("-- Avisos de consumo alto y cubierta con problemas, para el admin (los demás los genera el backend)")
 insert("notifications", ["id", "recipient_id", "type", "title", "message", "link", "created_at"],
        [["gen_random_uuid()", ADMIN_ID, q(n["type"]), q(n["title"]), q(n["message"]), q(n["link"]), ts(*n["at"])]
         for n in notifications])
@@ -1424,7 +1425,7 @@ print("documents", len(documents), collections.Counter(d["type"] for d in docume
 print("templates", len(TEMPLATES), "copied items", sum(1 for c in checklist_extras if "created" in c))
 print("fuel loads", len(fuel_loads), "partial", sum(not f["full"] for f in fuel_loads), "alerts", [(ALLV[a[0]["vehicle"]]["plate"], a[1], a[2]) for a in FUEL_ALERTS])
 print("tires", len(tires), collections.Counter(t["status"] for t in tires), "mountings", len(mountings),
-      "readings", len(tread_readings), "couplings", len(couplings))
+      "condition reports", len(condition_reports), "couplings", len(couplings))
 for v in EXTRA + TRAILERS:
     print(f'{v["plate"]} {v["model"]:<22} km={v["odometer"]:>7} {v["type"]}')
 for v in VEHICLES:
