@@ -68,7 +68,7 @@ alter table if exists notification_settings drop constraint if exists notificati
 alter table if exists inspections drop constraint if exists inspections_type_check;
 
 truncate table work_order_photos, work_order_expenses, work_orders, scheduled_maintenances, maintenance_completions,
-  vehicle_checklist_items, vehicle_disabled_checklist_items, vehicle_documents, document_alert_log, recurring_defect_alerts, unattended_defect_alerts,
+  vehicle_checklist_items, vehicle_disabled_checklist_items, vehicle_documents, document_alert_log, recurring_defect_alerts, unattended_defect_alerts, scheduled_maintenance_alerts,
   vehicle_maintenance_assignments, maintenance_plans, defects, inspection_answers, inspections, trips, vehicles cascade;
 
 -- Usuarios

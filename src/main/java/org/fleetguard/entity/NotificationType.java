@@ -19,7 +19,9 @@ public enum NotificationType {
     VEHICLE_AVAILABLE("vehicle_available"),
     TRIP_KM_ANOMALY("trip_km_anomaly"),
     DEFECT_RESOLVED("defect_resolved"),
-    DEFECT_UNATTENDED("defect_unattended");
+    DEFECT_UNATTENDED("defect_unattended"),
+    SCHEDULED_MAINTENANCE_UPCOMING("scheduled_maintenance_upcoming"),
+    TRIP_STARTED_WITH_MAINTENANCE("trip_started_with_maintenance");
 
     private final String json;
 
