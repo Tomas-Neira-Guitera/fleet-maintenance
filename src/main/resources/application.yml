@@ -97,6 +97,10 @@ fleetguard:
     # por vehículo y una sola vez por defecto.
     days: 7
     cron: "0 10 8 * * *"
+  scheduled-maintenance-alerts:
+    # CAM-143: cada día a las 08:15 (hora de Argentina) se le avisa al chofer que tiene el vehículo en viaje
+    # de los turnos de taller de hoy (los que todavía no pasaron) y de mañana. Una vez por turno y fecha.
+    cron: "0 15 8 * * *"
   trip-km-alerts:
     # CAM-152: al cerrar un viaje se avisa si recorrió más de ratio veces el promedio de los últimos
     # recent-trips viajes del vehículo, o menos del promedio dividido ratio. Sin min-trips viajes

@@ -67,6 +67,9 @@ public final class NotificationCatalog {
         add(NotificationType.TRIP_KM_ANOMALY, "Kilometraje fuera de lo normal",
                 "Un viaje se cierra con muchos más o muchos menos km que el promedio del vehículo, o con menos km de los que ya tenía.",
                 Audience.CONFIGURABLE, null, Lead.NONE);
+        add(NotificationType.TRIP_STARTED_WITH_MAINTENANCE, "Salida con turno de taller",
+                "Un chofer sale de viaje con un vehículo que tiene turno de taller ese día.",
+                Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.WORK_ORDER_FINALIZED, "Orden de trabajo finalizada",
                 "Se finaliza una orden de trabajo, interna o de un taller externo.", Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.MAINTENANCE_DUE_SOON, "Mantenimiento por vencer",
@@ -86,6 +89,10 @@ public final class NotificationCatalog {
                 "Se cancela una orden de trabajo que tenía un técnico.", Audience.OWNER, "El técnico que la tenía", Lead.NONE);
         add(NotificationType.TRIP_OPEN_REMINDER, "Recordatorio de viaje abierto",
                 "El chofer no hizo el post-viaje y el viaje sigue abierto.", Audience.OWNER, "El chofer que abrió el viaje", Lead.NONE);
+        add(NotificationType.SCHEDULED_MAINTENANCE_UPCOMING, "Turno de taller",
+                "El vehículo que el chofer tiene en viaje tiene turno de taller hoy o mañana. Una sola vez por turno, "
+                        + "y de nuevo si se reprograma.",
+                Audience.OWNER, "El chofer que tiene el vehículo en viaje", Lead.NONE);
         add(NotificationType.VEHICLE_UNAVAILABLE, "Vehículo no disponible",
                 "Vence un documento de un vehículo que un chofer tiene en viaje.", Audience.OWNER,
                 "El chofer que tiene el vehículo en viaje", Lead.NONE);
@@ -125,11 +132,13 @@ public final class NotificationCatalog {
     private static int order(NotificationType type) {
         return List.of(NotificationType.BLOCKING_DEFECT_REPORTED, NotificationType.RECURRING_DEFECT,
                 NotificationType.DEFECT_UNATTENDED,
-                NotificationType.TRIP_KM_ANOMALY, NotificationType.WORK_ORDER_FINALIZED,
+                NotificationType.TRIP_KM_ANOMALY, NotificationType.TRIP_STARTED_WITH_MAINTENANCE,
+                NotificationType.WORK_ORDER_FINALIZED,
                 NotificationType.MAINTENANCE_DUE_SOON, NotificationType.MAINTENANCE_OVERDUE,
                 NotificationType.DOCUMENT_DUE_SOON, NotificationType.DOCUMENT_EXPIRED,
                 NotificationType.WORK_ORDER_ASSIGNED, NotificationType.WORK_ORDER_UNASSIGNED,
                 NotificationType.WORK_ORDER_CANCELLED, NotificationType.TRIP_OPEN_REMINDER,
+                NotificationType.SCHEDULED_MAINTENANCE_UPCOMING,
                 NotificationType.VEHICLE_UNAVAILABLE, NotificationType.VEHICLE_AVAILABLE,
                 NotificationType.DEFECT_RESOLVED).indexOf(type);
     }

@@ -59,7 +59,8 @@ class FleetStatusServiceTest {
     private final MaintenanceCompletionRepository completionRepository = mock(MaintenanceCompletionRepository.class);
     private final VehicleService service = new VehicleService(vehicleRepository, tripRepository, assignmentRepository,
             mock(VehicleAvailabilityService.class), new UserNameService(mock(UserRepository.class)), new VehicleMapper(),
-            new KmPerDayEstimator(inspectionRepository, completionRepository), event -> { });
+            new KmPerDayEstimator(inspectionRepository, completionRepository), event -> { },
+            mock(ScheduledToday.class));
 
     private final List<Vehicle> fleet = new ArrayList<>();
     private final List<VehicleMaintenanceAssignment> assignments = new ArrayList<>();

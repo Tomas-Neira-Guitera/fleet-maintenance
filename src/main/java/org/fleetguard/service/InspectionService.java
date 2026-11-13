@@ -10,6 +10,7 @@ import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.entity.Defect;
 import org.fleetguard.event.BlockingDefectReportedEvent;
 import org.fleetguard.event.DefectsReportedEvent;
+import org.fleetguard.event.TripStartedEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.fleetguard.entity.DefectSeverity;
 import org.fleetguard.exception.InspectionValidationException;
@@ -165,6 +166,11 @@ public class InspectionService {
                     driver.username(), blockingTitles));
             // CAM-102/103: registra desde cuándo no está disponible, para avisar cuando vuelva.
             availabilityService.sync(vehicle, null);
+        }
+
+        // CAM-143: si salió de viaje con turno de taller ese día, después del commit se avisa al admin.
+        if (type == InspectionType.PRE_TRIP && !outcome.hasBlockingDefect()) {
+            eventPublisher.publishEvent(new TripStartedEvent(vehicleId, vehicle.getPlate(), driver.username(), now));
         }
 
         // CAM-135: con cualquier defecto, después del commit se revisa si el control se volvió recurrente.

@@ -19,6 +19,8 @@ public record VehicleSummaryDto(
         // CAM-127: por qué, si blocked; vacío si puede salir.
         List<BlockReasonDto> blockReasons,
         // CAM-87: el viaje abierto, si status es "on-trip"; null si está disponible.
-        CurrentTripDto currentTrip
+        CurrentTripDto currentTrip,
+        // CAM-143: fecha y hora (ISO) del turno de taller programado para hoy, en hora argentina; null si no tiene.
+        String scheduledToday
 ) {
 }
