@@ -50,6 +50,19 @@ public class DefaultNotificationService implements NotificationService {
 
     @Override
     @Transactional
+    public void notifyConfiguredRecipientsExcept(NotificationType type, String title, String message, String link,
+                                                 UUID excludedUserId) {
+        EffectiveNotificationSetting setting = settings.effective(type);
+        if (setting.enabled()) {
+            List<User> recipients = configuredRecipients(setting).stream()
+                    .filter(user -> !user.getId().equals(excludedUserId))
+                    .toList();
+            deliver(recipients, setting.channels(), new NotificationContent(type, title, message, link));
+        }
+    }
+
+    @Override
+    @Transactional
     public void notifyConfiguredRecipients(NotificationType type, String title, String message, String link,
                                            Set<NotificationChannel> channels) {
         if (channels == null) {

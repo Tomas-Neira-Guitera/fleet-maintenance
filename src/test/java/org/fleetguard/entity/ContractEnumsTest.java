@@ -113,7 +113,8 @@ class ContractEnumsTest {
                         Map.entry(NotificationType.DEFECT_RESOLVED, "defect_resolved"),
                         Map.entry(NotificationType.DEFECT_UNATTENDED, "defect_unattended"),
                         Map.entry(NotificationType.SCHEDULED_MAINTENANCE_UPCOMING, "scheduled_maintenance_upcoming"),
-                        Map.entry(NotificationType.TRIP_STARTED_WITH_MAINTENANCE, "trip_started_with_maintenance")));
+                        Map.entry(NotificationType.TRIP_STARTED_WITH_MAINTENANCE, "trip_started_with_maintenance"),
+                        Map.entry(NotificationType.WORK_ORDER_COMMENT, "work_order_comment")));
     }
 
     @Test

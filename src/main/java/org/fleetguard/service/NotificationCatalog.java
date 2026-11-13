@@ -72,6 +72,10 @@ public final class NotificationCatalog {
                 Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.WORK_ORDER_FINALIZED, "Orden de trabajo finalizada",
                 "Se finaliza una orden de trabajo, interna o de un taller externo.", Audience.CONFIGURABLE, null, Lead.NONE);
+        add(NotificationType.WORK_ORDER_COMMENT, "Comentario en una orden de trabajo",
+                "Un técnico comenta en su orden de trabajo. Si comenta el admin, le llega al técnico a cargo. "
+                        + "Nadie recibe aviso por su propio comentario.",
+                Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.MAINTENANCE_DUE_SOON, "Mantenimiento por vencer",
                 "Un plan asignado a un vehículo entra en la anticipación configurada.", Audience.CONFIGURABLE, null, Lead.DAYS_AND_KM);
         add(NotificationType.MAINTENANCE_OVERDUE, "Mantenimiento vencido",
@@ -133,7 +137,7 @@ public final class NotificationCatalog {
         return List.of(NotificationType.BLOCKING_DEFECT_REPORTED, NotificationType.RECURRING_DEFECT,
                 NotificationType.DEFECT_UNATTENDED,
                 NotificationType.TRIP_KM_ANOMALY, NotificationType.TRIP_STARTED_WITH_MAINTENANCE,
-                NotificationType.WORK_ORDER_FINALIZED,
+                NotificationType.WORK_ORDER_FINALIZED, NotificationType.WORK_ORDER_COMMENT,
                 NotificationType.MAINTENANCE_DUE_SOON, NotificationType.MAINTENANCE_OVERDUE,
                 NotificationType.DOCUMENT_DUE_SOON, NotificationType.DOCUMENT_EXPIRED,
                 NotificationType.WORK_ORDER_ASSIGNED, NotificationType.WORK_ORDER_UNASSIGNED,

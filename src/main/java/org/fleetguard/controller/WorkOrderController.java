@@ -1,13 +1,17 @@
 package org.fleetguard.controller;
 
+import org.fleetguard.auth.AuthenticatedUser;
+import org.fleetguard.dto.CreateWorkOrderCommentRequest;
 import org.fleetguard.dto.CreateWorkOrderExpenseRequest;
 import org.fleetguard.dto.CreateWorkOrderPhotoRequest;
 import org.fleetguard.dto.CreateWorkOrderRequest;
 import org.fleetguard.dto.ListResponse;
 import org.fleetguard.dto.UpdateWorkOrderRequest;
+import org.fleetguard.dto.WorkOrderCommentDto;
 import org.fleetguard.dto.WorkOrderDto;
 import org.fleetguard.dto.WorkOrderExpenseDto;
 import org.fleetguard.dto.WorkOrderPhotoDto;
+import org.fleetguard.service.WorkOrderCommentService;
 import org.fleetguard.service.WorkOrderService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +20,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -31,9 +36,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class WorkOrderController {
 
     private final WorkOrderService service;
+    private final WorkOrderCommentService commentService;
 
-    public WorkOrderController(WorkOrderService service) {
+    public WorkOrderController(WorkOrderService service, WorkOrderCommentService commentService) {
         this.service = service;
+        this.commentService = commentService;
     }
 
     @PostMapping
@@ -82,5 +89,19 @@ public class WorkOrderController {
     public ResponseEntity<Void> deletePhoto(@PathVariable String id, @PathVariable String photoId) {
         service.deletePhoto(id, photoId);
         return ResponseEntity.noContent().build();
+    }
+
+    /** CAM-149: el admin y el técnico asignado (WebConfig exige el JWT; el servicio, que sea su OT). */
+    @GetMapping("/{id}/comments")
+    public ListResponse<WorkOrderCommentDto> listComments(@PathVariable String id,
+                                                           @RequestAttribute(AuthenticatedUser.REQUEST_ATTRIBUTE) AuthenticatedUser user) {
+        return new ListResponse<>(commentService.list(id, user));
+    }
+
+    @PostMapping("/{id}/comments")
+    public ResponseEntity<WorkOrderCommentDto> addComment(@PathVariable String id,
+                                                          @RequestBody(required = false) CreateWorkOrderCommentRequest request,
+                                                          @RequestAttribute(AuthenticatedUser.REQUEST_ATTRIBUTE) AuthenticatedUser user) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(commentService.add(id, request, user));
     }
 }
