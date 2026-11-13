@@ -82,6 +82,30 @@ class DefaultNotificationServiceTest {
     }
 
     @Test
+    void sinElAutorNoLeLlegaSuPropioAvisoYAlRestoSi() {
+        // CAM-149: el técnico comentó y además está elegido como destinatario.
+        configure(NotificationType.WORK_ORDER_COMMENT, true, Set.of(NotificationChannel.IN_APP), Set.of(Role.ADMIN),
+                Set.of(technician.getId()));
+
+        service.notifyConfiguredRecipientsExcept(NotificationType.WORK_ORDER_COMMENT, "T", "M", "/ordenes-trabajo/1",
+                technician.getId());
+
+        verify(inbox).send(List.of(admin),
+                new NotificationContent(NotificationType.WORK_ORDER_COMMENT, "T", "M", "/ordenes-trabajo/1"));
+    }
+
+    @Test
+    void sinElAutorYApagadoNoLlegaNada() {
+        configure(NotificationType.WORK_ORDER_COMMENT, false, Set.of(NotificationChannel.IN_APP), Set.of(Role.ADMIN),
+                Set.of());
+
+        service.notifyConfiguredRecipientsExcept(NotificationType.WORK_ORDER_COMMENT, "T", "M", "/ordenes-trabajo/1",
+                technician.getId());
+
+        verify(inbox, never()).send(any(), any());
+    }
+
+    @Test
     void losDestinatariosSonLosRolesMasLosUsuariosElegidos() {
         configure(NotificationType.WORK_ORDER_FINALIZED, true, Set.of(NotificationChannel.EMAIL), Set.of(Role.ADMIN),
                 Set.of(technician.getId()));

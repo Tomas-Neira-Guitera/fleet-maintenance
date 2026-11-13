@@ -51,6 +51,9 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns("/notification-settings", "/notification-settings/**", "/maintenance-plans/*/notifications");
         // CAM-127: documentación de los vehículos, solo el admin.
         registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/vehicles/*/documents", "/vehicles/*/documents/**");
+        // CAM-149: los comentarios de una OT, el admin y el técnico (que sea el asignado lo chequea el servicio,
+        // hasta que CAM-69 proteja el resto de /work-orders).
+        registry.addInterceptor(requiring(Role.ADMIN, Role.TECNICO)).addPathPatterns("/work-orders/*/comments");
         // CAM-154: importar la flota desde un archivo, solo el admin.
         registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/vehicles/import");
     }

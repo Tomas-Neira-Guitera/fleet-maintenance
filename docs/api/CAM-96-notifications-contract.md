@@ -20,6 +20,7 @@ reparten, dónde se guardan, cómo los lee cada usuario y la campanita del heade
 | `defect_unattended` | CAM-142 | Configurable (por defecto, admins). Uno por vehículo, una vez por defecto | `/vehiculos/{id}` |
 | `trip_started_with_maintenance` | CAM-143 | Configurable (por defecto, admins). Al hacerse un pre-viaje sin bloqueante el día que el vehículo tiene turno de taller | `/vehiculos/{id}` |
 | `work_order_finalized` | CAM-98 | Configurable (por defecto, admins) | `/ordenes-trabajo/{id}` |
+| `work_order_comment` | CAM-149 | Si comenta el técnico, configurable (por defecto, admins), sin el autor. Si comenta el admin, el técnico asignado (si no hay, nadie) | `/ordenes-trabajo/{id}` |
 | `maintenance_due_soon`, `maintenance_overdue` | CAM-118 | Configurable (por defecto, admins) | `/vehiculos/{id}` |
 | `work_order_assigned`, `work_order_unassigned`, `work_order_cancelled` | CAM-99, CAM-100 | El técnico de la OT | `/` |
 | `trip_open_reminder` | CAM-101 | El chofer que abrió el viaje | `/` |
@@ -46,6 +47,13 @@ tiempo.". El segundo sale después del commit de un pre-viaje sin bloqueante, si
 argentina, el de la hora del pre-viaje) el vehículo tiene un turno programado: "carlos.gomez salió
 con AB123CD a las 10:20, y tiene turno de taller hoy a las 15:00: «Cambio de aceite».". El turno no
 bloquea la salida.
+
+**`work_order_comment` (CAM-149).** El texto es "javier.romero en Cambio de pastillas (AB123CD):
+«¿Lo reparo o lo cambio?»", con el comentario en una sola línea y cortado a 140 caracteres. Se configura
+como los configurables (activo, canales, destinatarios), y la misma configuración rige el aviso al técnico:
+apagarlo apaga los dos. Nadie recibe aviso por su propio comentario, aunque esté entre los destinatarios
+elegidos (`notifyConfiguredRecipientsExcept`). El link lleva a la OT: en el admin abre su detalle por la URL;
+en el técnico, que no tiene rutas, la campanita abre la OT en su vista (`TechnicianShell`).
 
 Cómo se configura cada uno (activo, canales, destinatarios): ver
 `CAM-117-118-notification-settings-contract.md`.

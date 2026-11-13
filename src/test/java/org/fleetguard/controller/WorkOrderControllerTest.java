@@ -9,11 +9,17 @@ import org.fleetguard.dto.WorkOrderPhotoDto;
 import org.fleetguard.exception.WorkOrderConflictException;
 import org.fleetguard.exception.WorkOrderNotFoundException;
 import org.fleetguard.exception.WorkOrderValidationException;
+import org.fleetguard.dto.UserRefDto;
+import org.fleetguard.dto.WorkOrderCommentDto;
+import org.fleetguard.entity.Role;
+import org.fleetguard.exception.ForbiddenException;
+import org.fleetguard.service.WorkOrderCommentService;
 import org.fleetguard.service.WorkOrderService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 
 import java.math.BigDecimal;
@@ -24,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -38,6 +45,9 @@ class WorkOrderControllerTest extends WebMvcTestBase {
 
     @MockBean
     private WorkOrderService service;
+
+    @MockBean
+    private WorkOrderCommentService commentService;
 
     private static WorkOrderDto workOrder(String status) {
         return new WorkOrderDto("wo-1", "v-1", "AB123CD", "manual", null, null, null, null, "Cambio de pastillas",
@@ -172,5 +182,57 @@ class WorkOrderControllerTest extends WebMvcTestBase {
 
         verify(service).deleteExpense("wo-1", "e-1");
         verify(service).deletePhoto("wo-1", "p-1");
+    }
+
+    // --- CAM-149: comentarios ---
+
+    @Test
+    void elTecnicoComentaYDevuelve201ConElAutorDelToken() throws Exception {
+        when(commentService.add(eq("wo-1"), any(), argThat(u -> u.role() == Role.TECNICO && u.username().equals("javier"))))
+                .thenReturn(new WorkOrderCommentDto("c-1", new UserRefDto("t-1", "javier"), "TECNICO", "¿Lo cambio?",
+                        "2026-11-13T12:00:00Z"));
+
+        mvc.perform(post("/work-orders/wo-1/comments").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"text\":\"¿Lo cambio?\"}")
+                        .header(HttpHeaders.AUTHORIZATION, loginAs("javier", Role.TECNICO)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.author.name").value("javier"))
+                .andExpect(jsonPath("$.authorRole").value("TECNICO"))
+                .andExpect(jsonPath("$.text").value("¿Lo cambio?"));
+    }
+
+    @Test
+    void elAdminVeLosComentariosEnUnaLista() throws Exception {
+        when(commentService.list(eq("wo-1"), any())).thenReturn(List.of(
+                new WorkOrderCommentDto("c-1", new UserRefDto("t-1", "javier"), "TECNICO", "¿Lo cambio?", "2026-11-13T12:00:00Z")));
+
+        mvc.perform(get("/work-orders/wo-1/comments").header(HttpHeaders.AUTHORIZATION, loginAs("admin", Role.ADMIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].text").value("¿Lo cambio?"));
+    }
+
+    @Test
+    void losComentariosSinTokenSon401ConRolDeChofer403YDeOtroTecnico403() throws Exception {
+        mvc.perform(get("/work-orders/wo-1/comments")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/work-orders/wo-1/comments").contentType(MediaType.APPLICATION_JSON).content("{\"text\":\"x\"}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/work-orders/wo-1/comments").header(HttpHeaders.AUTHORIZATION, loginAs("chofer1", Role.CHOFER)))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(commentService);
+
+        when(commentService.list(eq("wo-1"), any())).thenThrow(new ForbiddenException());
+        mvc.perform(get("/work-orders/wo-1/comments").header(HttpHeaders.AUTHORIZATION, loginAs("otro", Role.TECNICO)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void comentarUnaOtCerradaEs409() throws Exception {
+        when(commentService.add(eq("wo-1"), any(), any())).thenThrow(new WorkOrderConflictException("WORK_ORDER_CLOSED",
+                "No se pueden agregar comentarios a una orden de trabajo finalizada o cancelada"));
+
+        mvc.perform(post("/work-orders/wo-1/comments").contentType(MediaType.APPLICATION_JSON).content("{\"text\":\"x\"}")
+                        .header(HttpHeaders.AUTHORIZATION, loginAs("admin", Role.ADMIN)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("WORK_ORDER_CLOSED"));
     }
 }

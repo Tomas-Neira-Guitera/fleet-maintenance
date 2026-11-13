@@ -23,6 +23,8 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -178,5 +180,53 @@ class WorkOrderNotificationListenerTest {
 
         verify(notificationService).notifyConfiguredRecipients(NotificationType.WORK_ORDER_FINALIZED,
                 "Orden de trabajo finalizada", "Cambio de pastillas (AB123CD).", "/ordenes-trabajo/" + workOrder.getId());
+    }
+
+    // --- CAM-149: comentarios ---
+
+    @Test
+    void siComentaElTecnicoLesAvisaALosConfiguradosMenosAEl() {
+        workOrder.setTechnicianId(newId);
+
+        listener.onCommented(new WorkOrderCommentedEvent(workOrder.getId(), newId, "juan.perez", Role.TECNICO,
+                "¿Lo reparo o lo cambio?"));
+
+        verify(notificationService).notifyConfiguredRecipientsExcept(NotificationType.WORK_ORDER_COMMENT,
+                "Comentario del técnico", "juan.perez en Cambio de pastillas (AB123CD): «¿Lo reparo o lo cambio?»",
+                "/ordenes-trabajo/" + workOrder.getId(), newId);
+        verify(notificationService, never()).notify(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void siComentaElAdminLeAvisaAlTecnicoAsignado() {
+        workOrder.setTechnicianId(newId);
+        UUID adminId = UUID.randomUUID();
+
+        listener.onCommented(new WorkOrderCommentedEvent(workOrder.getId(), adminId, "admin", Role.ADMIN,
+                "Cambialo, hay repuesto"));
+
+        verify(notificationService).notify(newId, NotificationType.WORK_ORDER_COMMENT, "Comentario en tu orden de trabajo",
+                "admin en Cambio de pastillas (AB123CD): «Cambialo, hay repuesto»", "/ordenes-trabajo/" + workOrder.getId());
+        verify(notificationService, never()).notifyConfiguredRecipientsExcept(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void siComentaElAdminEnUnaOtSinTecnicoNadieRecibeAviso() {
+        listener.onCommented(new WorkOrderCommentedEvent(workOrder.getId(), UUID.randomUUID(), "admin", Role.ADMIN,
+                "Falta asignar"));
+
+        verify(notificationService, never()).notify(any(), any(), any(), any(), any());
+        verify(notificationService, never()).notifyConfiguredRecipientsExcept(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void unComentarioLargoSeCortaEnElAvisoYEnUnaSolaLinea() {
+        String message = WorkOrderNotificationListener.commentMessage("admin", "Frenos (AB123CD)",
+                "Primera línea\n\nsegunda " + "x".repeat(300));
+
+        String quoted = message.substring(message.indexOf('«') + 1, message.indexOf('»'));
+        assertEquals(WorkOrderNotificationListener.COMMENT_PREVIEW, quoted.length());
+        assertTrue(quoted.startsWith("Primera línea segunda x"));
+        assertTrue(quoted.endsWith("…"));
     }
 }

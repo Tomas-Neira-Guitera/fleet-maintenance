@@ -18,6 +18,10 @@ public interface NotificationService {
     /** Aviso para los destinatarios elegidos en la configuración del tipo (por defecto, los admins). */
     void notifyConfiguredRecipients(NotificationType type, String title, String message, String link);
 
+    /** Igual, sin el que originó el aviso: nadie recibe aviso por lo que hizo él mismo (CAM-149). */
+    void notifyConfiguredRecipientsExcept(NotificationType type, String title, String message, String link,
+                                          UUID excludedUserId);
+
     /** Igual, pero con los canales de un plan con configuración propia (CAM-118), aunque el tipo esté apagado. */
     void notifyConfiguredRecipients(NotificationType type, String title, String message, String link,
                                     Set<NotificationChannel> channels);
