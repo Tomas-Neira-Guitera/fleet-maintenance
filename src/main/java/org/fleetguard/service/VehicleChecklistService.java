@@ -22,8 +22,11 @@ import org.fleetguard.repository.VehicleRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -104,27 +107,77 @@ public class VehicleChecklistService {
     public VehicleChecklistItemDto addExtra(String vehicleIdRaw, CreateVehicleChecklistItemRequest request) {
         UUID vehicleId = requireVehicle(vehicleIdRaw);
         List<FieldValidationErrorDetail> details = new ArrayList<>();
-        String label = request.label() == null ? "" : request.label().trim();
-        if (label.isEmpty()) {
-            details.add(new FieldValidationErrorDetail("label", "Obligatorio"));
-        } else if (label.length() > LABEL_MAX_LENGTH) {
-            details.add(new FieldValidationErrorDetail("label", "No puede superar los " + LABEL_MAX_LENGTH + " caracteres"));
-        }
-        ChecklistItemType type = request.type() == null ? ChecklistItemType.CHECK : ChecklistItemType.fromJson(request.type());
-        if (type == null) {
-            details.add(new FieldValidationErrorDetail("type", "Debe ser 'check' o 'number'"));
-        }
-        ChecklistSection section = ChecklistSection.fromJson(request.section());
-        if (section != ChecklistSection.EXTERIOR && section != ChecklistSection.INTERIOR) {
-            details.add(new FieldValidationErrorDetail("section", "Debe ser 'exterior' o 'interior'"));
-        }
+        ItemSpec item = validateItem(request.label(), request.type(), request.section(), "", details);
         if (!details.isEmpty()) {
             throw new VehicleValidationException("Datos inválidos para el ítem del checklist", details);
         }
 
         boolean enabled = request.enabled() == null || request.enabled();
-        VehicleChecklistItem extra = extraRepository.save(new VehicleChecklistItem(vehicleId, label, type, section, enabled));
+        VehicleChecklistItem extra = extraRepository.save(
+                new VehicleChecklistItem(vehicleId, item.label(), item.type(), item.section(), enabled));
         return toExtraDto(extra);
+    }
+
+    /** Un control propio ya validado. CAM-150 usa las mismas reglas para los de una plantilla. */
+    public record ItemSpec(String label, ChecklistItemType type, ChecklistSection section) {
+    }
+
+    /** Lo que se copió a un vehículo y lo que se salteó porque ya tenía ese control. */
+    public record CopyResult(int added, List<String> skippedLabels) {
+    }
+
+    /** Valida un control; los errores van a details con el prefijo de campo dado (ej. "items[2]."). Null si no es válido. */
+    public static ItemSpec validateItem(String rawLabel, String rawType, String rawSection, String fieldPrefix,
+                                        List<FieldValidationErrorDetail> details) {
+        int before = details.size();
+        String label = rawLabel == null ? "" : rawLabel.trim();
+        if (label.isEmpty()) {
+            details.add(new FieldValidationErrorDetail(fieldPrefix + "label", "Obligatorio"));
+        } else if (label.length() > LABEL_MAX_LENGTH) {
+            details.add(new FieldValidationErrorDetail(fieldPrefix + "label",
+                    "No puede superar los " + LABEL_MAX_LENGTH + " caracteres"));
+        }
+        ChecklistItemType type = rawType == null ? ChecklistItemType.CHECK : ChecklistItemType.fromJson(rawType);
+        if (type == null) {
+            details.add(new FieldValidationErrorDetail(fieldPrefix + "type", "Debe ser 'check' o 'number'"));
+        }
+        ChecklistSection section = ChecklistSection.fromJson(rawSection);
+        if (section != ChecklistSection.EXTERIOR && section != ChecklistSection.INTERIOR) {
+            details.add(new FieldValidationErrorDetail(fieldPrefix + "section", "Debe ser 'exterior' o 'interior'"));
+        }
+        return details.size() == before ? new ItemSpec(label, type, section) : null;
+    }
+
+    /**
+     * CAM-150: copia controles al vehículo como controles propios. Se saltea el que ya tiene (base o propio,
+     * activo o no) con la misma etiqueta y sección, sin importar mayúsculas ni acentos.
+     */
+    @Transactional
+    public CopyResult copyItems(UUID vehicleId, List<ItemSpec> items) {
+        Set<String> existing = new HashSet<>();
+        ChecklistCatalog.preTripItems().forEach(base -> existing.add(sameControlKey(base.label(), base.section())));
+        extraRepository.findByVehicleIdOrderByCreatedAtAsc(vehicleId)
+                .forEach(extra -> existing.add(sameControlKey(extra.getLabel(), extra.getSection())));
+
+        int added = 0;
+        List<String> skipped = new ArrayList<>();
+        for (ItemSpec item : items) {
+            if (!existing.add(sameControlKey(item.label(), item.section()))) {
+                skipped.add(item.label());
+                continue;
+            }
+            extraRepository.save(new VehicleChecklistItem(vehicleId, item.label(), item.type(), item.section()));
+            added++;
+        }
+        return new CopyResult(added, skipped);
+    }
+
+    static String sameControlKey(String label, ChecklistSection section) {
+        String plain = Normalizer.normalize(label.trim(), Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .replaceAll("\\s+", " ")
+                .toLowerCase(Locale.ROOT);
+        return section.name() + "|" + plain;
     }
 
     @Transactional

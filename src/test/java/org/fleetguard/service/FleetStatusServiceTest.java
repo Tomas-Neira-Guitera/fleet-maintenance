@@ -16,6 +16,8 @@ import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.exception.VehicleValidationException;
 import org.fleetguard.mapper.VehicleMapper;
 import org.fleetguard.repository.InspectionRepository;
+import org.fleetguard.repository.TireMountingRepository;
+import org.fleetguard.repository.TrailerCouplingRepository;
 import org.fleetguard.repository.KmReadingRow;
 import org.fleetguard.repository.MaintenanceCompletionRepository;
 import org.fleetguard.repository.TripRepository;
@@ -59,7 +61,9 @@ class FleetStatusServiceTest {
     private final MaintenanceCompletionRepository completionRepository = mock(MaintenanceCompletionRepository.class);
     private final VehicleService service = new VehicleService(vehicleRepository, tripRepository, assignmentRepository,
             mock(VehicleAvailabilityService.class), new UserNameService(mock(UserRepository.class)), new VehicleMapper(),
-            new KmPerDayEstimator(inspectionRepository, completionRepository), event -> { });
+            new KmPerDayEstimator(inspectionRepository, completionRepository), event -> { },
+            mock(ChecklistTemplateService.class), mock(TireMountingRepository.class),
+            mock(TrailerCouplingRepository.class));
 
     private final List<Vehicle> fleet = new ArrayList<>();
     private final List<VehicleMaintenanceAssignment> assignments = new ArrayList<>();

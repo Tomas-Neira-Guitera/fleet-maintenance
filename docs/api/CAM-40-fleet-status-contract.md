@@ -125,7 +125,7 @@ Query params: `page` (default 1), `pageSize` (default 20), `status` (filtro opci
       "plate": "AD 789 GH",
       "brand": "Iveco",
       "model": "Daily",
-      "vehicleType": "furgon",
+      "vehicleType": "utilitario",
       "odometerKm": 156900,
       "healthScore": 28,
       "status": "vencido",

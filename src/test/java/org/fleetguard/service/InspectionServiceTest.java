@@ -6,6 +6,7 @@ import org.fleetguard.dto.ChecklistAnswerDto;
 import org.fleetguard.dto.DefectDetailDto;
 import org.fleetguard.dto.InspectionResultDto;
 import org.fleetguard.dto.InspectionSubmissionDto;
+import org.fleetguard.dto.TireConditionInput;
 import org.fleetguard.entity.CheckOutcome;
 import org.fleetguard.entity.Defect;
 import org.fleetguard.entity.DefectSeverity;
@@ -71,9 +72,10 @@ class InspectionServiceTest {
     private final VehicleChecklistService checklistService = mock(VehicleChecklistService.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final TripKmAlertService tripKmAlertService = mock(TripKmAlertService.class);
+    private final TireService tireService = mock(TireService.class);
     private final InspectionService service = new InspectionService(vehicleRepository, tripRepository,
             inspectionRepository, new InspectionMapper(), new TripMapper(), checklistService, new OdometerReadings(5000),
-            availabilityService, tripKmAlertService, eventPublisher);
+            availabilityService, tripKmAlertService, eventPublisher, tireService, mock(CouplingService.class));
 
     private final AuthenticatedUser driver = new AuthenticatedUser(UUID.randomUUID(), "chofer1", Role.CHOFER);
     private final AuthenticatedUser otherDriver = new AuthenticatedUser(UUID.randomUUID(), "chofer2", Role.CHOFER);
@@ -399,6 +401,26 @@ class InspectionServiceTest {
         assertEquals(InspectionType.PRE_TRIP, event.getValue().inspectionType());
         assertEquals(List.of("Neumático cortado"), event.getValue().defectTitles());
         assertEquals("chofer1", event.getValue().driverName());
+    }
+
+    @Test
+    void lasCubiertasConProblemasVanAlDetalleDelDefectoYQuedanEnCadaCubierta() {
+        noOpenTrip();
+        List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-neumaticos", "defect", null,
+                new DefectDetailDto("non-blocking", "Cubierta pinchada", null, "Pierde de a poco")));
+        List<TireConditionInput> conditions = List.of(new TireConditionInput("e1-izq", List.of("pinchada")));
+        List<TireService.ConditionReport> reports = List.of(new TireService.ConditionReport(null, Set.of()));
+        when(tireService.validateInspectionConditions(vehicle, conditions, true)).thenReturn(reports);
+        when(tireService.summary(vehicle, reports)).thenReturn("Cubiertas: Delantera izquierda: pinchada.");
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", answers, null, null, null,
+                conditions, null), driver);
+
+        // CAM-157: el resumen se suma a lo que escribió el chofer, y cada cubierta queda con el defecto.
+        Defect defect = savedInspection().getAnswers().stream().filter(a -> a.getItemId().equals("ext-neumaticos"))
+                .findFirst().orElseThrow().getDefect();
+        assertEquals("Pierde de a poco\n\nCubiertas: Delantera izquierda: pinchada.", defect.getDetails());
+        verify(tireService).recordInspectionConditions(any(), any(), any(), any(), any(), any());
     }
 
     @Test

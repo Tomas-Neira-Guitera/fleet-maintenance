@@ -2,6 +2,7 @@ package org.fleetguard.service;
 
 import org.fleetguard.dto.ExpenseDto;
 import org.fleetguard.dto.VehicleExpenseRequest;
+import org.fleetguard.entity.FuelLoad;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleExpense;
 import org.fleetguard.entity.VehicleExpenseCategory;
@@ -13,6 +14,7 @@ import org.fleetguard.entity.WorkOrderSourceType;
 import org.fleetguard.exception.ExpenseNotFoundException;
 import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.WorkOrderValidationException;
+import org.fleetguard.repository.FuelLoadRepository;
 import org.fleetguard.repository.VehicleExpenseRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderExpenseRepository;
@@ -49,8 +51,9 @@ class VehicleExpenseServiceTest {
     private final WorkOrderExpenseRepository expenseRepository = mock(WorkOrderExpenseRepository.class);
     private final VehicleExpenseRepository vehicleExpenseRepository = mock(VehicleExpenseRepository.class);
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
+    private final FuelLoadRepository fuelLoadRepository = mock(FuelLoadRepository.class);
     private final ExpenseService service = new ExpenseService(expenseRepository, vehicleExpenseRepository,
-            vehicleRepository);
+            vehicleRepository, fuelLoadRepository);
 
     private Vehicle truck;
     private VehicleExpense fuel;
@@ -106,19 +109,29 @@ class VehicleExpenseServiceTest {
 
     @Test
     void cargaUnGastoSinOtYDevuelveSuVehiculoConLaFechaEnMedianocheArgentina() {
-        ExpenseDto created = service.create(request("2026-10-05", "combustible", " Gasoil ", "45000.50"));
+        ExpenseDto created = service.create(request("2026-10-05", "seguro", " Póliza ", "45000.50"));
 
         assertEquals("2026-10-05T03:00:00Z", created.date());
         assertEquals("AB123CD", created.plate());
         assertEquals(truck.getId().toString(), created.vehicleId());
-        assertEquals("combustible", created.category());
-        assertEquals("Gasoil", created.description());
+        assertEquals("seguro", created.category());
+        assertEquals("Póliza", created.description());
         assertEquals(new BigDecimal("45000.50"), created.amount());
         assertEquals("operating", created.origin());
         assertNull(created.workOrderId());
         assertNull(created.workOrderTitle());
         assertNull(created.workOrderStatus());
         assertNull(created.executionType());
+    }
+
+    // CAM-156: el combustible nuevo se carga como carga de combustible, con litros y km.
+    @Test
+    void unGastoNuevoDeCombustibleSeRechazaPeroUnoViejoSeSigueEditando() {
+        assertEquals(List.of("category"), invalidFields(request("2026-10-05", "combustible", "Gasoil", "100")));
+
+        ExpenseDto edited = service.update(fuel.getId().toString(), request("2026-10-06", "combustible", "Gasoil", "60000"));
+        assertEquals("combustible", edited.category());
+        assertEquals(new BigDecimal("60000"), edited.amount());
     }
 
     @Test
@@ -193,6 +206,24 @@ class VehicleExpenseServiceTest {
         assertEquals(List.of("manual", "operating", "manual"), result.stream().map(ExpenseDto::origin).toList());
         assertEquals(List.of("2026-10-08T12:00:00Z", "2026-10-05T03:00:00Z", "2026-10-01T12:00:00Z"),
                 result.stream().map(ExpenseDto::date).toList());
+    }
+
+    // CAM-156: las cargas de combustible aparecen en Gastos como combustible, con origin "fuel".
+    @Test
+    void lasCargasDeCombustibleEntranEnElListado() throws Exception {
+        FuelLoad load = new FuelLoad(truck, Instant.parse("2026-10-07T15:30:00Z"), new BigDecimal("85.50"),
+                new BigDecimal("120000.00"), 152300, false, null);
+        setField(load, "id", UUID.randomUUID());
+        when(fuelLoadRepository.findInRangeWithVehicle(any(), any())).thenReturn(List.of(load));
+        when(vehicleExpenseRepository.findInRangeWithVehicle(any(), any())).thenReturn(List.of(fuel));
+
+        List<ExpenseDto> result = service.list(null, "combustible", null, null, null);
+
+        assertEquals(List.of("fuel", "operating"), result.stream().map(ExpenseDto::origin).toList());
+        assertEquals("2026-10-07T15:30:00Z", result.get(0).date());
+        assertEquals("Carga de 85,5 L a los 152.300 km (parcial)", result.get(0).description());
+        assertEquals(new BigDecimal("120000.00"), result.get(0).amount());
+        assertTrue(ExpenseService.isOperating(result.get(0)));
     }
 
     @Test

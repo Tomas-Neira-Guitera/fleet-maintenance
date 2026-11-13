@@ -64,6 +64,12 @@ public final class NotificationCatalog {
         add(NotificationType.TRIP_KM_ANOMALY, "Kilometraje fuera de lo normal",
                 "Un viaje se cierra con muchos más o muchos menos km que el promedio del vehículo, o con menos km de los que ya tenía.",
                 Audience.CONFIGURABLE, null, Lead.NONE);
+        add(NotificationType.FUEL_CONSUMPTION_ANOMALY, "Consumo de combustible alto",
+                "Una carga de tanque lleno da un consumo muy por encima del promedio del vehículo.",
+                Audience.CONFIGURABLE, null, Lead.NONE);
+        add(NotificationType.TIRE_PROBLEM_REPORTED, "Cubiertas con problemas",
+                "Un chofer marca cubiertas con problemas en una inspección (corte, bulto, pinchada…).",
+                Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.WORK_ORDER_FINALIZED, "Orden de trabajo finalizada",
                 "Se finaliza una orden de trabajo, interna o de un taller externo.", Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.MAINTENANCE_DUE_SOON, "Mantenimiento por vencer",
@@ -117,7 +123,8 @@ public final class NotificationCatalog {
 
     private static int order(NotificationType type) {
         return List.of(NotificationType.BLOCKING_DEFECT_REPORTED, NotificationType.RECURRING_DEFECT,
-                NotificationType.TRIP_KM_ANOMALY, NotificationType.WORK_ORDER_FINALIZED,
+                NotificationType.TRIP_KM_ANOMALY, NotificationType.FUEL_CONSUMPTION_ANOMALY, NotificationType.TIRE_PROBLEM_REPORTED,
+                NotificationType.WORK_ORDER_FINALIZED,
                 NotificationType.MAINTENANCE_DUE_SOON, NotificationType.MAINTENANCE_OVERDUE,
                 NotificationType.DOCUMENT_DUE_SOON, NotificationType.DOCUMENT_EXPIRED,
                 NotificationType.WORK_ORDER_ASSIGNED, NotificationType.WORK_ORDER_UNASSIGNED,

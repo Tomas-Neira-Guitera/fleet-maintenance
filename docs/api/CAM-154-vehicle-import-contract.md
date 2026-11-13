@@ -20,6 +20,9 @@ librería de planillas y valida igual que siempre.
 Cada fila pasa por `VehicleService.validateNew`, la validación del alta (CAM-25):
 patente, marca y modelo obligatorios y el año entre 1980 y el año que viene. Se
 sumó que los km no pueden ser negativos, que vale también para el alta manual.
+Desde CAM-157 el tipo también es obligatorio y del catálogo; en la planilla se
+acepta el nombre ("Camión rígido 4x2", "Tractor 6x4") o un alias ("furgón",
+"semi"), ver CAM-157-tires-contract.md §1.
 
 Antes de validar, se sacan los espacios de más y la patente queda en mayúsculas y
 sin espacios.

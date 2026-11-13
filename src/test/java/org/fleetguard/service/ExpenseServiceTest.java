@@ -8,6 +8,7 @@ import org.fleetguard.entity.WorkOrderExpense;
 import org.fleetguard.entity.WorkOrderExpenseCategory;
 import org.fleetguard.entity.WorkOrderSourceType;
 import org.fleetguard.exception.WorkOrderValidationException;
+import org.fleetguard.repository.FuelLoadRepository;
 import org.fleetguard.repository.VehicleExpenseRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderExpenseRepository;
@@ -39,8 +40,9 @@ class ExpenseServiceTest {
     private final WorkOrderExpenseRepository expenseRepository = mock(WorkOrderExpenseRepository.class);
     private final VehicleExpenseRepository vehicleExpenseRepository = mock(VehicleExpenseRepository.class);
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
+    private final FuelLoadRepository fuelLoadRepository = mock(FuelLoadRepository.class);
     private final ExpenseService service = new ExpenseService(expenseRepository, vehicleExpenseRepository,
-            vehicleRepository);
+            vehicleRepository, fuelLoadRepository);
 
     private Vehicle truck;
     private Vehicle van;

@@ -1,6 +1,7 @@
 package org.fleetguard.entity;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
@@ -26,13 +27,10 @@ public class Vehicle {
     @Column(nullable = false)
     private String model;
 
-    /**
-     * Tipo de vehículo (camion/furgon/pickup, texto libre por ahora) -- todavía no existe
-     * la ficha completa de gestión de flota (feature 5.7), así que queda nullable hasta
-     * que esa historia defina un catálogo real.
-     */
+    // Del catálogo; define las cubiertas (CAM-157). Null: sin definir (datos de cuando era texto libre).
+    @Convert(converter = VehicleTypeConverter.class)
     @Column(name = "vehicle_type")
-    private String vehicleType;
+    private VehicleType vehicleType;
 
     /**
      * Kilometraje actual del vehículo. Se carga a mano con "Cargar km" (feature 5.5) y, desde
@@ -61,6 +59,8 @@ public class Vehicle {
     // VehicleAvailabilityService para detectar el cambio y a quién avisarle cuando vuelve.
     @Column(name = "unavailable_since")
     private Instant unavailableSince;
+
+
 
     protected Vehicle() {
         // JPA
@@ -100,11 +100,11 @@ public class Vehicle {
         this.model = model;
     }
 
-    public String getVehicleType() {
+    public VehicleType getVehicleType() {
         return vehicleType;
     }
 
-    public void setVehicleType(String vehicleType) {
+    public void setVehicleType(VehicleType vehicleType) {
         this.vehicleType = vehicleType;
     }
 
@@ -147,4 +147,6 @@ public class Vehicle {
     public void setUnavailableSince(Instant unavailableSince) {
         this.unavailableSince = unavailableSince;
     }
+
+
 }
