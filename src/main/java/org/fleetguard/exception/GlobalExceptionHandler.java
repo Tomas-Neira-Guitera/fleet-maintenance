@@ -41,6 +41,24 @@ public class GlobalExceptionHandler {
                 .body(new ApiError("CHECKLIST_ITEM_NOT_FOUND", ex.getMessage()));
     }
 
+    @ExceptionHandler(ChecklistTemplateNotFoundException.class)
+    public ResponseEntity<ApiError> handleChecklistTemplateNotFound(ChecklistTemplateNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("CHECKLIST_TEMPLATE_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(FuelLoadNotFoundException.class)
+    public ResponseEntity<ApiError> handleFuelLoadNotFound(FuelLoadNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("FUEL_LOAD_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(TireNotFoundException.class)
+    public ResponseEntity<ApiError> handleTireNotFound(TireNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("TIRE_NOT_FOUND", ex.getMessage()));
+    }
+
     @ExceptionHandler(VehicleStateConflictException.class)
     public ResponseEntity<ApiError> handleVehicleStateConflict(VehicleStateConflictException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)

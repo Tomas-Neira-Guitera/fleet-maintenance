@@ -70,6 +70,12 @@ public final class NotificationCatalog {
         add(NotificationType.TRIP_STARTED_WITH_MAINTENANCE, "Salida con turno de taller",
                 "Un chofer sale de viaje con un vehículo que tiene turno de taller ese día.",
                 Audience.CONFIGURABLE, null, Lead.NONE);
+        add(NotificationType.FUEL_CONSUMPTION_ANOMALY, "Consumo de combustible alto",
+                "Una carga de tanque lleno da un consumo muy por encima del promedio del vehículo.",
+                Audience.CONFIGURABLE, null, Lead.NONE);
+        add(NotificationType.TIRE_PROBLEM_REPORTED, "Cubiertas con problemas",
+                "Un chofer marca cubiertas con problemas en una inspección (corte, bulto, pinchada…).",
+                Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.WORK_ORDER_FINALIZED, "Orden de trabajo finalizada",
                 "Se finaliza una orden de trabajo, interna o de un taller externo.", Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.WORK_ORDER_COMMENT, "Comentario en una orden de trabajo",
@@ -137,6 +143,7 @@ public final class NotificationCatalog {
         return List.of(NotificationType.BLOCKING_DEFECT_REPORTED, NotificationType.RECURRING_DEFECT,
                 NotificationType.DEFECT_UNATTENDED,
                 NotificationType.TRIP_KM_ANOMALY, NotificationType.TRIP_STARTED_WITH_MAINTENANCE,
+                NotificationType.FUEL_CONSUMPTION_ANOMALY, NotificationType.TIRE_PROBLEM_REPORTED,
                 NotificationType.WORK_ORDER_FINALIZED, NotificationType.WORK_ORDER_COMMENT,
                 NotificationType.MAINTENANCE_DUE_SOON, NotificationType.MAINTENANCE_OVERDUE,
                 NotificationType.DOCUMENT_DUE_SOON, NotificationType.DOCUMENT_EXPIRED,

@@ -108,6 +108,13 @@ fleetguard:
     min-trips: 3
     recent-trips: 10
     ratio: 2
+  fuel-alerts:
+    # CAM-156: una carga de tanque lleno avisa si el consumo del tramo que cierra supera ratio veces el
+    # de los últimos recent-segments tramos del vehículo (litros totales sobre km totales). Sin
+    # min-segments tramos anteriores no hay promedio. 1.3 = un 30% más que lo habitual.
+    min-segments: 3
+    recent-segments: 10
+    ratio: 1.3
   maintenance-alerts:
     # CAM-118: revisión diaria de vencimientos por fecha, a las 8 de Argentina (los de km se revisan
     # además cada vez que sube el km del vehículo).

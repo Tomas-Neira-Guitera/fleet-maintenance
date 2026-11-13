@@ -110,6 +110,8 @@ class ContractEnumsTest {
                         Map.entry(NotificationType.VEHICLE_UNAVAILABLE, "vehicle_unavailable"),
                         Map.entry(NotificationType.VEHICLE_AVAILABLE, "vehicle_available"),
                         Map.entry(NotificationType.TRIP_KM_ANOMALY, "trip_km_anomaly"),
+                        Map.entry(NotificationType.FUEL_CONSUMPTION_ANOMALY, "fuel_consumption_anomaly"),
+                        Map.entry(NotificationType.TIRE_PROBLEM_REPORTED, "tire_problem_reported"),
                         Map.entry(NotificationType.DEFECT_RESOLVED, "defect_resolved"),
                         Map.entry(NotificationType.DEFECT_UNATTENDED, "defect_unattended"),
                         Map.entry(NotificationType.SCHEDULED_MAINTENANCE_UPCOMING, "scheduled_maintenance_upcoming"),

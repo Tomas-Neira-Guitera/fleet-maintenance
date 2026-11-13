@@ -1,6 +1,7 @@
 package org.fleetguard.service;
 
 import org.fleetguard.dto.BlockReasonDto;
+import org.fleetguard.dto.CouplingDto;
 import org.fleetguard.dto.CreateVehicleRequest;
 import org.fleetguard.event.OdometerChangedEvent;
 import org.springframework.context.ApplicationEventPublisher;
@@ -18,11 +19,15 @@ import org.fleetguard.entity.Trip;
 import org.fleetguard.entity.TripStatus;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleMaintenanceAssignment;
+import org.fleetguard.entity.TrailerCoupling;
+import org.fleetguard.entity.VehicleType;
 import org.fleetguard.exception.MaintenanceConflictException;
 import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.exception.VehicleValidationException;
 import org.fleetguard.mapper.VehicleMapper;
+import org.fleetguard.repository.TireMountingRepository;
+import org.fleetguard.repository.TrailerCouplingRepository;
 import org.fleetguard.repository.TripRepository;
 import org.fleetguard.repository.VehicleMaintenanceAssignmentRepository;
 import org.fleetguard.repository.VehicleRepository;
@@ -34,6 +39,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -56,12 +62,20 @@ public class VehicleService {
     private static final int MIN_YEAR = 1980;
 
     private final ApplicationEventPublisher eventPublisher;
+    private final ChecklistTemplateService checklistTemplateService;
+    private final TireMountingRepository tireMountingRepository;
+    private final TrailerCouplingRepository couplingRepository;
 
     public VehicleService(VehicleRepository vehicleRepository, TripRepository tripRepository,
                            VehicleMaintenanceAssignmentRepository assignmentRepository,
                            VehicleAvailabilityService availabilityService, UserNameService userNameService,
                            VehicleMapper vehicleMapper, KmPerDayEstimator kmPerDayEstimator,
-                           ApplicationEventPublisher eventPublisher, ScheduledToday scheduledToday) {
+                           ApplicationEventPublisher eventPublisher, ScheduledToday scheduledToday,
+                           ChecklistTemplateService checklistTemplateService,
+                           TireMountingRepository tireMountingRepository, TrailerCouplingRepository couplingRepository) {
+        this.checklistTemplateService = checklistTemplateService;
+        this.tireMountingRepository = tireMountingRepository;
+        this.couplingRepository = couplingRepository;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.assignmentRepository = assignmentRepository;
@@ -83,14 +97,26 @@ public class VehicleService {
         List<Vehicle> vehicles = vehicleRepository.findByActive(active);
         Map<UUID, List<BlockReasonDto>> reasons = availabilityService.reasonsFor(vehicles.stream().map(Vehicle::getId).toList());
         Map<UUID, Instant> scheduled = scheduledToday.forAll();
+        // CAM-157: con quién está enganchado cada uno, para separar y mostrar remolques sin un pedido por fila.
+        Map<UUID, CouplingDto.VehicleRef> coupledWith = new HashMap<>();
+        for (TrailerCoupling coupling : couplingRepository.findOpenWithVehicles()) {
+            String since = coupling.getCoupledAt().toString();
+            coupledWith.put(coupling.getTrailer().getId(), ref(coupling.getTowing(), since));
+            coupledWith.put(coupling.getTowing().getId(), ref(coupling.getTrailer(), since));
+        }
 
         return vehicles.stream()
                 .sorted(Comparator.comparing(Vehicle::getPlate, String.CASE_INSENSITIVE_ORDER))
                 .map(vehicle -> vehicleMapper.toSummary(vehicle,
                         currentTrip(openTripByVehicle.get(vehicle.getId()), names),
                         reasons.getOrDefault(vehicle.getId(), List.of()),
-                        scheduled.get(vehicle.getId())))
+                        scheduled.get(vehicle.getId()), coupledWith.get(vehicle.getId())))
                 .toList();
+    }
+
+    private static CouplingDto.VehicleRef ref(Vehicle vehicle, String since) {
+        return new CouplingDto.VehicleRef(vehicle.getId().toString(), vehicle.getPlate(),
+                VehicleType.toJson(vehicle.getVehicleType()), since);
     }
 
     /** GET /api/vehicles/{id} -- CAM-22. Incluye vehículos dados de baja. */
@@ -111,7 +137,7 @@ public class VehicleService {
         Map<String, String> names = openTrip == null || openTrip.getOpenedById() == null ? Map.of()
                 : userNameService.currentNames(List.of(openTrip.getOpenedById().toString()));
         return vehicleMapper.toSummary(vehicle, currentTrip(openTrip, names), availabilityService.reasons(vehicle.getId()),
-                scheduledToday.forVehicle(vehicle.getId()));
+                scheduledToday.forVehicle(vehicle.getId()), null);
     }
 
     /** CAM-87: quién tiene el vehículo y desde cuándo. openedBy es null en viajes sin chofer cargado. */
@@ -193,7 +219,7 @@ public class VehicleService {
                 vehicle.getPlate(),
                 vehicle.getBrand(),
                 vehicle.getModel(),
-                vehicle.getVehicleType(),
+                VehicleType.toJson(vehicle.getVehicleType()),
                 currentKm,
                 healthScore,
                 vehicleStatus.toJson(),
@@ -279,13 +305,22 @@ public class VehicleService {
             throw new VehicleValidationException("Datos inválidos para crear el vehículo", details);
         }
 
+        String templateId = request.checklistTemplateId() == null || request.checklistTemplateId().isBlank()
+                ? null : request.checklistTemplateId().trim();
+        if (templateId != null) {
+            checklistTemplateService.requireExists(templateId, "checklistTemplateId");
+        }
+
         if (vehicleRepository.existsByPlateIgnoreCase(request.plate())) {
             throw new VehicleStateConflictException("DUPLICATE_PLATE",
                     "Ya existe un vehículo con la patente " + request.plate());
         }
 
         Vehicle vehicle = vehicleRepository.save(newVehicle(request));
-        return vehicleMapper.toSummary(vehicle, null, List.of(), null);
+        if (templateId != null) {
+            checklistTemplateService.applyToNewVehicle(templateId, vehicle.getId());
+        }
+        return vehicleMapper.toSummary(vehicle, null, List.of());
     }
 
     /** Reglas de un alta (CAM-25); CAM-154 las usa también para cada fila importada. */
@@ -300,6 +335,11 @@ public class VehicleService {
         if (request.model() == null || request.model().isBlank()) {
             details.add(new FieldValidationErrorDetail("model", "El modelo es obligatorio"));
         }
+        if (request.vehicleType() == null || request.vehicleType().isBlank()) {
+            details.add(new FieldValidationErrorDetail("vehicleType", "El tipo es obligatorio: define sus cubiertas"));
+        } else if (VehicleType.fromText(request.vehicleType()) == null) {
+            details.add(new FieldValidationErrorDetail("vehicleType", "No es un tipo del catálogo"));
+        }
         validateYear(request.year(), details);
         if (request.odometerKm() != null && request.odometerKm() < 0) {
             details.add(new FieldValidationErrorDetail("odometerKm", "Los kilómetros no pueden ser negativos"));
@@ -309,7 +349,7 @@ public class VehicleService {
 
     static Vehicle newVehicle(CreateVehicleRequest request) {
         Vehicle vehicle = new Vehicle(request.plate(), request.brand(), request.model());
-        vehicle.setVehicleType(request.vehicleType());
+        vehicle.setVehicleType(VehicleType.fromText(request.vehicleType()));
         vehicle.setYear(request.year());
         vehicle.setChassisNumber(request.chassisNumber());
         if (request.odometerKm() != null) {
@@ -346,9 +386,19 @@ public class VehicleService {
         if (request.model() != null && request.model().isBlank()) {
             details.add(new FieldValidationErrorDetail("model", "El modelo no puede quedar vacío"));
         }
+        VehicleType newType = null;
+        if (request.vehicleType() != null) {
+            newType = VehicleType.fromText(request.vehicleType());
+            if (newType == null) {
+                details.add(new FieldValidationErrorDetail("vehicleType", "No es un tipo del catálogo"));
+            }
+        }
         validateYear(request.year(), details);
         if (!details.isEmpty()) {
             throw new VehicleValidationException("Datos inválidos para editar el vehículo", details);
+        }
+        if (newType != null && newType != vehicle.getVehicleType()) {
+            requireTypeChangeAllowed(vehicle, newType);
         }
 
         if (request.brand() != null) {
@@ -357,8 +407,8 @@ public class VehicleService {
         if (request.model() != null) {
             vehicle.setModel(request.model());
         }
-        if (request.vehicleType() != null) {
-            vehicle.setVehicleType(request.vehicleType());
+        if (newType != null) {
+            vehicle.setVehicleType(newType);
         }
         if (request.year() != null) {
             vehicle.setYear(request.year());
@@ -389,6 +439,28 @@ public class VehicleService {
     private Vehicle find(String id) {
         return Uuids.parse(id).flatMap(vehicleRepository::findById)
                 .orElseThrow(() -> new VehicleNotFoundException(id));
+    }
+
+    /**
+     * CAM-157: el tipo define las cubiertas y si es remolque. No se cambia si deja cubiertas en posiciones que el
+     * tipo nuevo no tiene, ni mientras está enganchado (o arrastrando un remolque).
+     */
+    private void requireTypeChangeAllowed(Vehicle vehicle, VehicleType newType) {
+        List<String> orphan = tireMountingRepository.findByVehicle_IdAndRemovedAtIsNull(vehicle.getId()).stream()
+                .filter(m -> !newType.has(m.getPosition()))
+                .map(m -> vehicle.getVehicleType() == null ? m.getPosition().toJson()
+                        : vehicle.getVehicleType().labelOf(m.getPosition()))
+                .toList();
+        if (!orphan.isEmpty()) {
+            throw new VehicleStateConflictException("TIRES_ON_REMOVED_POSITIONS",
+                    "Sacá primero las cubiertas de " + String.join(", ", orphan) + ": un " + newType.label()
+                            + " no tiene esas posiciones");
+        }
+        if (couplingRepository.findFirstByTrailer_IdAndUncoupledAtIsNull(vehicle.getId()).isPresent()
+                || couplingRepository.findFirstByTowing_IdAndUncoupledAtIsNull(vehicle.getId()).isPresent()) {
+            throw new VehicleStateConflictException("VEHICLE_COUPLED",
+                    "Desenganchá primero el remolque para cambiar el tipo");
+        }
     }
 
     private static void validateYear(Integer year, List<FieldValidationErrorDetail> details) {

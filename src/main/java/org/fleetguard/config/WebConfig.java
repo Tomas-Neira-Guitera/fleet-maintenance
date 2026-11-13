@@ -56,6 +56,18 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(requiring(Role.ADMIN, Role.TECNICO)).addPathPatterns("/work-orders/*/comments");
         // CAM-154: importar la flota desde un archivo, solo el admin.
         registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/vehicles/import");
+        // CAM-150: plantillas de checklist, solo el admin.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/checklist-templates", "/checklist-templates/**");
+        // CAM-156: el chofer y el admin cargan combustible; editar, borrar y ver el consumo es del admin.
+        registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER)).addPathPatterns("/fuel-loads");
+        // "/fuel-loads/*" y no "/**": ese también matchea "/fuel-loads" y dejaría al chofer sin cargar.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/fuel-loads/*", "/vehicles/*/fuel");
+        // CAM-157: neumáticos, del admin; las posiciones también las lee el chofer para el pre-viaje.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/tires", "/tires/**", "/vehicles/*/tires",
+                "/vehicles/*/tires/**");
+        registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER)).addPathPatterns("/vehicles/*/tire-positions");
+        // El enganche lo lee también el chofer (pre-viaje); cambiarlo es del admin, y eso lo chequea CouplingController.
+        registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER)).addPathPatterns("/vehicles/*/coupling");
     }
 
     private JwtAuthInterceptor requiring(Role... roles) {

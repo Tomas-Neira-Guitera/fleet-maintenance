@@ -66,10 +66,45 @@ Errores: `404 VEHICLE_NOT_FOUND` / `CHECKLIST_ITEM_NOT_FOUND`, `409 ITEM_LOCKED`
 `BASE_ITEM_NOT_DELETABLE`, `422`
 con `details[].field` para `label`/`type`/`section`/`enabled`.
 
+### 7. Plantillas (CAM-150)
+
+Una plantilla es un nombre y una lista de controles (`label`, `type`, `section`) que el admin
+**copia** a varios vehículos. No queda vinculada: lo copiado son controles extra comunes del
+vehículo, que se quitan o eliminan como cualquier otro. Editar o borrar la plantilla no cambia
+los vehículos ni las inspecciones viejas. Se copia y no se vincula porque los defectos
+recurrentes (CAM-135) se identifican por el id de cada control, y así editar una plantilla no
+cambia de golpe el checklist de muchos vehículos.
+
+- Cada control sigue las reglas de un extra (sección 6). Nombre de la plantilla obligatorio,
+  de hasta 60 caracteres y único sin importar mayúsculas (`409 DUPLICATE_TEMPLATE_NAME`). De 1 a
+  30 controles, sin repetir etiqueta y sección. Los errores de un control van como
+  `items[i].label` / `items[i].type` / `items[i].section`.
+- **Aplicar**: a cada vehículo se le agregan los controles que no tiene. Se saltea el que ya
+  tiene con la misma etiqueta y sección, sin importar mayúsculas, acentos ni espacios de más,
+  sea un ítem base o un extra (activo o quitado). Aplicar dos veces no duplica. Lo copiado
+  entra activo.
+- Un vehículo dado de baja no se puede elegir: `409 VEHICLE_INACTIVE` y no se copia nada a
+  ningún vehículo del pedido. Un id inexistente da `404 VEHICLE_NOT_FOUND`. Hasta 200 vehículos
+  por pedido; los ids repetidos cuentan una vez.
+- **Alta con plantilla**: `POST /api/vehicles` acepta `checklistTemplateId` opcional. Se valida
+  antes de crear el vehículo (`422` con `field: checklistTemplateId` si no existe) y se copia en
+  la misma transacción del alta.
+
+Endpoints (solo ADMIN; sin token `401`, otro rol `403`):
+- `GET /api/checklist-templates` → `{ items: [ChecklistTemplate] }`, por nombre.
+- `GET /api/checklist-templates/{id}`.
+- `POST /api/checklist-templates` con `{ name, items: [{ label, type?, section }] }` → 201.
+- `PUT /api/checklist-templates/{id}`: reemplaza nombre y controles.
+- `DELETE /api/checklist-templates/{id}` → 204.
+- `POST /api/checklist-templates/{id}/apply` con `{ vehicleIds: [...] }` →
+  `{ templateId, added, skipped, vehicles: [{ vehicleId, plate, added, skipped, skippedLabels }] }`.
+
+`404 CHECKLIST_TEMPLATE_NOT_FOUND` si la plantilla no existe.
+
 ## Fuera de alcance
 
-- Plantillas de checklist por tipo de vehículo (se puede evaluar si hay muchos vehículos
-  parecidos).
+- Desde una plantilla, quitar controles base, y sincronizar los vehículos cuando cambia (CAM-150).
 - Configurar el post-trip.
 - Editar el nombre de un ítem extra (se elimina y se agrega otro).
-- Protección por rol: igual que el resto de la API, el JWT todavía no se valida.
+- Protección por rol del checklist de cada vehículo: queda para CAM-73. Las plantillas
+  (CAM-150) sí piden ADMIN.

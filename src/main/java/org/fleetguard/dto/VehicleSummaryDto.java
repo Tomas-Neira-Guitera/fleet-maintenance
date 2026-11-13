@@ -21,6 +21,8 @@ public record VehicleSummaryDto(
         // CAM-87: el viaje abierto, si status es "on-trip"; null si está disponible.
         CurrentTripDto currentTrip,
         // CAM-143: fecha y hora (ISO) del turno de taller programado para hoy, en hora argentina; null si no tiene.
-        String scheduledToday
+        String scheduledToday,
+        // CAM-157: solo en el listado. En un remolque, quién lo arrastra; en un tractor o camión, qué remolque lleva.
+        CouplingDto.VehicleRef coupledWith
 ) {
 }

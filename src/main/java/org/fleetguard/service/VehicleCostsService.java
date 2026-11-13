@@ -1,10 +1,12 @@
 package org.fleetguard.service;
 
 import org.fleetguard.dto.VehicleCostsDto;
+import org.fleetguard.entity.FuelLoad;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleExpense;
 import org.fleetguard.entity.WorkOrderExpense;
 import org.fleetguard.exception.VehicleNotFoundException;
+import org.fleetguard.repository.FuelLoadRepository;
 import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.repository.MaintenanceCompletionRepository;
 import org.fleetguard.repository.VehicleExpenseRepository;
@@ -35,11 +37,14 @@ public class VehicleCostsService {
     private final VehicleExpenseRepository vehicleExpenseRepository;
     private final InspectionRepository inspectionRepository;
     private final MaintenanceCompletionRepository completionRepository;
+    private final FuelLoadRepository fuelLoadRepository;
 
     public VehicleCostsService(VehicleRepository vehicleRepository, WorkOrderExpenseRepository expenseRepository,
                                VehicleExpenseRepository vehicleExpenseRepository,
                                InspectionRepository inspectionRepository,
-                               MaintenanceCompletionRepository completionRepository) {
+                               MaintenanceCompletionRepository completionRepository,
+                               FuelLoadRepository fuelLoadRepository) {
+        this.fuelLoadRepository = fuelLoadRepository;
         this.vehicleRepository = vehicleRepository;
         this.expenseRepository = expenseRepository;
         this.vehicleExpenseRepository = vehicleExpenseRepository;
@@ -59,16 +64,20 @@ public class VehicleCostsService {
 
         List<WorkOrderExpense> expenses = expenseRepository.findByVehicleId(vehicleId);
         List<VehicleExpense> operating = vehicleExpenseRepository.findByVehicle_Id(vehicleId);
+        // CAM-156: las cargas de combustible también son gasto del vehículo.
+        List<FuelLoad> fuel = fuelLoadRepository.findByVehicle_IdOrderByLoadedAtAscOdometerKmAsc(vehicleId);
         // Desde la medianoche argentina del mismo día de hace un año: la misma ventana con la que
         // "Ver gastos" abre la pestaña Gastos, así las dos cifras coinciden.
         LocalDate dayAYearAgo = now.atZone(FLEET_ZONE).toLocalDate().minusYears(1);
         Instant yearAgo = dayAYearAgo.atStartOfDay(FLEET_ZONE).toInstant();
-        BigDecimal total = sum(Stream.concat(
+        BigDecimal total = sum(Stream.of(
                 expenses.stream().map(WorkOrderExpense::getAmount),
-                operating.stream().map(VehicleExpense::getAmount)));
-        BigDecimal last12Months = sum(Stream.concat(
+                operating.stream().map(VehicleExpense::getAmount),
+                fuel.stream().map(FuelLoad::getAmount)).flatMap(s -> s));
+        BigDecimal last12Months = sum(Stream.of(
                 expenses.stream().filter(e -> !e.getCreatedAt().isBefore(yearAgo)).map(WorkOrderExpense::getAmount),
-                operating.stream().filter(e -> !e.getDate().isBefore(dayAYearAgo)).map(VehicleExpense::getAmount)));
+                operating.stream().filter(e -> !e.getDate().isBefore(dayAYearAgo)).map(VehicleExpense::getAmount),
+                fuel.stream().filter(f -> !f.getLoadedAt().isBefore(yearAgo)).map(FuelLoad::getAmount)).flatMap(s -> s));
 
         Long firstKnownKm = firstKnownKm(vehicleId);
         long currentKm = vehicle.getOdometerKm();
@@ -78,7 +87,7 @@ public class VehicleCostsService {
                 ? total.divide(BigDecimal.valueOf(kmDriven), 2, RoundingMode.HALF_UP)
                 : null;
 
-        return new VehicleCostsDto(total, last12Months, expenses.size() + operating.size(), currentKm, firstKnownKm,
+        return new VehicleCostsDto(total, last12Months, expenses.size() + operating.size() + fuel.size(), currentKm, firstKnownKm,
                 kmDriven, costPerKm);
     }
 

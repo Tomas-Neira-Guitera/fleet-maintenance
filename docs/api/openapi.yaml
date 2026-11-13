@@ -231,6 +231,526 @@ paths:
         "404":
           description: VEHICLE_NOT_FOUND
 
+  /api/fuel-loads:
+    post:
+      summary: Registrar una carga de combustible (CAM-156)
+      description: >
+        ADMIN o CHOFER. La carga anterior por fecha no puede tener más km (422 en odometerKm). Su km
+        mueve el odómetro del vehículo (CAM-90). Si es de tanque lleno y el tramo que cierra consume
+        más de 1,3 veces el promedio de los últimos tramos, se avisa. Ver CAM-156-fuel-contract.md.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FuelLoadRequest"
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FuelLoad"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "409":
+          description: VEHICLE_INACTIVE / VEHICLE_IS_TRAILER (los remolques no cargan combustible, CAM-157)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/fuel-loads/{fuelLoadId}:
+    parameters:
+      - name: fuelLoadId
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Corregir una carga de combustible (CAM-156)
+      description: Solo ADMIN. vehicleId se ignora. No mueve el odómetro ni vuelve a avisar.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FuelLoadRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FuelLoad"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: FUEL_LOAD_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Borrar una carga de combustible (CAM-156)
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Borrada
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: FUEL_LOAD_NOT_FOUND
+
+  /api/vehicles/{id}/fuel:
+    get:
+      summary: Consumo de combustible del vehículo (CAM-156)
+      description: >
+        Solo ADMIN. Los últimos `months` meses contando el actual: resumen, un elemento por mes y
+        las cargas del período, de la más reciente a la más antigua.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: months
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 24, default: 6 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleFuel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/tires:
+    get:
+      summary: Cubiertas (CAM-157)
+      description: Solo ADMIN. Ver CAM-157-tires-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [stock, mounted, retired] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Tire"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      summary: Cargar una cubierta (CAM-157)
+      description: Queda en stock.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TireRequest"
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tire"
+        "409":
+          description: DUPLICATE_TIRE_CODE
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/tires/brand-comparison:
+    get:
+      summary: Costo por km por marca de cubierta (CAM-157)
+      description: >
+        Solo ADMIN. Costo total sobre km totales de las cubiertas de cada marca con al menos minKm km,
+        del más barato por km al más caro.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  minKm: { type: integer }
+                  brands:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        brand: { type: string }
+                        tires: { type: integer }
+                        retired: { type: integer }
+                        totalKm: { type: integer }
+                        totalCost: { type: number }
+                        costPerKm: { type: number }
+                        averageKm: { type: integer }
+
+  /api/tires/{tireId}:
+    parameters:
+      - name: tireId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Una cubierta con dónde estuvo y sus mediciones (CAM-157)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tire: { $ref: "#/components/schemas/Tire" }
+                  mountings:
+                    type: array
+                    items: { $ref: "#/components/schemas/TireMounting" }
+                  reports:
+                    type: array
+                    description: Lo que reportaron los choferes de esta cubierta, del más nuevo al más viejo.
+                    items: { $ref: "#/components/schemas/TireConditionReport" }
+        "404":
+          description: TIRE_NOT_FOUND
+    put:
+      summary: Editar los datos de una cubierta (CAM-157)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TireRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tire"
+        "404":
+          description: TIRE_NOT_FOUND
+        "409":
+          description: DUPLICATE_TIRE_CODE
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Borrar una cubierta cargada por error (CAM-157)
+      description: Si ya estuvo montada, 409 TIRE_HAS_HISTORY (se da de baja).
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Borrada
+        "404":
+          description: TIRE_NOT_FOUND
+        "409":
+          description: TIRE_HAS_HISTORY
+
+  /api/tires/{tireId}/retire:
+    post:
+      summary: Dar de baja una cubierta del stock (CAM-157)
+      description: Una montada se da de baja al sacarla (409 TIRE_MOUNTED).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tireId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, nullable: true }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tire"
+        "409":
+          description: TIRE_MOUNTED / TIRE_RETIRED
+
+  /api/vehicles/{id}/tires:
+    get:
+      summary: Cubiertas del vehículo por posición, con su historial (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "404":
+          description: VEHICLE_NOT_FOUND
+
+  /api/vehicles/{id}/coupling:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Con qué está enganchado el vehículo (CAM-157)
+      description: >
+        Admin y chofer. En un remolque, towedBy; en un tractor o camión rígido, towing. Ver
+        CAM-157-tires-contract.md §6.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Coupling"
+        "404":
+          description: VEHICLE_NOT_FOUND
+    put:
+      summary: Enganchar el remolque {id} a un tractor o camión (CAM-157, solo admin)
+      description: >
+        Si el remolque ya estaba con otro, o el otro ya arrastraba uno, esos enganches se cierran.
+        Desde ahí, los km que suma el que arrastra se le suman también al remolque.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [towingId]
+              properties:
+                towingId: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Coupling"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "409":
+          description: >
+            NOT_A_TRAILER -- {id} no es un semirremolque ni un acoplado.
+            CANNOT_TOW -- el tractor arrastra semirremolques y el camión rígido acoplados.
+            VEHICLE_INACTIVE -- alguno de los dos está dado de baja.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Desenganchar el remolque {id} (CAM-157, solo admin)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK (sin enganche abierto no hace nada)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Coupling"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+
+  /api/vehicles/{id}/tires/mount:
+    post:
+      summary: Montar una cubierta del stock, o cambiar la que hay (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tireId, position]
+              properties:
+                tireId: { type: string }
+                position: { $ref: "#/components/schemas/TirePosition" }
+                replaced:
+                  type: string
+                  enum: [stock, retired]
+                  nullable: true
+                  description: Si la posición está ocupada, qué pasa con la cubierta que estaba. Sin esto, 409 POSITION_OCCUPIED.
+                retiredReason: { type: string, nullable: true }
+      responses:
+        "200":
+          description: El vehículo actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "409":
+          description: NO_VEHICLE_TYPE / TIRE_NOT_IN_STOCK / POSITION_OCCUPIED / VEHICLE_INACTIVE
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{id}/tires/unmount:
+    post:
+      summary: Sacar una cubierta al stock o darla de baja (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [position]
+              properties:
+                position: { $ref: "#/components/schemas/TirePosition" }
+                retire: { type: boolean, default: false }
+                reason: { type: string, nullable: true }
+      responses:
+        "200":
+          description: El vehículo actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "409":
+          description: POSITION_EMPTY / NO_VEHICLE_TYPE
+
+  /api/vehicles/{id}/tires/rotate:
+    post:
+      summary: Rotar una cubierta a otra posición; si está ocupada, se intercambian (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from: { $ref: "#/components/schemas/TirePosition" }
+                to: { $ref: "#/components/schemas/TirePosition" }
+      responses:
+        "200":
+          description: El vehículo actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "409":
+          description: POSITION_EMPTY / NO_VEHICLE_TYPE / VEHICLE_INACTIVE
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{id}/tire-positions:
+    get:
+      summary: Posiciones del vehículo, para marcar cubiertas con problemas en el pre-viaje (CAM-157)
+      description: >
+        ADMIN o CHOFER. Todas las del tipo, auxilio incluido, con `mounted` en las que tienen cubierta (solo esas
+        se pueden reportar). Sin tipo o en un remolque, positions vacío.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vehicleType:
+                    allOf:
+                      - $ref: "#/components/schemas/VehicleType"
+                    nullable: true
+                  positions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        position: { $ref: "#/components/schemas/TirePosition" }
+                        label: { type: string }
+                        axle: { type: integer, description: 1 el de adelante, 0 el auxilio. }
+                        side: { type: string, enum: [izq, der], nullable: true }
+                        wheel: { type: string, enum: [simple, exterior, interior] }
+                        mounted: { type: boolean }
+
   /api/vehicles/{id}/costs:
     get:
       summary: Costo total de un vehículo (CAM-105, CAM-109)
@@ -391,6 +911,179 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
+  /api/checklist-templates:
+    get:
+      summary: Plantillas de checklist (CAM-150)
+      description: Solo ADMIN. Ordenadas por nombre. Ver CAM-31-vehicle-checklist-contract.md §7.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChecklistTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      summary: Crear una plantilla de checklist (CAM-150)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChecklistTemplateRequest"
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: DUPLICATE_TEMPLATE_NAME
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/checklist-templates/{templateId}:
+    parameters:
+      - name: templateId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Una plantilla de checklist (CAM-150)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND
+    put:
+      summary: Editar una plantilla (CAM-150)
+      description: Reemplaza el nombre y todos los controles. Los vehículos donde ya se aplicó no cambian.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChecklistTemplateRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND
+        "409":
+          description: DUPLICATE_TEMPLATE_NAME
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Borrar una plantilla (CAM-150)
+      description: Los controles ya copiados siguen en los vehículos.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Borrada
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND
+
+  /api/checklist-templates/{templateId}/apply:
+    post:
+      summary: Copiar los controles de una plantilla a varios vehículos (CAM-150)
+      description: >
+        Se saltea el control que el vehículo ya tiene con la misma etiqueta y sección
+        (sin importar mayúsculas ni acentos), así que aplicar dos veces no duplica.
+        Un vehículo dado de baja da 409 VEHICLE_INACTIVE y no se copia nada.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vehicleIds]
+              properties:
+                vehicleIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items: { type: string }
+      responses:
+        "200":
+          description: Lo agregado y lo salteado, por vehículo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplyChecklistTemplateResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND / VEHICLE_NOT_FOUND
+        "409":
+          description: VEHICLE_INACTIVE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
   /api/vehicles/{vehicleId}/checklist-items/{itemId}:
     patch:
       summary: Quitar del checklist o volver a incluir un ítem del vehículo (CAM-31)
@@ -513,6 +1206,8 @@ paths:
             DUPLICATE_PLATE -- si se cambia la patente a una que ya existe.
             VEHICLE_INACTIVE -- si se edita cualquier campo de un vehículo
             dado de baja sin reactivarlo primero.
+            TIRES_ON_REMOVED_POSITIONS / VEHICLE_COUPLED -- cambio de tipo
+            con cubiertas en posiciones que el nuevo no tiene, o enganchado (CAM-157).
           content:
             application/json:
               schema:
@@ -890,6 +1585,8 @@ paths:
             (ej. pre-trip sobre un vehículo que ya está "en viaje", o post-trip
             sobre uno sin viaje abierto), o es un pre-trip sobre un vehículo
             que no puede salir (bloqueado o dado de baja, CAM-89).
+            VEHICLE_IS_TRAILER -- los remolques no se inspeccionan desde la app
+            del chofer; NOT_A_TRAILER / CANNOT_TOW por el trailerId (CAM-157).
           content:
             application/json:
               schema:
@@ -2079,10 +2776,12 @@ paths:
             $ref: "#/components/schemas/ExpenseCategory"
         - name: origin
           in: query
-          description: Separa los gastos operativos (`operating`) de los de OT (`plan`, `defect`, `manual`).
+          description: >
+            Separa los gastos operativos (`operating`) y las cargas de combustible (`fuel`, CAM-156)
+            de los de OT (`plan`, `defect`, `manual`).
           schema:
             type: string
-            enum: [plan, defect, manual, operating]
+            enum: [plan, defect, manual, operating, fuel]
         - $ref: "#/components/parameters/PeriodFrom"
         - $ref: "#/components/parameters/PeriodTo"
       responses:
@@ -2664,7 +3363,11 @@ components:
         model: { type: string, example: "Sprinter" }
         status:
           $ref: "#/components/schemas/VehicleStatus"
-        vehicleType: { type: string, nullable: true, example: "furgon" }
+        vehicleType:
+          allOf:
+            - $ref: "#/components/schemas/VehicleType"
+          nullable: true
+          description: null en vehículos viejos con un tipo que no es del catálogo.
         year: { type: integer, nullable: true, example: 2022 }
         chassisNumber: { type: string, nullable: true }
         odometerKm: { type: integer }
@@ -2701,6 +3404,13 @@ components:
             es de ese día. Aunque ya haya pasado la hora, mientras no se marque hecho
             ni se cancele. null si no tiene turno hoy. No bloquea: el pre-trip se
             acepta igual (el front advierte y deja seguir).
+        coupledWith:
+          allOf:
+            - $ref: "#/components/schemas/CouplingRef"
+          nullable: true
+          description: >
+            CAM-157, solo en GET /api/vehicles. En un remolque, quién lo arrastra; en un tractor o camión, qué
+            remolque lleva. null si no está enganchado.
 
     BlockReason:
       type: object
@@ -2828,17 +3538,87 @@ components:
           nullable: true
           description: Chofer que abrió el viaje. null en viajes anteriores a CAM-87, que no lo guardaban.
 
+    VehicleType:
+      type: string
+      description: >
+        CAM-157. Catálogo de tipos: define los ejes y cubiertas (CAM-157-tires-contract.md §1). Al crear o
+        editar también se aceptan el nombre ("Camión rígido 4x2") y alias (furgón, pickup, camioneta, semi...).
+      enum: [utilitario, camion_4x2, camion_6x4, tractor_4x2, tractor_6x4, semirremolque_2_ejes,
+             semirremolque_3_ejes, acoplado]
+
     CreateVehicleRequest:
       type: object
-      required: [plate, brand, model]
+      required: [plate, brand, model, vehicleType]
       properties:
         plate: { type: string }
         brand: { type: string }
         model: { type: string }
-        vehicleType: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
         year: { type: integer }
         chassisNumber: { type: string }
         odometerKm: { type: integer, description: Kilometraje inicial, default 0. No puede ser negativo (CAM-154). }
+        checklistTemplateId:
+          type: string
+          nullable: true
+          description: >
+            CAM-150. Plantilla cuyos controles se copian al vehículo nuevo. Si no existe, 422
+            con field checklistTemplateId y el vehículo no se crea. La importación (CAM-154) lo ignora.
+
+    ChecklistTemplateRequest:
+      type: object
+      required: [name, items]
+      properties:
+        name: { type: string, maxLength: 60 }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: object
+            required: [label, section]
+            properties:
+              label: { type: string, maxLength: 60 }
+              type: { type: string, enum: [check, number], default: check }
+              section: { type: string, enum: [exterior, interior] }
+
+    ChecklistTemplate:
+      type: object
+      required: [id, name, items, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, label, type, section]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              type: { type: string, enum: [check, number] }
+              section: { type: string, enum: [exterior, interior] }
+        createdAt: { type: string, format: date-time }
+
+    ApplyChecklistTemplateResult:
+      type: object
+      required: [templateId, added, skipped, vehicles]
+      properties:
+        templateId: { type: string }
+        added: { type: integer, description: Controles agregados en total. }
+        skipped: { type: integer, description: Controles salteados en total porque el vehículo ya los tenía. }
+        vehicles:
+          type: array
+          items:
+            type: object
+            required: [vehicleId, plate, added, skipped, skippedLabels]
+            properties:
+              vehicleId: { type: string }
+              plate: { type: string }
+              added: { type: integer }
+              skipped: { type: integer }
+              skippedLabels:
+                type: array
+                items: { type: string }
 
     VehicleImportResult:
       type: object
@@ -2872,7 +3652,10 @@ components:
         plate: { type: string }
         brand: { type: string }
         model: { type: string }
-        vehicleType: { type: string }
+        vehicleType:
+          allOf:
+            - $ref: "#/components/schemas/VehicleType"
+          description: No se puede cambiar si quedan cubiertas en posiciones que el nuevo no tiene o si está enganchado (409).
         year: { type: integer }
         chassisNumber: { type: string }
         active:
@@ -2998,6 +3781,29 @@ components:
           description: >-
             CAM-153: id que arma el celular. Si llega otra vez (reintento después de un corte), se devuelve la
             inspección ya guardada sin crear otra. Con el id de otro chofer u otro vehículo, 409 DUPLICATE_SUBMISSION.
+        tireConditions:
+          type: array
+          nullable: true
+          description: >-
+            CAM-157: opcional, solo con "Neumáticos" (ext-neumaticos) en defecto. Qué cubiertas tienen problemas y
+            cuáles (GET /api/vehicles/{id}/tire-positions). Se suman al detalle del defecto y quedan en cada
+            cubierta. Sin el defecto, 422 con itemId tireConditions; una posición sin cubierta o repetida,
+            tireConditions[i].position; sin estados o uno desconocido, tireConditions[i].conditions.
+          items:
+            type: object
+            required: [position, conditions]
+            properties:
+              position: { $ref: "#/components/schemas/TirePosition" }
+              conditions:
+                type: array
+                minItems: 1
+                items: { $ref: "#/components/schemas/TireCondition" }
+        trailerId:
+          type: string
+          nullable: true
+          description: >-
+            CAM-157: solo en el pre-viaje de un tractor o camión rígido. El id de un remolque lo engancha,
+            "none" desengancha el que tenía, sin el campo no cambia nada. Errores como en PUT /coupling.
 
     Trip:
       type: object
@@ -3753,9 +4559,10 @@ components:
             - $ref: "#/components/schemas/WorkOrderStatus"
         origin:
           type: string
-          enum: [plan, defect, manual, operating]
+          enum: [plan, defect, manual, operating, fuel]
           description: >
-            De dónde nació el gasto: `operating` es un gasto operativo, sin OT.
+            De dónde nació el gasto: `operating` es un gasto operativo, sin OT; `fuel`, una carga de
+            combustible (CAM-156), que se edita desde /api/fuel-loads.
             Los otros dicen de dónde nació su OT: de un plan de mantenimiento
             (gasto preventivo), de un defecto (correctivo) o suelta. No es
             `sourceType`: una OT creada desde el calendario conserva el plan
@@ -4166,6 +4973,240 @@ components:
           description: Promedio de horas entre que se creó y se finalizó cada una de esas OTs. null si no finalizó ninguna.
         expensesTotal: { type: number, description: Suma de los gastos cargados en el período en las OTs a su cargo. }
 
+    TireCondition:
+      type: string
+      description: CAM-157. Lo que el chofer ve a simple vista, del más grave al más leve.
+      enum: [se-ve-la-tela, bulto, corte-flanco, pinchada, baja-presion, desgaste-irregular, poco-dibujo]
+
+    TireConditionReport:
+      type: object
+      properties:
+        vehicleId: { type: string }
+        plate: { type: string }
+        position: { $ref: "#/components/schemas/TirePosition" }
+        positionLabel: { type: string }
+        conditions:
+          type: array
+          items: { $ref: "#/components/schemas/TireCondition" }
+        conditionLabels: { type: array, items: { type: string } }
+        severity: { type: string, enum: [blocking, non-blocking], nullable: true, description: La del defecto. }
+        reportedAt: { type: string, format: date-time }
+        reportedBy: { type: string, nullable: true }
+        defectId: { type: string, nullable: true }
+        active: { type: boolean, description: El defecto sigue abierto y la cubierta montada. }
+
+    TirePosition:
+      type: string
+      description: CAM-157. Eje + lado (+ exterior/interior en rueda doble). Las de cada tipo, en CAM-157-tires-contract.md §1.
+      enum: [e1-izq, e1-der, e1-izq-ext, e1-izq-int, e1-der-int, e1-der-ext,
+             e2-izq, e2-der, e2-izq-ext, e2-izq-int, e2-der-int, e2-der-ext,
+             e3-izq, e3-der, e3-izq-ext, e3-izq-int, e3-der-int, e3-der-ext, auxilio]
+
+    Coupling:
+      type: object
+      properties:
+        vehicleId: { type: string }
+        towedBy:
+          nullable: true
+          description: En un remolque, quién lo arrastra.
+          allOf:
+            - $ref: "#/components/schemas/CouplingRef"
+        towing:
+          nullable: true
+          description: En un tractor o camión, qué remolque lleva.
+          allOf:
+            - $ref: "#/components/schemas/CouplingRef"
+        canTow:
+          type: array
+          items: { $ref: "#/components/schemas/VehicleType" }
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              trailerId: { type: string }
+              trailerPlate: { type: string }
+              towingId: { type: string }
+              towingPlate: { type: string }
+              coupledAt: { type: string, format: date-time }
+              uncoupledAt: { type: string, format: date-time, nullable: true }
+              coupledBy: { type: string, nullable: true }
+
+    CouplingRef:
+      type: object
+      properties:
+        id: { type: string }
+        plate: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        coupledAt: { type: string, format: date-time }
+
+    TireRequest:
+      type: object
+      required: [brand, size, purchaseDate, cost]
+      properties:
+        code: { type: string, maxLength: 40, nullable: true, description: Número de serie o el del taller. Único. }
+        brand: { type: string, maxLength: 60 }
+        model: { type: string, maxLength: 60, nullable: true }
+        size: { type: string, maxLength: 30, example: 295/80 R22.5 }
+        purchaseDate: { type: string, format: date }
+        cost: { type: number, exclusiveMinimum: 0 }
+
+    Tire:
+      type: object
+      properties:
+        id: { type: string }
+        code: { type: string, nullable: true }
+        brand: { type: string }
+        model: { type: string, nullable: true }
+        size: { type: string }
+        purchaseDate: { type: string, format: date }
+        cost: { type: number }
+        status: { type: string, enum: [stock, mounted, retired] }
+        retiredAt: { type: string, format: date-time, nullable: true }
+        retiredReason: { type: string, nullable: true }
+        km: { type: integer, description: Lo que rodó en todos sus montajes; el auxilio no suma. }
+        costPerKm: { type: number, nullable: true }
+        current:
+          type: object
+          nullable: true
+          description: Dónde está montada; null si no.
+          properties:
+            vehicleId: { type: string }
+            plate: { type: string }
+            position: { $ref: "#/components/schemas/TirePosition" }
+            positionLabel: { type: string }
+            mountedAt: { type: string, format: date-time }
+            mountedKm: { type: integer }
+        condition:
+          nullable: true
+          description: El último problema reportado que sigue abierto (active); null si no tiene.
+          allOf:
+            - $ref: "#/components/schemas/TireConditionReport"
+
+    TireMounting:
+      type: object
+      properties:
+        tireId: { type: string }
+        tireLabel: { type: string }
+        vehicleId: { type: string }
+        plate: { type: string }
+        position: { $ref: "#/components/schemas/TirePosition" }
+        positionLabel: { type: string }
+        mountedAt: { type: string, format: date-time }
+        mountedKm: { type: integer }
+        removedAt: { type: string, format: date-time, nullable: true }
+        removedKm: { type: integer, nullable: true }
+        km: { type: integer }
+
+    VehicleTires:
+      type: object
+      properties:
+        vehicleId: { type: string }
+        plate: { type: string }
+        vehicleType:
+          allOf:
+            - $ref: "#/components/schemas/VehicleType"
+          nullable: true
+          description: Sin tipo, positions vacío y montar da 409 NO_VEHICLE_TYPE.
+        odometerKm: { type: integer }
+        positions:
+          type: array
+          items:
+            type: object
+            properties:
+              position: { $ref: "#/components/schemas/TirePosition" }
+              label: { type: string }
+              axle: { type: integer, description: 1 el delantero, 0 el auxilio. }
+              side: { type: string, enum: [izq, der], nullable: true }
+              wheel: { type: string, enum: [simple, exterior, interior] }
+              tire:
+                nullable: true
+                allOf:
+                  - $ref: "#/components/schemas/Tire"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/TireMounting"
+
+    FuelLoadRequest:
+      type: object
+      required: [vehicleId, liters, amount, odometerKm]
+      properties:
+        vehicleId: { type: string, description: Solo en el alta. }
+        loadedAt: { type: string, format: date-time, description: Sin valor, ahora. }
+        liters: { type: number, exclusiveMinimum: 0, maximum: 2000 }
+        amount: { type: number, exclusiveMinimum: 0 }
+        odometerKm: { type: integer, minimum: 0 }
+        fullTank: { type: boolean, default: true }
+
+    FuelLoad:
+      type: object
+      required: [id, vehicleId, plate, loadedAt, liters, amount, odometerKm, fullTank, createdBy, consumption, alert]
+      properties:
+        id: { type: string }
+        vehicleId: { type: string }
+        plate: { type: string }
+        loadedAt: { type: string, format: date-time }
+        liters: { type: number }
+        amount: { type: number }
+        odometerKm: { type: integer }
+        fullTank: { type: boolean }
+        createdBy:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/UserRef"
+        consumption:
+          type: object
+          nullable: true
+          description: El tramo que cierra esta carga (de tanque lleno a tanque lleno); null si no cierra ninguno.
+          properties:
+            km: { type: integer }
+            liters: { type: number }
+            litersPer100Km: { type: number }
+            costPerKm: { type: number }
+        alert:
+          type: object
+          nullable: true
+          description: Si al cargarla se avisó de un consumo anormal.
+          properties:
+            litersPer100Km: { type: number }
+            averageLitersPer100Km: { type: number }
+
+    VehicleFuel:
+      type: object
+      required: [vehicleId, plate, months, summary, monthly, loads]
+      properties:
+        vehicleId: { type: string }
+        plate: { type: string }
+        months: { type: integer }
+        summary:
+          $ref: "#/components/schemas/FuelPeriod"
+        monthly:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/FuelPeriod"
+              - type: object
+                properties:
+                  month: { type: string, example: "2026-06" }
+        loads:
+          type: array
+          items:
+            $ref: "#/components/schemas/FuelLoad"
+
+    FuelPeriod:
+      type: object
+      description: >
+        Litros y monto de las cargas del período; km medidos, L/100 km y costo por km de los
+        tramos que cierran en el período (null si no cierra ninguno).
+      properties:
+        loadCount: { type: integer, description: Solo en summary. }
+        liters: { type: number }
+        amount: { type: number }
+        measuredKm: { type: integer }
+        litersPer100Km: { type: number, nullable: true }
+        costPerKm: { type: number, nullable: true }
+
     NotificationType:
       type: string
       description: >
@@ -4174,8 +5215,8 @@ components:
       enum: [work_order_assigned, work_order_unassigned, work_order_cancelled, trip_open_reminder,
              blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue,
              recurring_defect, document_due_soon, document_expired, vehicle_unavailable, vehicle_available,
-             trip_km_anomaly, defect_resolved, defect_unattended, scheduled_maintenance_upcoming,
-             trip_started_with_maintenance, work_order_comment]
+             trip_km_anomaly, fuel_consumption_anomaly, tire_problem_reported, defect_resolved, defect_unattended,
+             scheduled_maintenance_upcoming, trip_started_with_maintenance, work_order_comment]
 
     NotificationChannel:
       type: string

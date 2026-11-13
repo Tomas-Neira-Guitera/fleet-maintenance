@@ -1,9 +1,11 @@
 package org.fleetguard.mapper;
 
 import org.fleetguard.dto.BlockReasonDto;
+import org.fleetguard.dto.CouplingDto;
 import org.fleetguard.dto.CurrentTripDto;
 import org.fleetguard.dto.VehicleSummaryDto;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.VehicleType;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -12,16 +14,21 @@ import java.util.List;
 @Component
 public class VehicleMapper {
 
-    /** currentTrip: el viaje abierto del vehículo, o null si no tiene. scheduledToday: el turno de hoy, o null (CAM-143). */
+    /** currentTrip: el viaje abierto del vehículo, o null si no tiene. */
+    public VehicleSummaryDto toSummary(Vehicle vehicle, CurrentTripDto currentTrip, List<BlockReasonDto> blockReasons) {
+        return toSummary(vehicle, currentTrip, blockReasons, null, null);
+    }
+
+    /** scheduledToday: el turno de hoy, o null (CAM-143). coupledWith: el enganche, solo en el listado (CAM-157). */
     public VehicleSummaryDto toSummary(Vehicle vehicle, CurrentTripDto currentTrip, List<BlockReasonDto> blockReasons,
-                                       Instant scheduledToday) {
+                                       Instant scheduledToday, CouplingDto.VehicleRef coupledWith) {
         return new VehicleSummaryDto(
                 vehicle.getId().toString(),
                 vehicle.getPlate(),
                 vehicle.getBrand(),
                 vehicle.getModel(),
                 currentTrip != null ? "on-trip" : "available",
-                vehicle.getVehicleType(),
+                VehicleType.toJson(vehicle.getVehicleType()),
                 vehicle.getYear(),
                 vehicle.getChassisNumber(),
                 vehicle.getOdometerKm(),
@@ -29,7 +36,8 @@ public class VehicleMapper {
                 !blockReasons.isEmpty(),
                 blockReasons,
                 currentTrip,
-                scheduledToday == null ? null : scheduledToday.toString()
+                scheduledToday == null ? null : scheduledToday.toString(),
+                coupledWith
         );
     }
 }

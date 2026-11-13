@@ -13,6 +13,7 @@ import org.fleetguard.entity.WorkOrderExpense;
 import org.fleetguard.entity.WorkOrderExpenseCategory;
 import org.fleetguard.entity.WorkOrderSourceType;
 import org.fleetguard.exception.VehicleNotFoundException;
+import org.fleetguard.repository.FuelLoadRepository;
 import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.repository.MaintenanceCompletionRepository;
 import org.fleetguard.repository.VehicleExpenseRepository;
@@ -50,8 +51,9 @@ class VehicleCostsServiceTest {
     private final VehicleExpenseRepository vehicleExpenseRepository = mock(VehicleExpenseRepository.class);
     private final InspectionRepository inspectionRepository = mock(InspectionRepository.class);
     private final MaintenanceCompletionRepository completionRepository = mock(MaintenanceCompletionRepository.class);
+    private final FuelLoadRepository fuelLoadRepository = mock(FuelLoadRepository.class);
     private final VehicleCostsService service = new VehicleCostsService(vehicleRepository, expenseRepository,
-            vehicleExpenseRepository, inspectionRepository, completionRepository);
+            vehicleExpenseRepository, inspectionRepository, completionRepository, fuelLoadRepository);
 
     private Vehicle truck;
     private String truckId;
