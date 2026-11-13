@@ -30,6 +30,7 @@ import org.fleetguard.repository.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.fleetguard.event.BlockingDefectReportedEvent;
 import org.fleetguard.event.DefectsReportedEvent;
+import org.fleetguard.event.TripStartedEvent;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.ArgumentCaptor;
@@ -450,6 +451,40 @@ class InspectionServiceTest {
         assertEquals(vehicle.getId(), event.getValue().vehicleId());
         assertEquals(vehicle.getPlate(), event.getValue().plate());
         assertEquals(Set.of("ext-neumaticos", "ext-luces"), Set.copyOf(event.getValue().itemIds()));
+    }
+
+    @Test
+    void unPreTripQueSalePublicaLaSalidaParaVerSiTieneTurnoDeTaller() {
+        noOpenTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver);
+
+        // CAM-143: el listener mira si ese día hay turno y le avisa al admin.
+        ArgumentCaptor<TripStartedEvent> event = ArgumentCaptor.forClass(TripStartedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertEquals(vehicle.getId(), event.getValue().vehicleId());
+        assertEquals(vehicle.getPlate(), event.getValue().plate());
+        assertEquals("chofer1", event.getValue().driverName());
+    }
+
+    @Test
+    void unPreTripConBloqueanteNoSaleYNoPublicaLaSalida() {
+        noOpenTrip();
+        List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-neumaticos", "defect", null,
+                new DefectDetailDto("blocking", "Neumático cortado", "http://localhost/foto.jpg")));
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", answers, null), driver);
+
+        verify(eventPublisher, never()).publishEvent(any(TripStartedEvent.class));
+    }
+
+    @Test
+    void unPostTripNoPublicaLaSalida() throws Exception {
+        openTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("post-trip", postTripAllOk(), null), driver);
+
+        verify(eventPublisher, never()).publishEvent(any(TripStartedEvent.class));
     }
 
     @Test

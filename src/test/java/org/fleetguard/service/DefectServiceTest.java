@@ -18,10 +18,13 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.*;
 
 class DefectServiceTest {
@@ -29,9 +32,10 @@ class DefectServiceTest {
     private final DefectRepository defectRepository = mock(DefectRepository.class);
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final DefectMapper defectMapper = mock(DefectMapper.class);
+    private final UnattendedDefects unattendedDefects = mock(UnattendedDefects.class);
     private final DefectService service = new DefectService(defectRepository, vehicleRepository,
             new UserNameService(mock(UserRepository.class)), defectMapper,
-            new TripDamageService(mock(InspectionRepository.class)));
+            new TripDamageService(mock(InspectionRepository.class)), unattendedDefects);
 
     /** Los ids de las entidades son @GeneratedValue; en el test se setean por reflexión, sin persistencia real. */
     private static void setId(Object entity, UUID id) throws Exception {
@@ -53,6 +57,30 @@ class DefectServiceTest {
         Defect defect = new Defect(severity, label, null, createdAt);
         answer.attachDefect(defect);
         return defect;
+    }
+
+    @Test
+    void cadaDefectoLlevaSusDiasSinAtenderONull() throws Exception {
+        UUID vehicleId = UUID.randomUUID();
+        // Qué está sin atender lo decide UnattendedDefects (mockeado): acá solo se ve que el listado lo lleva.
+        Defect old = defectWith(DefectSeverity.NON_BLOCKING, Instant.now().minusSeconds(9 * 86400L), vehicleId, "viejo");
+        Defect recent = defectWith(DefectSeverity.NON_BLOCKING, Instant.now(), vehicleId, "reciente");
+        setId(old, UUID.randomUUID());
+        setId(recent, UUID.randomUUID());
+        when(defectRepository.findAllWithInspection()).thenReturn(List.of(old, recent));
+        when(vehicleRepository.findAllById(any())).thenReturn(List.of());
+        when(unattendedDefects.unattendedDays(List.of(old, recent))).thenReturn(Map.of(old.getId(), 9L));
+        when(defectMapper.toDto(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+            Defect d = invocation.getArgument(0);
+            return new DefectDto(d.getId().toString(), "non-blocking", d.getDescription(), null, null, null, null,
+                    d.getStatus(), null);
+        });
+
+        Map<String, Long> days = new HashMap<>();
+        service.listDefects().forEach(dto -> days.put(dto.description(), dto.unattendedDays()));
+
+        assertEquals(9L, days.get("viejo"));
+        assertNull(days.get("reciente"));
     }
 
     @Test

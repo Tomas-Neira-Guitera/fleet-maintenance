@@ -46,7 +46,7 @@ class VehicleControllerTest extends WebMvcTestBase {
 
     private static VehicleSummaryDto summary() {
         return new VehicleSummaryDto("v-1", "AB123CD", "Ford", "Cargo", "available", "Camión", 2020, null, 50000, true,
-                false, List.of(), null, null);
+                false, List.of(), null, null, null);
     }
 
     @Test
@@ -64,7 +64,8 @@ class VehicleControllerTest extends WebMvcTestBase {
     void unVehiculoEnViajeTraeQuienLoAbrioYUnoBloqueadoLoDice() throws Exception {
         VehicleSummaryDto onTrip = new VehicleSummaryDto("v-2", "AC456EF", "Iveco", "Daily", "on-trip", null, null, null,
                 1000, true, true, List.of(new BlockReasonDto("blocking_defect", "Defecto bloqueante: Sin frenos")),
-                new CurrentTripDto("2026-10-07T11:15:00Z", new UserRefDto("u-1", "chofer1")), null);
+                new CurrentTripDto("2026-10-07T11:15:00Z", new UserRefDto("u-1", "chofer1")), "2026-10-07T18:00:00Z",
+                null);
         when(vehicleService.listVehicles(true)).thenReturn(List.of(summary(), onTrip));
 
         // CAM-87 y CAM-89: forma del JSON que consumen el listado del chofer y el detalle del admin.
@@ -76,7 +77,10 @@ class VehicleControllerTest extends WebMvcTestBase {
                 .andExpect(jsonPath("$[1].blockReasons[0].type").value("blocking_defect"))
                 .andExpect(jsonPath("$[1].blockReasons[0].message").value("Defecto bloqueante: Sin frenos"))
                 .andExpect(jsonPath("$[1].currentTrip.startedAt").value("2026-10-07T11:15:00Z"))
-                .andExpect(jsonPath("$[1].currentTrip.openedBy.name").value("chofer1"));
+                .andExpect(jsonPath("$[1].currentTrip.openedBy.name").value("chofer1"))
+                // CAM-143: el turno de hoy, o null.
+                .andExpect(jsonPath("$[0].scheduledToday").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$[1].scheduledToday").value("2026-10-07T18:00:00Z"));
     }
 
     @Test

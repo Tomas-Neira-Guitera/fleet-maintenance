@@ -54,12 +54,13 @@ class VehicleServiceTest {
     private final VehicleAvailabilityService availabilityService = mock(VehicleAvailabilityService.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final VehicleMapper vehicleMapper = new VehicleMapper();
+    private final ScheduledToday scheduledToday = mock(ScheduledToday.class);
     private final ChecklistTemplateService checklistTemplateService = mock(ChecklistTemplateService.class);
     private final TireMountingRepository tireMountingRepository = mock(TireMountingRepository.class);
     private final TrailerCouplingRepository couplingRepository = mock(TrailerCouplingRepository.class);
     private final VehicleService service = new VehicleService(vehicleRepository, tripRepository, assignmentRepository,
             availabilityService, new UserNameService(userRepository), vehicleMapper, mock(KmPerDayEstimator.class),
-            event -> { }, checklistTemplateService, tireMountingRepository, couplingRepository);
+            event -> { }, scheduledToday, checklistTemplateService, tireMountingRepository, couplingRepository);
 
     /** El id es @GeneratedValue; en el test se setea por reflexión, sin persistencia real (mismo patrón que DefectServiceTest). */
     private static void setId(Object entity, UUID id) throws Exception {
@@ -204,6 +205,34 @@ class VehicleServiceTest {
         assertFalse(result.get(2).blocked());
         assertEquals(List.of(), result.get(2).blockReasons());
         assertNull(result.get(2).currentTrip());
+    }
+
+    @Test
+    void elListadoTraeElTurnoDeHoyDeTodaLaFlotaEnUnaSolaConsulta() throws Exception {
+        Vehicle conTurno = new Vehicle("AA111AA", "Ford", "Cargo");
+        Vehicle sinTurno = new Vehicle("BB222BB", "Iveco", "Daily");
+        setId(conTurno, UUID.randomUUID());
+        setId(sinTurno, UUID.randomUUID());
+        when(vehicleRepository.findByActive(true)).thenReturn(List.of(conTurno, sinTurno));
+        Instant turno = Instant.parse("2026-11-12T18:00:00Z");
+        when(scheduledToday.forAll()).thenReturn(Map.of(conTurno.getId(), turno));
+
+        List<VehicleSummaryDto> result = service.listVehicles(true);
+
+        assertEquals("2026-11-12T18:00:00Z", result.get(0).scheduledToday());
+        assertNull(result.get(1).scheduledToday());
+        org.mockito.Mockito.verify(scheduledToday, org.mockito.Mockito.never()).forVehicle(any());
+    }
+
+    @Test
+    void elDetalleTraeElTurnoDeHoy() throws Exception {
+        Vehicle vehicle = new Vehicle("AA111AA", "Ford", "Cargo");
+        UUID id = UUID.randomUUID();
+        setId(vehicle, id);
+        when(vehicleRepository.findById(id)).thenReturn(Optional.of(vehicle));
+        when(scheduledToday.forVehicle(id)).thenReturn(Instant.parse("2026-11-12T13:30:00Z"));
+
+        assertEquals("2026-11-12T13:30:00Z", service.getById(id.toString()).scheduledToday());
     }
 
     @Test

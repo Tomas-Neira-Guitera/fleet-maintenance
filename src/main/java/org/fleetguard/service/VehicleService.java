@@ -57,6 +57,7 @@ public class VehicleService {
     private final UserNameService userNameService;
     private final VehicleMapper vehicleMapper;
     private final KmPerDayEstimator kmPerDayEstimator;
+    private final ScheduledToday scheduledToday;
 
     private static final int MIN_YEAR = 1980;
 
@@ -69,7 +70,8 @@ public class VehicleService {
                            VehicleMaintenanceAssignmentRepository assignmentRepository,
                            VehicleAvailabilityService availabilityService, UserNameService userNameService,
                            VehicleMapper vehicleMapper, KmPerDayEstimator kmPerDayEstimator,
-                           ApplicationEventPublisher eventPublisher, ChecklistTemplateService checklistTemplateService,
+                           ApplicationEventPublisher eventPublisher, ScheduledToday scheduledToday,
+                           ChecklistTemplateService checklistTemplateService,
                            TireMountingRepository tireMountingRepository, TrailerCouplingRepository couplingRepository) {
         this.checklistTemplateService = checklistTemplateService;
         this.tireMountingRepository = tireMountingRepository;
@@ -82,6 +84,7 @@ public class VehicleService {
         this.vehicleMapper = vehicleMapper;
         this.kmPerDayEstimator = kmPerDayEstimator;
         this.eventPublisher = eventPublisher;
+        this.scheduledToday = scheduledToday;
     }
 
     /** CAM-15: orden alfabético por patente, no el orden de inserción en la base. */
@@ -93,6 +96,7 @@ public class VehicleService {
                 .map(Trip::getOpenedById).filter(Objects::nonNull).map(UUID::toString).toList());
         List<Vehicle> vehicles = vehicleRepository.findByActive(active);
         Map<UUID, List<BlockReasonDto>> reasons = availabilityService.reasonsFor(vehicles.stream().map(Vehicle::getId).toList());
+        Map<UUID, Instant> scheduled = scheduledToday.forAll();
         // CAM-157: con quién está enganchado cada uno, para separar y mostrar remolques sin un pedido por fila.
         Map<UUID, CouplingDto.VehicleRef> coupledWith = new HashMap<>();
         for (TrailerCoupling coupling : couplingRepository.findOpenWithVehicles()) {
@@ -105,7 +109,8 @@ public class VehicleService {
                 .sorted(Comparator.comparing(Vehicle::getPlate, String.CASE_INSENSITIVE_ORDER))
                 .map(vehicle -> vehicleMapper.toSummary(vehicle,
                         currentTrip(openTripByVehicle.get(vehicle.getId()), names),
-                        reasons.getOrDefault(vehicle.getId(), List.of()), coupledWith.get(vehicle.getId())))
+                        reasons.getOrDefault(vehicle.getId(), List.of()),
+                        scheduled.get(vehicle.getId()), coupledWith.get(vehicle.getId())))
                 .toList();
     }
 
@@ -131,7 +136,8 @@ public class VehicleService {
         Trip openTrip = tripRepository.findFirstByVehicle_IdAndStatus(vehicle.getId(), TripStatus.OPEN).orElse(null);
         Map<String, String> names = openTrip == null || openTrip.getOpenedById() == null ? Map.of()
                 : userNameService.currentNames(List.of(openTrip.getOpenedById().toString()));
-        return vehicleMapper.toSummary(vehicle, currentTrip(openTrip, names), availabilityService.reasons(vehicle.getId()));
+        return vehicleMapper.toSummary(vehicle, currentTrip(openTrip, names), availabilityService.reasons(vehicle.getId()),
+                scheduledToday.forVehicle(vehicle.getId()), null);
     }
 
     /** CAM-87: quién tiene el vehículo y desde cuándo. openedBy es null en viajes sin chofer cargado. */

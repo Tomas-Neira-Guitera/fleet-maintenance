@@ -61,8 +61,14 @@ public final class NotificationCatalog {
                 "Un chofer reporta un defecto que deja al vehículo sin poder salir.", Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.RECURRING_DEFECT, "Defecto recurrente",
                 "El mismo control del checklist falla varias veces en el mismo vehículo.", Audience.CONFIGURABLE, null, Lead.NONE);
+        add(NotificationType.DEFECT_UNATTENDED, "Defecto sin atender",
+                "Un defecto lleva días abierto sin una orden de trabajo ni un turno. Un aviso por vehículo, una sola vez por defecto.",
+                Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.TRIP_KM_ANOMALY, "Kilometraje fuera de lo normal",
                 "Un viaje se cierra con muchos más o muchos menos km que el promedio del vehículo, o con menos km de los que ya tenía.",
+                Audience.CONFIGURABLE, null, Lead.NONE);
+        add(NotificationType.TRIP_STARTED_WITH_MAINTENANCE, "Salida con turno de taller",
+                "Un chofer sale de viaje con un vehículo que tiene turno de taller ese día.",
                 Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.FUEL_CONSUMPTION_ANOMALY, "Consumo de combustible alto",
                 "Una carga de tanque lleno da un consumo muy por encima del promedio del vehículo.",
@@ -72,6 +78,10 @@ public final class NotificationCatalog {
                 Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.WORK_ORDER_FINALIZED, "Orden de trabajo finalizada",
                 "Se finaliza una orden de trabajo, interna o de un taller externo.", Audience.CONFIGURABLE, null, Lead.NONE);
+        add(NotificationType.WORK_ORDER_COMMENT, "Comentario en una orden de trabajo",
+                "Un técnico comenta en su orden de trabajo. Si comenta el admin, le llega al técnico a cargo. "
+                        + "Nadie recibe aviso por su propio comentario.",
+                Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.MAINTENANCE_DUE_SOON, "Mantenimiento por vencer",
                 "Un plan asignado a un vehículo entra en la anticipación configurada.", Audience.CONFIGURABLE, null, Lead.DAYS_AND_KM);
         add(NotificationType.MAINTENANCE_OVERDUE, "Mantenimiento vencido",
@@ -89,12 +99,20 @@ public final class NotificationCatalog {
                 "Se cancela una orden de trabajo que tenía un técnico.", Audience.OWNER, "El técnico que la tenía", Lead.NONE);
         add(NotificationType.TRIP_OPEN_REMINDER, "Recordatorio de viaje abierto",
                 "El chofer no hizo el post-viaje y el viaje sigue abierto.", Audience.OWNER, "El chofer que abrió el viaje", Lead.NONE);
+        add(NotificationType.SCHEDULED_MAINTENANCE_UPCOMING, "Turno de taller",
+                "El vehículo que el chofer tiene en viaje tiene turno de taller hoy o mañana. Una sola vez por turno, "
+                        + "y de nuevo si se reprograma.",
+                Audience.OWNER, "El chofer que tiene el vehículo en viaje", Lead.NONE);
         add(NotificationType.VEHICLE_UNAVAILABLE, "Vehículo no disponible",
                 "Vence un documento de un vehículo que un chofer tiene en viaje.", Audience.OWNER,
                 "El chofer que tiene el vehículo en viaje", Lead.NONE);
         add(NotificationType.VEHICLE_AVAILABLE, "Vehículo disponible de nuevo",
                 "El vehículo deja de estar no disponible: se resolvió el defecto bloqueante o se renovó el documento.",
                 Audience.OWNER, "Los choferes que reportaron el defecto o a los que se avisó del bloqueo", Lead.NONE);
+        add(NotificationType.DEFECT_RESOLVED, "Defecto resuelto",
+                "Se finaliza la orden de trabajo de un defecto. Si con eso el vehículo vuelve a estar disponible, "
+                        + "se manda solo \"Vehículo disponible de nuevo\".",
+                Audience.OWNER, "El chofer que reportó el defecto", Lead.NONE);
     }
 
     private NotificationCatalog() {
@@ -123,12 +141,16 @@ public final class NotificationCatalog {
 
     private static int order(NotificationType type) {
         return List.of(NotificationType.BLOCKING_DEFECT_REPORTED, NotificationType.RECURRING_DEFECT,
-                NotificationType.TRIP_KM_ANOMALY, NotificationType.FUEL_CONSUMPTION_ANOMALY, NotificationType.TIRE_PROBLEM_REPORTED,
-                NotificationType.WORK_ORDER_FINALIZED,
+                NotificationType.DEFECT_UNATTENDED,
+                NotificationType.TRIP_KM_ANOMALY, NotificationType.TRIP_STARTED_WITH_MAINTENANCE,
+                NotificationType.FUEL_CONSUMPTION_ANOMALY, NotificationType.TIRE_PROBLEM_REPORTED,
+                NotificationType.WORK_ORDER_FINALIZED, NotificationType.WORK_ORDER_COMMENT,
                 NotificationType.MAINTENANCE_DUE_SOON, NotificationType.MAINTENANCE_OVERDUE,
                 NotificationType.DOCUMENT_DUE_SOON, NotificationType.DOCUMENT_EXPIRED,
                 NotificationType.WORK_ORDER_ASSIGNED, NotificationType.WORK_ORDER_UNASSIGNED,
                 NotificationType.WORK_ORDER_CANCELLED, NotificationType.TRIP_OPEN_REMINDER,
-                NotificationType.VEHICLE_UNAVAILABLE, NotificationType.VEHICLE_AVAILABLE).indexOf(type);
+                NotificationType.SCHEDULED_MAINTENANCE_UPCOMING,
+                NotificationType.VEHICLE_UNAVAILABLE, NotificationType.VEHICLE_AVAILABLE,
+                NotificationType.DEFECT_RESOLVED).indexOf(type);
     }
 }

@@ -17,13 +17,43 @@ reparten, dónde se guardan, cómo los lee cada usuario y la campanita del heade
 |---|---|---|---|
 | `blocking_defect_reported` | CAM-97 | Configurable (por defecto, admins) | `/vehiculos/{id}` |
 | `recurring_defect` | CAM-135 | Configurable (por defecto, admins) | `/vehiculos/{id}` |
+| `defect_unattended` | CAM-142 | Configurable (por defecto, admins). Uno por vehículo, una vez por defecto | `/vehiculos/{id}` |
+| `trip_started_with_maintenance` | CAM-143 | Configurable (por defecto, admins). Al hacerse un pre-viaje sin bloqueante el día que el vehículo tiene turno de taller | `/vehiculos/{id}` |
 | `work_order_finalized` | CAM-98 | Configurable (por defecto, admins) | `/ordenes-trabajo/{id}` |
+| `work_order_comment` | CAM-149 | Si comenta el técnico, configurable (por defecto, admins), sin el autor. Si comenta el admin, el técnico asignado (si no hay, nadie) | `/ordenes-trabajo/{id}` |
 | `maintenance_due_soon`, `maintenance_overdue` | CAM-118 | Configurable (por defecto, admins) | `/vehiculos/{id}` |
 | `work_order_assigned`, `work_order_unassigned`, `work_order_cancelled` | CAM-99, CAM-100 | El técnico de la OT | `/` |
 | `trip_open_reminder` | CAM-101 | El chofer que abrió el viaje | `/` |
+| `scheduled_maintenance_upcoming` | CAM-143 | El chofer que tiene el vehículo en viaje, si tiene turno de taller hoy o mañana. Una vez por turno y fecha | `/` |
 | `document_due_soon`, `document_expired` | CAM-127 | Configurable (por defecto, admins) | `/vehiculos/{id}/documentacion` |
 | `vehicle_unavailable` | CAM-102 | El chofer que tiene el vehículo en viaje (solo si lo bloqueó un documento vencido) | `/inspeccion/{vehicleId}` |
 | `vehicle_available` | CAM-103 | Quienes reportaron los bloqueantes resueltos y a quienes se avisó del bloqueo | `/inspeccion/{vehicleId}` |
+| `defect_resolved` | CAM-141 | El chofer que reportó el defecto, al finalizarse su OT. No sale si era bloqueante y el vehículo volvió a estar disponible (ya le llega `vehicle_available`), ni en una segunda OT de un defecto ya resuelto | `/` |
+
+**`defect_resolved` (CAM-141).** El texto es "AF102ZT: se resolvió «Luz de freno». Lámpara
+reemplazada.", con la descripción de cierre de la OT. Si el `driverId` de la inspección no es un
+UUID (los de antes de CAM-85) o el usuario ya no existe, no se avisa y la OT se finaliza igual.
+Si el admin apaga `vehicle_available` y deja prendido este, al resolverse el único bloqueante el
+chofer no recibe ninguno de los dos: se eligió así a propósito, a confirmar con el equipo.
+
+**`scheduled_maintenance_upcoming` y `trip_started_with_maintenance` (CAM-143).** El primero sale
+de una tarea diaria (`ScheduledMaintenanceAlertService`, 08:15 de Argentina) que revisa los turnos
+`scheduled` de hoy que todavía no pasaron y los de mañana. Le llega solo al chofer que tiene el
+vehículo en viaje: si nadie lo tiene, no sale, y el chofer que lo elija ve la marca en la lista y
+la advertencia del pre-viaje. Cada turno se avisa una vez por fecha (`scheduled_maintenance_alerts`,
+con `schedule_id` y `scheduled_at`): si se reprograma, se avisa de nuevo. El texto es "AB123CD tiene
+turno de taller mañana 13/11 a las 15:00: «Cambio de aceite». Tenelo en cuenta para volver a
+tiempo.". El segundo sale después del commit de un pre-viaje sin bloqueante, si ese día (en hora
+argentina, el de la hora del pre-viaje) el vehículo tiene un turno programado: "carlos.gomez salió
+con AB123CD a las 10:20, y tiene turno de taller hoy a las 15:00: «Cambio de aceite».". El turno no
+bloquea la salida.
+
+**`work_order_comment` (CAM-149).** El texto es "javier.romero en Cambio de pastillas (AB123CD):
+«¿Lo reparo o lo cambio?»", con el comentario en una sola línea y cortado a 140 caracteres. Se configura
+como los configurables (activo, canales, destinatarios), y la misma configuración rige el aviso al técnico:
+apagarlo apaga los dos. Nadie recibe aviso por su propio comentario, aunque esté entre los destinatarios
+elegidos (`notifyConfiguredRecipientsExcept`). El link lleva a la OT: en el admin abre su detalle por la URL;
+en el técnico, que no tiene rutas, la campanita abre la OT en su vista (`TechnicianShell`).
 
 Cómo se configura cada uno (activo, canales, destinatarios): ver
 `CAM-117-118-notification-settings-contract.md`.
