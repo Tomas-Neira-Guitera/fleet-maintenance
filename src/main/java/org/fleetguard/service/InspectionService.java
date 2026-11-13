@@ -35,6 +35,7 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -42,6 +43,9 @@ import java.util.stream.Collectors;
 /** Caso de uso central de CAM-11: POST /api/inspections/{vehicleId}. Ver CAM-11-dvir-contract.md secciones 4 y 5. */
 @Service
 public class InspectionService {
+
+    // CAM-157: el control del checklist base al que van las cubiertas con problemas.
+    static final String TIRES_ITEM_ID = "ext-neumaticos";
 
     // CAM-153: margen para un reloj del celular apenas adelantado; más que esto es un error.
     static final Duration MAX_CLOCK_SKEW = Duration.ofMinutes(5);
@@ -123,10 +127,11 @@ public class InspectionService {
         List<ChecklistAnswerDto> answers = submission.answers() == null ? List.of() : submission.answers();
         List<ChecklistItemDef> checklist = checklistService.resolve(vehicleId, type);
         InspectionValidator.ValidationOutcome outcome = validator.validate(type, checklist, answers);
-        // CAM-157: el dibujo de las cubiertas va solo en el pre-viaje; en el post-viaje se ignora.
-        List<TireService.Reading> treads = type == InspectionType.PRE_TRIP
-                ? tireService.validateInspectionReadings(vehicle, submission.treadReadings())
-                : List.of();
+        // CAM-157: qué cubiertas tienen problemas, solo si "Neumáticos" va en defecto.
+        boolean tiresInDefect = outcome.recognizedAnswers().stream().anyMatch(a -> TIRES_ITEM_ID.equals(a.itemId())
+                && CheckOutcome.fromJson(a.outcome()) == CheckOutcome.DEFECT && a.defect() != null);
+        List<TireService.ConditionReport> tireReports =
+                tireService.validateInspectionConditions(vehicle, submission.tireConditions(), tiresInDefect);
         String trailerIdRaw = type == InspectionType.PRE_TRIP ? submission.trailerId() : null;
         Optional<Vehicle> trailer = couplingService.resolveInspectionTrailer(vehicle, trailerIdRaw);
         Map<String, String> labelById = checklist.stream()
@@ -161,6 +166,11 @@ public class InspectionService {
             if (checkOutcome == CheckOutcome.DEFECT && answerDto.defect() != null) {
                 DefectSeverity severity = DefectSeverity.fromJson(answerDto.defect().severity());
                 String defectDetails = answerDto.defect().details();
+                if (TIRES_ITEM_ID.equals(answerDto.itemId()) && !tireReports.isEmpty()) {
+                    String summary = tireService.summary(vehicle, tireReports);
+                    defectDetails = defectDetails == null || defectDetails.isBlank() ? summary
+                            : defectDetails.trim() + "\n\n" + summary;
+                }
                 Defect defect = new Defect(severity, answerDto.defect().description(),
                         defectDetails == null || defectDetails.isBlank() ? null : defectDetails.trim(),
                         answerDto.defect().photoUrl(), now);
@@ -169,7 +179,12 @@ public class InspectionService {
         }
 
         inspectionRepository.save(inspection);
-        tireService.recordInspectionReadings(vehicle, treads, now, driver, inspection.getId());
+        Defect tiresDefect = inspection.getAnswers().stream()
+                .filter(answer -> TIRES_ITEM_ID.equals(answer.getItemId()))
+                .map(InspectionAnswer::getDefect)
+                .filter(Objects::nonNull)
+                .findFirst().orElse(null);
+        tireService.recordInspectionConditions(vehicle, tireReports, now, driver, inspection.getId(), tiresDefect);
         couplingService.applyInspectionTrailer(vehicle, trailerIdRaw, trailer, driver.username());
 
         // CAM-97: el aviso sale después del commit (BlockingDefectNotificationListener).

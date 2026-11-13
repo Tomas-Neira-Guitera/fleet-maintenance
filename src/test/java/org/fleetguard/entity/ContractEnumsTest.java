@@ -111,7 +111,7 @@ class ContractEnumsTest {
                         Map.entry(NotificationType.VEHICLE_AVAILABLE, "vehicle_available"),
                         Map.entry(NotificationType.TRIP_KM_ANOMALY, "trip_km_anomaly"),
                         Map.entry(NotificationType.FUEL_CONSUMPTION_ANOMALY, "fuel_consumption_anomaly"),
-                        Map.entry(NotificationType.TIRE_TREAD_LOW, "tire_tread_low")));
+                        Map.entry(NotificationType.TIRE_PROBLEM_REPORTED, "tire_problem_reported")));
     }
 
     @Test

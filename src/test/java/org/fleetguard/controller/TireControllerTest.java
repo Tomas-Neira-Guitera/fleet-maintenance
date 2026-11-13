@@ -2,6 +2,7 @@ package org.fleetguard.controller;
 
 import org.fleetguard.dto.TireBrandComparisonDto;
 import org.fleetguard.dto.TirePositionDto;
+import org.fleetguard.dto.TirePositionsDto;
 import org.fleetguard.dto.VehicleTiresDto;
 import org.fleetguard.entity.Role;
 import org.fleetguard.exception.TireNotFoundException;
@@ -29,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TireControllerTest extends WebMvcTestBase {
 
     private static final VehicleTiresDto VEHICLE = new VehicleTiresDto("v-1", "AB123CD", "utilitario", 100000,
-            new BigDecimal("1.6"), List.of(new VehicleTiresDto.Position("e1-izq", "Delantera izquierda", 1, "izq", "simple",
+            List.of(new VehicleTiresDto.Position("e1-izq", "Delantera izquierda", 1, "izq", "simple",
             null)), List.of());
 
     @MockBean
@@ -70,13 +71,16 @@ class TireControllerTest extends WebMvcTestBase {
     }
 
     @Test
-    void elChoferSoloLeeLasPosicionesMontadas() throws Exception {
+    void elChoferSoloLeeLasPosiciones() throws Exception {
         String chofer = loginAs("chofer1", Role.CHOFER);
-        when(service.mountedPositions("v-1")).thenReturn(List.of(new TirePositionDto("e1-izq", "Delantera izquierda")));
+        when(service.positions("v-1")).thenReturn(new TirePositionsDto("utilitario",
+                List.of(new TirePositionDto("e1-izq", "Delantera izquierda", 1, "izq", "simple", true))));
 
         mvc.perform(get("/vehicles/v-1/tire-positions").header(HttpHeaders.AUTHORIZATION, chofer))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[0].position").value("e1-izq"));
+                .andExpect(jsonPath("$.vehicleType").value("utilitario"))
+                .andExpect(jsonPath("$.positions[0].position").value("e1-izq"))
+                .andExpect(jsonPath("$.positions[0].mounted").value(true));
         mvc.perform(get("/vehicles/v-1/tires").header(HttpHeaders.AUTHORIZATION, chofer))
                 .andExpect(status().isForbidden());
         mvc.perform(get("/tires").header(HttpHeaders.AUTHORIZATION, loginAs("tecnico1", Role.TECNICO)))

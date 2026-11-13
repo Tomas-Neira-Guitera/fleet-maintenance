@@ -39,8 +39,6 @@ public class Tire {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal cost;
 
-    @Column(name = "initial_tread_mm", precision = 4, scale = 1)
-    private BigDecimal initialTreadMm;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -52,9 +50,6 @@ public class Tire {
     @Column(name = "retired_reason")
     private String retiredReason;
 
-    // Cuándo se avisó del dibujo bajo; se limpia con una medición buena o al sacarla. Un aviso por vez.
-    @Column(name = "tread_alerted_at")
-    private Instant treadAlertedAt;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -63,21 +58,19 @@ public class Tire {
         // JPA
     }
 
-    public Tire(String code, String brand, String model, String size, LocalDate purchaseDate, BigDecimal cost,
-                BigDecimal initialTreadMm) {
-        update(code, brand, model, size, purchaseDate, cost, initialTreadMm);
+    public Tire(String code, String brand, String model, String size, LocalDate purchaseDate, BigDecimal cost) {
+        update(code, brand, model, size, purchaseDate, cost);
         this.createdAt = Instant.now();
     }
 
     public final void update(String code, String brand, String model, String size, LocalDate purchaseDate,
-                             BigDecimal cost, BigDecimal initialTreadMm) {
+                             BigDecimal cost) {
         this.code = code;
         this.brand = brand;
         this.model = model;
         this.size = size;
         this.purchaseDate = purchaseDate;
         this.cost = cost;
-        this.initialTreadMm = initialTreadMm;
     }
 
     public void mount() {
@@ -86,19 +79,14 @@ public class Tire {
 
     public void toStock() {
         this.status = TireStatus.STOCK;
-        this.treadAlertedAt = null;
     }
 
     public void retire(Instant at, String reason) {
         this.status = TireStatus.RETIRED;
         this.retiredAt = at;
         this.retiredReason = reason;
-        this.treadAlertedAt = null;
     }
 
-    public void setTreadAlertedAt(Instant treadAlertedAt) {
-        this.treadAlertedAt = treadAlertedAt;
-    }
 
     public UUID getId() {
         return id;
@@ -128,9 +116,6 @@ public class Tire {
         return cost;
     }
 
-    public BigDecimal getInitialTreadMm() {
-        return initialTreadMm;
-    }
 
     public TireStatus getStatus() {
         return status;
@@ -144,9 +129,6 @@ public class Tire {
         return retiredReason;
     }
 
-    public Instant getTreadAlertedAt() {
-        return treadAlertedAt;
-    }
 
     public Instant getCreatedAt() {
         return createdAt;

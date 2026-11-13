@@ -1,4 +1,4 @@
-# CAM-157 — Neumáticos: cubiertas por posición, km recorridos, dibujo y rotación
+# CAM-157 — Neumáticos: cubiertas por posición, km recorridos, estado y rotación
 
 ## Qué cambia
 
@@ -6,14 +6,16 @@
 |---|---|
 | `/api/tires` (ADMIN) | Nuevo: alta, edición, baja y borrado de cubiertas, y su detalle |
 | `GET /api/tires/brand-comparison` (ADMIN) | Nuevo: costo por km por marca |
-| `/api/vehicles/{id}/tires`, `/tires/mount`, `/tires/unmount`, `/tires/rotate`, `/tire-treads` (ADMIN) | Nuevos: qué cubierta hay en cada posición, montar, sacar, rotar y medir |
+| `/api/vehicles/{id}/tires`, `/tires/mount`, `/tires/unmount`, `/tires/rotate` (ADMIN) | Nuevos: qué cubierta hay en cada posición, montar, sacar y rotar |
 | `vehicleType` (alta, edición, importación) | Pasa a ser un catálogo cerrado y obligatorio al crear: define ejes y cubiertas |
 | `/api/vehicles/{id}/coupling` (GET admin o chofer; PUT y DELETE admin) | Nuevo: enganche de un semirremolque o acoplado al que lo arrastra |
-| `GET /api/vehicles/{id}/tire-positions` (ADMIN o CHOFER) | Nuevo: posiciones montadas, para anotar el dibujo en el pre-viaje |
-| `POST /api/inspections/{vehicleId}` | Acepta `treadReadings` y `trailerId` opcionales en el pre-viaje; rechaza remolques |
+| `GET /api/vehicles/{id}/tire-positions` (ADMIN o CHOFER) | Nuevo: posiciones del vehículo, para marcar cubiertas con problemas en el pre-viaje |
+| `POST /api/inspections/{vehicleId}` | Acepta `tireConditions` (con Neumáticos en defecto) y `trailerId` (pre-viaje), opcionales; rechaza remolques |
+| `GET /api/vehicles` | Trae `coupledWith`: con quién está enganchado cada vehículo, para el listado de remolques |
 | `POST /api/fuel-loads` | Rechaza remolques (`409 VEHICLE_IS_TRAILER`) |
 | `trailer_couplings` | Tabla nueva |
-| Avisos | Tipo nuevo `tire_tread_low`, configurable, por defecto al admin (in-app y push) |
+| Avisos | Tipo nuevo `tire_problem_reported`, configurable, por defecto al admin (in-app y push) |
+| `tire_condition_reports` | Tabla nueva: lo que reportó el chofer de cada cubierta |
 
 ## 1. Tipo de vehículo, ejes y posiciones
 
@@ -47,8 +49,8 @@ remolque, "Eje n". La dual agrega "exterior"/"interior" ("Eje 3 derecha interior
 
 ## 2. Cubiertas
 
-`tires`: marca y medida obligatorias; código (número de serie o el que pinta el taller), modelo y dibujo
-inicial opcionales; fecha de compra (no futura) y costo. El código no se repite (`409 DUPLICATE_TIRE_CODE`).
+`tires`: marca y medida obligatorias; código (número de serie o el que pinta el taller) y modelo
+opcionales; fecha de compra (no futura) y costo. El código no se repite (`409 DUPLICATE_TIRE_CODE`).
 
 Estado: `stock` (sin montar), `mounted` o `retired` (dada de baja, con fecha y motivo opcional).
 - Una montada no se da de baja con `POST /api/tires/{id}/retire` (`409 TIRE_MOUNTED`): se saca del
@@ -79,30 +81,34 @@ sumando en la nueva posición sin lógica aparte. El **auxilio no suma km**: mie
 
 El km del vehículo es el de CAM-90 (nunca baja), así que un montaje nunca resta.
 
-## 5. Dibujo
+## 5. Estado de las cubiertas (relevamiento visual)
 
-- En el **pre-viaje**, el chofer puede anotar la profundidad de cada cubierta montada:
-  `treadReadings: [{ position, depthMm }]`, opcional. Las posiciones salen de
-  `GET /vehicles/{id}/tire-positions` (las que ruedan y tienen cubierta). Una posición sin cubierta o
-  repetida, o un valor fuera de 0–30 mm o con más de un decimal, da `422` con
-  `details[].itemId = "treadReadings[i].position"` o `".depthMm"`, y la inspección no se guarda. En el
-  post-viaje se ignora. Viaja con la inspección, así que también sale de la cola sin conexión (CAM-153) con
-  la hora en que se hizo.
-- El admin también puede cargar mediciones (`POST /vehicles/{id}/tire-treads` con `{ readings: [...] }`).
-- **Aviso**: una medición por debajo del mínimo avisa a los destinatarios de `tire_tread_low` (link a
-  `/vehiculos/{id}/neumaticos`). Una sola vez por cubierta: se vuelve a avisar recién después de una
-  medición buena o de sacarla del vehículo. No bloquea el vehículo. El mínimo se configura:
+Al principio se medía la profundidad del dibujo en mm, pero el chofer no anda con un medidor. Se reemplazó por
+lo que se ve a simple vista; no hay mediciones en mm en ningún lado.
 
-```yaml
-fleetguard:
-  tires:
-    min-tread-mm: 1.6
-```
+- Estados (`TireCondition`, del más grave al más leve): `se-ve-la-tela`, `bulto`, `corte-flanco`,
+  `pinchada`, `baja-presion`, `desgaste-irregular`, `poco-dibujo`. Se pueden marcar varios por cubierta.
+- En la **inspección**, solo si el control "Neumáticos" (`ext-neumaticos`) va en defecto:
+  `tireConditions: [{ position, conditions: [...] }]`, opcional. Las posiciones salen de
+  `GET /vehicles/{id}/tire-positions`: todas las del tipo, auxilio incluido, con `mounted`; solo se reportan
+  las que tienen cubierta. Errores (`422`, la inspección no se guarda):
+  - `tireConditions` sin "Neumáticos" en defecto: `itemId = "tireConditions"`.
+  - Posición sin cubierta o repetida: `"tireConditions[i].position"`.
+  - Sin estados, o con uno desconocido: `"tireConditions[i].conditions"`.
 
-1,6 mm es el mínimo legal en Argentina para autos; para camiones conviene subirlo.
-
-Ejemplo: "La cubierta Michelin X Multi N° 1234 (Delantera izquierda) de AB123CD tiene 1,4 mm de dibujo,
-menos del mínimo de 1,6 mm. Lo midió chofer1."
+  Viaja con la inspección, así que también sale de la cola sin conexión (CAM-153).
+- **Va con el defecto, no aparte**:
+  - El resumen se suma al detalle del defecto de Neumáticos ("Cubiertas: Trasera derecha exterior: se ve la
+    tela o el alambre."). Así entra al circuito de siempre: defecto → programación → OT.
+  - La severidad la elige el chofer, como en cualquier defecto.
+- `tire_condition_reports` guarda cada cubierta reportada, con su defecto. El reporte **vale** mientras el
+  defecto esté abierto y la cubierta montada. Si se resuelve el defecto (al finalizar la OT) o se saca la
+  cubierta, deja de valer y queda en el historial de la cubierta.
+- `Tire.condition` es el último reporte que vale (null si no hay). En la vista de arriba del admin, la cubierta
+  se pinta según su `severity` (bloqueante o no). `GET /api/tires/{id}` trae todos los `reports`.
+- **Aviso** `tire_problem_reported`: uno por inspección, a los destinatarios configurados, con link a
+  `/vehiculos/{id}/neumaticos`. Ejemplo: "chofer1 reportó en AB123CD: Trasera derecha exterior (Michelin
+  X Multi D N° 1234): se ve la tela o el alambre, poco dibujo."
 
 ## 6. Costo por km por marca
 
@@ -130,18 +136,16 @@ app (`409 VEHICLE_IS_TRAILER`) ni cargan combustible (ídem).
 
 ## 8. Base de datos ya creada
 
-`ddl-auto: update` crea las tablas y columnas nuevas, pero no actualiza los `CHECK` de los enums. Con
-datos de una versión anterior de esta rama (posiciones `del-*`/`tras-*` y `tire_layout`):
+`ddl-auto: update` crea las tablas y columnas nuevas, pero no actualiza los `CHECK` de los enums ni borra lo
+que ya no se usa. Con datos de versiones anteriores de esta rama (posiciones `del-*`/`tras-*`, `tire_layout` y
+la medición del dibujo):
 
 ```sql
 ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
 ALTER TABLE notification_settings DROP CONSTRAINT IF EXISTS notification_settings_type_check;
 ALTER TABLE tire_mountings DROP CONSTRAINT IF EXISTS tire_mountings_position_check;
-ALTER TABLE tire_tread_readings DROP CONSTRAINT IF EXISTS tire_tread_readings_position_check;
 
 UPDATE tire_mountings SET position = CASE position WHEN 'DEL_IZQ' THEN 'E1_IZQ' WHEN 'DEL_DER' THEN 'E1_DER'
-  WHEN 'TRAS_IZQ' THEN 'E2_IZQ' WHEN 'TRAS_DER' THEN 'E2_DER' ELSE position END;
-UPDATE tire_tread_readings SET position = CASE position WHEN 'DEL_IZQ' THEN 'E1_IZQ' WHEN 'DEL_DER' THEN 'E1_DER'
   WHEN 'TRAS_IZQ' THEN 'E2_IZQ' WHEN 'TRAS_DER' THEN 'E2_DER' ELSE position END;
 
 -- El tipo sale de la configuración que tenía; los demás se eligen desde la pantalla de edición.
@@ -149,6 +153,13 @@ UPDATE vehicles SET vehicle_type = CASE tire_layout WHEN 'CUATRO_RUEDAS' THEN 'u
   WHEN 'SEIS_RUEDAS' THEN 'camion_4x2' WHEN 'DIEZ_RUEDAS' THEN 'camion_6x4' END
   WHERE tire_layout IS NOT NULL;
 ALTER TABLE vehicles DROP COLUMN IF EXISTS tire_layout;
+
+-- La medición del dibujo se reemplazó por el estado visual: un tipo de aviso que ya no existe rompe la lectura.
+DELETE FROM notifications WHERE type = 'TIRE_TREAD_LOW';
+DELETE FROM notification_settings WHERE type = 'TIRE_TREAD_LOW';
+DROP TABLE IF EXISTS tire_tread_readings;
+ALTER TABLE tires DROP COLUMN IF EXISTS initial_tread_mm;
+ALTER TABLE tires DROP COLUMN IF EXISTS tread_alerted_at;
 ```
 
 El `vehicle_type` de texto libre anterior no hace falta migrarlo: se lee con los alias (`furgon` →
@@ -160,6 +171,6 @@ demo (`docs/db/seed-demo.sql`) ya hace todo esto.
 - El costo de las cubiertas en Gastos: una cubierta en stock todavía no es gasto de ningún vehículo.
 - Recapados y cubiertas compradas usadas (con km previos).
 - Pasar una cubierta de un vehículo a otro en un solo paso (se saca al stock y se monta en el otro).
-- Presión de inflado.
+- Presión de inflado medida (solo "baja presión o desinflada" a simple vista) y profundidad del dibujo en mm.
 - Tipos con más ejes (bitrén, 8x4) o ruedas superanchas (single wide) en lugar de duales.
 - El chofer no ve ni engancha remolques fuera del pre-viaje; el admin sí.

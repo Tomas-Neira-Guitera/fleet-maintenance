@@ -7,23 +7,24 @@ import org.fleetguard.dto.RotateTiresRequest;
 import org.fleetguard.dto.TireBrandComparisonDto;
 import org.fleetguard.dto.TireDto;
 import org.fleetguard.dto.TireRequest;
-import org.fleetguard.dto.TreadReadingInput;
-import org.fleetguard.dto.TreadReadingsRequest;
+import org.fleetguard.dto.TireConditionInput;
 import org.fleetguard.dto.UnmountTireRequest;
 import org.fleetguard.dto.VehicleTiresDto;
 import org.fleetguard.entity.Role;
 import org.fleetguard.entity.Tire;
 import org.fleetguard.entity.TireMounting;
-import org.fleetguard.entity.TireTreadReading;
+import org.fleetguard.entity.Defect;
+import org.fleetguard.entity.DefectSeverity;
+import org.fleetguard.entity.TireConditionReport;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleType;
-import org.fleetguard.event.TireTreadLowEvent;
+import org.fleetguard.event.TireProblemReportedEvent;
 import org.fleetguard.exception.InspectionValidationException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.exception.VehicleValidationException;
 import org.fleetguard.repository.TireMountingRepository;
 import org.fleetguard.repository.TireRepository;
-import org.fleetguard.repository.TireTreadReadingRepository;
+import org.fleetguard.repository.TireConditionReportRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -73,15 +75,15 @@ class TireServiceTest {
 
     private final TireRepository tireRepository = mock(TireRepository.class);
     private final TireMountingRepository mountingRepository = mock(TireMountingRepository.class);
-    private final TireTreadReadingRepository readingRepository = mock(TireTreadReadingRepository.class);
+    private final TireConditionReportRepository reportRepository = mock(TireConditionReportRepository.class);
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final List<Object> events = new ArrayList<>();
-    private final TireService service = new TireService(tireRepository, mountingRepository, readingRepository,
-            vehicleRepository, events::add, new StepClock(), 1.6);
+    private final TireService service = new TireService(tireRepository, mountingRepository, reportRepository,
+            vehicleRepository, events::add, new StepClock());
 
     private final List<Tire> tires = new ArrayList<>();
     private final List<TireMounting> mountings = new ArrayList<>();
-    private final List<TireTreadReading> readings = new ArrayList<>();
+    private final List<TireConditionReport> reports = new ArrayList<>();
     private final AuthenticatedUser driver = new AuthenticatedUser(UUID.randomUUID(), "chofer1", Role.CHOFER);
     private Vehicle truck;
 
@@ -132,17 +134,19 @@ class TireServiceTest {
         when(mountingRepository.existsByTire_Id(any())).thenAnswer(inv -> mountings.stream()
                 .anyMatch(m -> m.getTire().getId().equals(inv.getArgument(0))));
 
-        when(readingRepository.save(any(TireTreadReading.class))).thenAnswer(inv -> {
-            TireTreadReading reading = inv.getArgument(0);
-            setId(reading);
-            readings.add(0, reading);
-            return reading;
+        when(reportRepository.save(any(TireConditionReport.class))).thenAnswer(inv -> {
+            TireConditionReport report = inv.getArgument(0);
+            setId(report);
+            reports.add(0, report);
+            return report;
         });
-        when(readingRepository.findAllByOrderByMeasuredAtDesc()).thenAnswer(inv -> List.copyOf(readings));
+        when(reportRepository.findAllWithTireAndDefect()).thenAnswer(inv -> List.copyOf(reports));
+        when(reportRepository.findByTireWithDefect(any())).thenAnswer(inv -> reports.stream()
+                .filter(r -> r.getTire().getId().equals(inv.getArgument(0))).toList());
     }
 
     private TireDto tire(String brand, String cost) {
-        return service.create(new TireRequest(null, brand, null, "295/80 R22.5", "2026-10-01", new BigDecimal(cost), null));
+        return service.create(new TireRequest(null, brand, null, "295/80 R22.5", "2026-10-01", new BigDecimal(cost)));
     }
 
     private VehicleTiresDto mount(TireDto tire, String position) {
@@ -255,59 +259,75 @@ class TireServiceTest {
         assertThrows(VehicleValidationException.class, () -> mount(tire, "e2-izq-int"));
     }
 
-    @Test
-    void unDibujoPorDebajoDelMinimoAvisaUnaSolaVezHastaQueSeMideBien() {
-        type(VehicleType.UTILITARIO);
-        TireDto tire = tire("Fate", "80000");
-        mount(tire, "e1-izq");
-        String vehicleId = truck.getId().toString();
-
-        service.recordAdminReadings(vehicleId, new TreadReadingsRequest(
-                List.of(new TreadReadingInput("e1-izq", new BigDecimal("1.4")))), null);
-        service.recordAdminReadings(vehicleId, new TreadReadingsRequest(
-                List.of(new TreadReadingInput("e1-izq", new BigDecimal("1.3")))), null);
-
-        assertEquals(1, events.size());
-        TireTreadLowEvent event = (TireTreadLowEvent) events.get(0);
-        assertEquals("Delantera izquierda", event.positionLabel());
-        assertEquals(new BigDecimal("1.4"), event.depthMm());
-        assertTrue(service.get(tire.id()).tire().lastTread().belowMinimum());
-
-        service.recordAdminReadings(vehicleId, new TreadReadingsRequest(
-                List.of(new TreadReadingInput("e1-izq", new BigDecimal("8.0")))), null);
-        service.recordAdminReadings(vehicleId, new TreadReadingsRequest(
-                List.of(new TreadReadingInput("e1-izq", new BigDecimal("1.5")))), null);
-        assertEquals(2, events.size());
+    private static TireConditionInput report(String position, String... conditions) {
+        return new TireConditionInput(position, List.of(conditions));
     }
 
     @Test
-    void elDibujoDelPreViajeSeValidaContraLasCubiertasMontadas() {
+    void lasCubiertasConProblemasSeValidanContraLasMontadas() {
         type(VehicleType.UTILITARIO);
         mount(tire("Fate", "80000"), "e1-izq");
+        mount(tire("Fate", "80000"), "e1-der");
 
         InspectionValidationException ex = assertThrows(InspectionValidationException.class,
-                () -> service.validateInspectionReadings(truck, List.of(
-                        new TreadReadingInput("e1-der", new BigDecimal("5")),
-                        new TreadReadingInput("e1-izq", new BigDecimal("5.55")))));
-        assertEquals(List.of("treadReadings[0].position", "treadReadings[1].depthMm"),
+                () -> service.validateInspectionConditions(truck, List.of(report("e2-der", "pinchada"),
+                        report("e1-izq", "volcada"), report("e1-der"), report("e1-izq", "pinchada")), true));
+        assertEquals(List.of("tireConditions[0].position", "tireConditions[1].conditions",
+                        "tireConditions[2].conditions", "tireConditions[3].position"),
                 ex.getDetails().stream().map(d -> d.itemId()).toList());
 
-        List<TireService.Reading> valid = service.validateInspectionReadings(truck,
-                List.of(new TreadReadingInput("e1-izq", new BigDecimal("1.0"))));
-        service.recordInspectionReadings(truck, valid, Instant.parse("2026-11-02T08:00:00Z"), driver, UUID.randomUUID());
-        assertEquals("chofer1", readings.get(0).getMeasuredByName());
-        assertEquals("chofer1", ((TireTreadLowEvent) events.get(0)).measuredBy());
-        assertTrue(service.validateInspectionReadings(truck, null).isEmpty());
+        // Sin "Neumáticos" en defecto no se aceptan; sin cubiertas marcadas, vale.
+        assertEquals("tireConditions", assertThrows(InspectionValidationException.class,
+                () -> service.validateInspectionConditions(truck, List.of(report("e1-izq", "pinchada")), false))
+                .getDetails().get(0).itemId());
+        assertTrue(service.validateInspectionConditions(truck, null, true).isEmpty());
     }
 
     @Test
-    void elChoferVeLasPosicionesQueRuedanYTienenCubierta() {
+    void elReporteQuedaEnLaCubiertaMientrasElDefectoSigaAbiertoYAvisa() throws Exception {
+        type(VehicleType.CAMION_4X2);
+        TireDto rear = tire("Michelin", "500000");
+        mount(rear, "e2-der-ext");
+        List<TireService.ConditionReport> valid = service.validateInspectionConditions(truck,
+                List.of(report("e2-der-ext", "se-ve-la-tela", "poco-dibujo")), true);
+        assertEquals("Cubiertas: Trasera derecha exterior: se ve la tela o el alambre, poco dibujo.",
+                service.summary(truck, valid));
+
+        Defect defect = new Defect(DefectSeverity.BLOCKING, "Neumático trasero", null, Instant.now());
+        setId(defect);
+        service.recordInspectionConditions(truck, valid, Instant.parse("2026-11-02T08:00:00Z"), driver,
+                UUID.randomUUID(), defect);
+
+        TireProblemReportedEvent event = (TireProblemReportedEvent) events.get(0);
+        assertEquals("chofer1", event.reportedBy());
+        assertEquals(List.of("Trasera derecha exterior (Michelin): se ve la tela o el alambre, poco dibujo"), event.tires());
+        var condition = service.get(rear.id()).tire().condition();
+        assertEquals(List.of("se-ve-la-tela", "poco-dibujo"), condition.conditions());
+        assertEquals("blocking", condition.severity());
+        assertEquals("chofer1", condition.reportedBy());
+        assertEquals("Trasera derecha exterior", at(service.vehicleTires(truck.getId().toString()), "e2-der-ext")
+                .tire().condition().positionLabel());
+
+        // Resuelto el defecto, la cubierta vuelve a estar sin problemas; el reporte queda en su historial.
+        defect.resolve(Instant.now());
+        assertNull(service.get(rear.id()).tire().condition());
+        assertFalse(service.get(rear.id()).reports().get(0).active());
+    }
+
+    @Test
+    void elChoferVeTodasLasPosicionesYCualesTienenCubierta() {
         type(VehicleType.UTILITARIO);
         mount(tire("Fate", "80000"), "e1-izq");
         mount(tire("Fate", "80000"), "auxilio");
 
-        assertEquals(List.of("e1-izq"), service.mountedPositions(truck.getId().toString()).stream()
-                .map(p -> p.position()).toList());
+        var positions = service.positions(truck.getId().toString());
+        assertEquals("utilitario", positions.vehicleType());
+        assertEquals(List.of("e1-izq", "e1-der", "e2-izq", "e2-der", "auxilio"),
+                positions.positions().stream().map(p -> p.position()).toList());
+        assertEquals(List.of(true, false, false, false, true),
+                positions.positions().stream().map(p -> p.mounted()).toList());
+        type(VehicleType.ACOPLADO);
+        assertTrue(service.positions(truck.getId().toString()).positions().isEmpty());
     }
 
     @Test
@@ -348,8 +368,8 @@ class TireServiceTest {
     @Test
     void validaLosDatosDeLaCubierta() {
         VehicleValidationException ex = assertThrows(VehicleValidationException.class, () -> service.create(
-                new TireRequest(null, " ", null, null, "2030-01-01", BigDecimal.ZERO, new BigDecimal("40"))));
-        assertEquals(List.of("brand", "size", "purchaseDate", "cost", "initialTreadMm"),
+                new TireRequest(null, " ", null, null, "2030-01-01", BigDecimal.ZERO)));
+        assertEquals(List.of("brand", "size", "purchaseDate", "cost"),
                 ex.getDetails().stream().map(d -> d.field()).toList());
     }
 }

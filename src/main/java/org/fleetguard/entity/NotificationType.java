@@ -19,7 +19,7 @@ public enum NotificationType {
     VEHICLE_AVAILABLE("vehicle_available"),
     TRIP_KM_ANOMALY("trip_km_anomaly"),
     FUEL_CONSUMPTION_ANOMALY("fuel_consumption_anomaly"),
-    TIRE_TREAD_LOW("tire_tread_low");
+    TIRE_PROBLEM_REPORTED("tire_problem_reported");
 
     private final String json;
 

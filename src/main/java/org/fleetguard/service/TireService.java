@@ -9,21 +9,25 @@ import org.fleetguard.dto.TireBrandComparisonDto;
 import org.fleetguard.dto.TireDetailDto;
 import org.fleetguard.dto.TireDto;
 import org.fleetguard.dto.TireMountingDto;
+import org.fleetguard.dto.TireConditionInput;
+import org.fleetguard.dto.TireConditionReportDto;
 import org.fleetguard.dto.TirePositionDto;
+import org.fleetguard.dto.TirePositionsDto;
 import org.fleetguard.dto.TireRequest;
-import org.fleetguard.dto.TreadReadingInput;
-import org.fleetguard.dto.TreadReadingsRequest;
 import org.fleetguard.dto.UnmountTireRequest;
 import org.fleetguard.dto.ValidationErrorDetail;
 import org.fleetguard.dto.VehicleTiresDto;
+import org.fleetguard.entity.Defect;
+import org.fleetguard.entity.DefectSeverity;
 import org.fleetguard.entity.Tire;
+import org.fleetguard.entity.TireCondition;
+import org.fleetguard.entity.TireConditionReport;
 import org.fleetguard.entity.TireMounting;
 import org.fleetguard.entity.TirePosition;
 import org.fleetguard.entity.TireStatus;
-import org.fleetguard.entity.TireTreadReading;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleType;
-import org.fleetguard.event.TireTreadLowEvent;
+import org.fleetguard.event.TireProblemReportedEvent;
 import org.fleetguard.exception.InspectionValidationException;
 import org.fleetguard.exception.TireNotFoundException;
 import org.fleetguard.exception.VehicleNotFoundException;
@@ -31,9 +35,8 @@ import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.exception.VehicleValidationException;
 import org.fleetguard.repository.TireMountingRepository;
 import org.fleetguard.repository.TireRepository;
-import org.fleetguard.repository.TireTreadReadingRepository;
+import org.fleetguard.repository.TireConditionReportRepository;
 import org.fleetguard.repository.VehicleRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,7 +61,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * CAM-157: cubiertas, dónde está montada cada una, sus km y su dibujo. Ver docs/api/CAM-157-tires-contract.md.
+ * CAM-157: cubiertas, dónde está montada cada una, sus km y los problemas que reportan los choferes. Ver docs/api/CAM-157-tires-contract.md.
  * Los km de una cubierta salen de sus montajes y del odómetro de cada vehículo: rotarla cierra un montaje y
  * abre otro, así que sigue sumando sin lógica aparte.
  */
@@ -67,29 +70,25 @@ public class TireService {
 
     private static final ZoneId FLEET_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
     static final BigDecimal MAX_COST = new BigDecimal("9999999999.99");
-    static final BigDecimal MAX_TREAD_MM = new BigDecimal("30");
     // Para comparar marcas: una cubierta con pocos km todavía da un costo por km engañoso.
     static final long COMPARISON_MIN_KM = 1000;
 
     private final TireRepository tireRepository;
     private final TireMountingRepository mountingRepository;
-    private final TireTreadReadingRepository readingRepository;
+    private final TireConditionReportRepository reportRepository;
     private final VehicleRepository vehicleRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
-    private final BigDecimal minTreadMm;
 
     public TireService(TireRepository tireRepository, TireMountingRepository mountingRepository,
-                       TireTreadReadingRepository readingRepository, VehicleRepository vehicleRepository,
-                       ApplicationEventPublisher eventPublisher, Clock clock,
-                       @Value("${fleetguard.tires.min-tread-mm:1.6}") double minTreadMm) {
+                       TireConditionReportRepository reportRepository, VehicleRepository vehicleRepository,
+                       ApplicationEventPublisher eventPublisher, Clock clock) {
         this.tireRepository = tireRepository;
         this.mountingRepository = mountingRepository;
-        this.readingRepository = readingRepository;
+        this.reportRepository = reportRepository;
         this.vehicleRepository = vehicleRepository;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
-        this.minTreadMm = BigDecimal.valueOf(minTreadMm).setScale(1, RoundingMode.HALF_UP);
     }
 
     // ---------------------------------------------------------------- cubiertas
@@ -115,10 +114,10 @@ public class TireService {
                 .sorted(Comparator.comparing(TireMounting::getMountedAt).reversed())
                 .map(this::toMountingDto)
                 .toList();
-        List<TireDto.Tread> treads = readingRepository.findByTire_IdOrderByMeasuredAtDesc(tire.getId()).stream()
-                .map(this::toTread)
+        List<TireConditionReportDto> reports = reportRepository.findByTireWithDefect(tire.getId()).stream()
+                .map(TireService::toReportDto)
                 .toList();
-        return new TireDetailDto(snapshot.toDto(tire), mountings, treads);
+        return new TireDetailDto(snapshot.toDto(tire), mountings, reports);
     }
 
     @Transactional
@@ -128,7 +127,7 @@ public class TireService {
             throw duplicateCode(valid.code());
         }
         Tire tire = tireRepository.save(new Tire(valid.code(), valid.brand(), valid.model(), valid.size(),
-                valid.purchaseDate(), valid.cost(), valid.initialTreadMm()));
+                valid.purchaseDate(), valid.cost()));
         return snapshot().toDto(tire);
     }
 
@@ -139,8 +138,7 @@ public class TireService {
         if (valid.code() != null && tireRepository.existsByCodeIgnoreCaseAndIdNot(valid.code(), tire.getId())) {
             throw duplicateCode(valid.code());
         }
-        tire.update(valid.code(), valid.brand(), valid.model(), valid.size(), valid.purchaseDate(), valid.cost(),
-                valid.initialTreadMm());
+        tire.update(valid.code(), valid.brand(), valid.model(), valid.size(), valid.purchaseDate(), valid.cost());
         return snapshot().toDto(tireRepository.save(tire));
     }
 
@@ -243,69 +241,110 @@ public class TireService {
         return toVehicleDto(vehicle);
     }
 
-    /** Para el pre-viaje del chofer: las posiciones que ruedan y tienen cubierta. */
+    /** Para el pre-viaje del chofer: el dibujo del vehículo; solo se pueden marcar las posiciones con cubierta. */
     @Transactional(readOnly = true)
-    public List<TirePositionDto> mountedPositions(String vehicleId) {
+    public TirePositionsDto positions(String vehicleId) {
         Vehicle vehicle = findVehicle(vehicleId);
-        if (vehicle.getVehicleType() == null || vehicle.getVehicleType().isTrailer()) {
-            return List.of();
+        VehicleType type = vehicle.getVehicleType();
+        if (type == null || type.isTrailer()) {
+            return new TirePositionsDto(VehicleType.toJson(type), List.of());
         }
-        Set<TirePosition> mounted = mountingRepository.findByVehicle_IdAndRemovedAtIsNull(vehicle.getId()).stream()
-                .map(TireMounting::getPosition)
-                .collect(Collectors.toCollection(() -> EnumSet.noneOf(TirePosition.class)));
-        return vehicle.getVehicleType().positions().stream()
-                .filter(TirePosition::rolls)
-                .filter(mounted::contains)
-                .map(p -> new TirePositionDto(p.toJson(), vehicle.getVehicleType().labelOf(p)))
-                .toList();
+        Set<TirePosition> mounted = openByPosition(vehicle).keySet();
+        return new TirePositionsDto(type.toJson(), type.positions().stream()
+                .map(p -> new TirePositionDto(p.toJson(), type.labelOf(p), p.axle(),
+                        p.side() == null ? null : p.side().name().toLowerCase(), p.wheel().name().toLowerCase(),
+                        mounted.contains(p)))
+                .toList());
     }
 
-    // ---------------------------------------------------------------- dibujo
+    // ---------------------------------------------------------------- estado visual
 
-    @Transactional
-    public VehicleTiresDto recordAdminReadings(String vehicleId, TreadReadingsRequest request, AuthenticatedUser admin) {
-        Vehicle vehicle = findVehicle(vehicleId);
-        List<TreadReadingInput> inputs = request == null || request.readings() == null ? List.of() : request.readings();
-        List<FieldValidationErrorDetail> details = new ArrayList<>();
-        if (inputs.isEmpty()) {
-            details.add(new FieldValidationErrorDetail("readings", "Cargá al menos una medición"));
-        }
-        List<Reading> readings = parseReadings(vehicle, inputs,
-                (field, message) -> details.add(new FieldValidationErrorDetail(field, message)));
-        if (!details.isEmpty()) {
-            throw new VehicleValidationException("Mediciones inválidas", details);
-        }
-        record(vehicle, readings, clock.instant(), admin == null ? null : admin.id(),
-                admin == null ? null : admin.username(), null);
-        return toVehicleDto(vehicle);
+    /** Lo que el chofer vio en una cubierta, ya validado: la que está montada en esa posición. */
+    public record ConditionReport(TireMounting mounting, Set<TireCondition> conditions) {
     }
 
-    /** Una medición ya validada: la cubierta que está en esa posición. */
-    public record Reading(TireMounting mounting, BigDecimal depthMm) {
-    }
-
-    /** CAM-157: valida el dibujo que mandó el chofer en el pre-viaje, antes de guardar la inspección. */
-    public List<Reading> validateInspectionReadings(Vehicle vehicle, List<TreadReadingInput> inputs) {
+    /**
+     * CAM-157: valida las cubiertas con problemas antes de guardar la inspección. Van solo con "Neumáticos" en
+     * defecto; sin cubiertas marcadas también vale (por ejemplo, un vehículo sin tipo).
+     */
+    public List<ConditionReport> validateInspectionConditions(Vehicle vehicle, List<TireConditionInput> inputs,
+                                                              boolean tiresInDefect) {
         if (inputs == null || inputs.isEmpty()) {
             return List.of();
         }
-        List<ValidationErrorDetail> details = new ArrayList<>();
-        List<Reading> readings = parseReadings(vehicle, inputs,
-                (field, message) -> details.add(new ValidationErrorDetail(field, message)));
-        if (!details.isEmpty()) {
-            throw new InspectionValidationException("El dibujo de las cubiertas no es válido.", details);
+        if (!tiresInDefect) {
+            throw new InspectionValidationException("Las cubiertas con problemas van con Neumáticos en defecto.",
+                    List.of(new ValidationErrorDetail("tireConditions", "Marcá Neumáticos con defecto.")));
         }
-        return readings;
+        Map<TirePosition, TireMounting> open = openByPosition(vehicle);
+        Set<TirePosition> seen = EnumSet.noneOf(TirePosition.class);
+        List<ValidationErrorDetail> details = new ArrayList<>();
+        List<ConditionReport> reports = new ArrayList<>();
+        for (int i = 0; i < inputs.size(); i++) {
+            TireConditionInput input = inputs.get(i);
+            String field = "tireConditions[" + i + "]";
+            TirePosition position = input == null ? null : TirePosition.fromJson(input.position());
+            TireMounting mounting = position == null ? null : open.get(position);
+            if (mounting == null) {
+                details.add(new ValidationErrorDetail(field + ".position", "No hay una cubierta montada en esa posición."));
+                continue;
+            }
+            if (!seen.add(position)) {
+                details.add(new ValidationErrorDetail(field + ".position", "Posición repetida."));
+                continue;
+            }
+            List<String> raw = input.conditions() == null ? List.of() : input.conditions();
+            Set<TireCondition> conditions = EnumSet.noneOf(TireCondition.class);
+            for (String code : raw) {
+                TireCondition condition = TireCondition.fromJson(code);
+                if (condition == null) {
+                    details.add(new ValidationErrorDetail(field + ".conditions", "Estado desconocido: " + code));
+                } else {
+                    conditions.add(condition);
+                }
+            }
+            if (raw.isEmpty()) {
+                details.add(new ValidationErrorDetail(field + ".conditions", "Elegí al menos un estado."));
+            } else if (!conditions.isEmpty()) {
+                reports.add(new ConditionReport(mounting, conditions));
+            }
+        }
+        if (!details.isEmpty()) {
+            throw new InspectionValidationException("Las cubiertas con problemas no son válidas.", details);
+        }
+        return reports;
+    }
+
+    /** Lo que se suma al detalle del defecto de Neumáticos: "Cubiertas: Delantera izquierda: pinchada." */
+    public String summary(Vehicle vehicle, List<ConditionReport> reports) {
+        return reports.stream()
+                .map(r -> labelOf(vehicle, r.mounting().getPosition()) + ": " + conditionsText(r.conditions()))
+                .collect(Collectors.joining(". ", "Cubiertas: ", "."));
     }
 
     @Transactional
-    public void recordInspectionReadings(Vehicle vehicle, List<Reading> readings, Instant at, AuthenticatedUser driver,
-                                         UUID inspectionId) {
-        if (readings.isEmpty()) {
+    public void recordInspectionConditions(Vehicle vehicle, List<ConditionReport> reports, Instant at,
+                                           AuthenticatedUser driver, UUID inspectionId, Defect defect) {
+        if (reports.isEmpty()) {
             return;
         }
-        record(vehicle, readings, at, driver == null ? null : driver.id(), driver == null ? null : driver.username(),
-                inspectionId);
+        List<String> lines = new ArrayList<>();
+        for (ConditionReport report : reports) {
+            TireMounting mounting = report.mounting();
+            reportRepository.save(new TireConditionReport(mounting.getTire(), vehicle, mounting.getPosition(),
+                    report.conditions(), at, driver == null ? null : driver.id(),
+                    driver == null ? null : driver.username(), inspectionId, defect));
+            lines.add(labelOf(vehicle, mounting.getPosition()) + " (" + tireLabel(mounting.getTire()) + "): "
+                    + conditionsText(report.conditions()));
+        }
+        eventPublisher.publishEvent(new TireProblemReportedEvent(vehicle.getId(), vehicle.getPlate(),
+                driver == null ? null : driver.username(), lines));
+    }
+
+    private static String conditionsText(Set<TireCondition> conditions) {
+        return conditions.stream()
+                .map(c -> Character.toLowerCase(c.label().charAt(0)) + c.label().substring(1))
+                .collect(Collectors.joining(", "));
     }
 
     // ---------------------------------------------------------------- comparación
@@ -332,59 +371,6 @@ public class TireService {
 
     // ---------------------------------------------------------------- internos
 
-    private interface DetailSink {
-        void add(String field, String message);
-    }
-
-    private List<Reading> parseReadings(Vehicle vehicle, List<TreadReadingInput> inputs, DetailSink details) {
-        Map<TirePosition, TireMounting> open = new HashMap<>();
-        mountingRepository.findByVehicle_IdAndRemovedAtIsNull(vehicle.getId()).forEach(m -> open.put(m.getPosition(), m));
-        List<Reading> readings = new ArrayList<>();
-        Set<TirePosition> seen = EnumSet.noneOf(TirePosition.class);
-        for (int i = 0; i < inputs.size(); i++) {
-            TreadReadingInput input = inputs.get(i);
-            String field = "treadReadings[" + i + "]";
-            TirePosition position = input == null ? null : TirePosition.fromJson(input.position());
-            TireMounting mounting = position == null ? null : open.get(position);
-            if (mounting == null) {
-                details.add(field + ".position", "No hay una cubierta montada en esa posición");
-                continue;
-            }
-            if (!seen.add(position)) {
-                details.add(field + ".position", "Posición repetida");
-                continue;
-            }
-            BigDecimal depth = input.depthMm();
-            if (depth == null || depth.signum() < 0 || depth.compareTo(MAX_TREAD_MM) > 0) {
-                details.add(field + ".depthMm", "Entre 0 y " + MAX_TREAD_MM + " mm");
-            } else if (depth.stripTrailingZeros().scale() > 1) {
-                details.add(field + ".depthMm", "Hasta 1 decimal");
-            } else {
-                readings.add(new Reading(mounting, depth));
-            }
-        }
-        return readings;
-    }
-
-    private void record(Vehicle vehicle, List<Reading> readings, Instant at, UUID by, String byName, UUID inspectionId) {
-        for (Reading reading : readings) {
-            TireMounting mounting = reading.mounting();
-            Tire tire = mounting.getTire();
-            readingRepository.save(new TireTreadReading(tire, vehicle.getId(), mounting.getPosition(), reading.depthMm(),
-                    at, by, byName, inspectionId));
-            if (reading.depthMm().compareTo(minTreadMm) < 0) {
-                if (tire.getTreadAlertedAt() == null) {
-                    tire.setTreadAlertedAt(at);
-                    eventPublisher.publishEvent(new TireTreadLowEvent(vehicle.getId(), vehicle.getPlate(), tireLabel(tire),
-                            labelOf(vehicle, mounting.getPosition()), reading.depthMm(), minTreadMm, byName));
-                }
-            } else {
-                tire.setTreadAlertedAt(null);
-            }
-            tireRepository.save(tire);
-        }
-    }
-
     private void remove(TireMounting mounting, Instant at, boolean retire, String reason) {
         mounting.close(at, mounting.getVehicle().getOdometerKm());
         mountingRepository.save(mounting);
@@ -395,6 +381,12 @@ public class TireService {
             tire.toStock();
         }
         tireRepository.save(tire);
+    }
+
+    private Map<TirePosition, TireMounting> openByPosition(Vehicle vehicle) {
+        Map<TirePosition, TireMounting> open = new HashMap<>();
+        mountingRepository.findByVehicle_IdAndRemovedAtIsNull(vehicle.getId()).forEach(m -> open.put(m.getPosition(), m));
+        return open;
     }
 
     private Optional<TireMounting> openAt(Vehicle vehicle, TirePosition position) {
@@ -416,7 +408,7 @@ public class TireService {
     }
 
     private record ValidTire(String code, String brand, String model, String size, LocalDate purchaseDate,
-                             BigDecimal cost, BigDecimal initialTreadMm) {
+                             BigDecimal cost) {
     }
 
     private ValidTire validate(TireRequest request) {
@@ -449,15 +441,10 @@ public class TireService {
         } else if (cost.stripTrailingZeros().scale() > 2) {
             details.add(new FieldValidationErrorDetail("cost", "Hasta 2 decimales"));
         }
-        BigDecimal tread = request.initialTreadMm();
-        if (tread != null && (tread.signum() <= 0 || tread.compareTo(MAX_TREAD_MM) > 0
-                || tread.stripTrailingZeros().scale() > 1)) {
-            details.add(new FieldValidationErrorDetail("initialTreadMm", "Entre 0 y " + MAX_TREAD_MM + " mm, con hasta 1 decimal"));
-        }
         if (!details.isEmpty()) {
             throw new VehicleValidationException("Datos inválidos para la cubierta", details);
         }
-        return new ValidTire(code, brand, model, size, purchaseDate, cost, tread);
+        return new ValidTire(code, brand, model, size, purchaseDate, cost);
     }
 
     private static String text(String raw, String field, int max, boolean required, List<FieldValidationErrorDetail> details) {
@@ -520,8 +507,7 @@ public class TireService {
 
     private VehicleTiresDto toVehicleDto(Vehicle vehicle) {
         Snapshot snapshot = snapshot();
-        Map<TirePosition, TireMounting> open = new HashMap<>();
-        mountingRepository.findByVehicle_IdAndRemovedAtIsNull(vehicle.getId()).forEach(m -> open.put(m.getPosition(), m));
+        Map<TirePosition, TireMounting> open = openByPosition(vehicle);
         VehicleType type = vehicle.getVehicleType();
         List<VehicleTiresDto.Position> positions = type == null ? List.of() : type.positions().stream()
                 .map(p -> new VehicleTiresDto.Position(p.toJson(), type.labelOf(p), p.axle(),
@@ -532,7 +518,7 @@ public class TireService {
                 .map(this::toMountingDto)
                 .toList();
         return new VehicleTiresDto(vehicle.getId().toString(), vehicle.getPlate(), VehicleType.toJson(type),
-                vehicle.getOdometerKm(), minTreadMm, positions, history);
+                vehicle.getOdometerKm(), positions, history);
     }
 
     private TireMountingDto toMountingDto(TireMounting m) {
@@ -542,29 +528,37 @@ public class TireService {
                 m.getRemovedKm(), m.km());
     }
 
-    private TireDto.Tread toTread(TireTreadReading r) {
-        return new TireDto.Tread(r.getDepthMm(), r.getMeasuredAt().toString(), r.getMeasuredByName(),
-                r.getDepthMm().compareTo(minTreadMm) < 0);
+    private static TireConditionReportDto toReportDto(TireConditionReport r) {
+        Vehicle vehicle = r.getVehicle();
+        Defect defect = r.getDefect();
+        return new TireConditionReportDto(vehicle.getId().toString(), vehicle.getPlate(), r.getPosition().toJson(),
+                labelOf(vehicle, r.getPosition()), r.getConditions().stream().map(TireCondition::toJson).toList(),
+                r.getConditions().stream().map(TireCondition::label).toList(),
+                defect == null ? null : defect.getSeverity() == DefectSeverity.BLOCKING ? "blocking" : "non-blocking",
+                r.getReportedAt().toString(), r.getReportedByName(), defect == null ? null : defect.getId().toString(),
+                r.isActive());
     }
 
-    /** Montajes y última medición de todas las cubiertas, leídos una vez por pedido. */
+    /** Montajes y último problema abierto de todas las cubiertas, leídos una vez por pedido. */
     private Snapshot snapshot() {
         Map<UUID, List<TireMounting>> mountings = mountingRepository.findAllWithTireAndVehicle().stream()
                 .collect(Collectors.groupingBy(m -> m.getTire().getId()));
-        Map<UUID, TireTreadReading> lastReading = new HashMap<>();
-        for (TireTreadReading reading : readingRepository.findAllByOrderByMeasuredAtDesc()) {
-            lastReading.putIfAbsent(reading.getTire().getId(), reading);
+        Map<UUID, TireConditionReport> openReport = new HashMap<>();
+        for (TireConditionReport report : reportRepository.findAllWithTireAndDefect()) {
+            if (report.isActive()) {
+                openReport.putIfAbsent(report.getTire().getId(), report);
+            }
         }
-        return new Snapshot(mountings, lastReading);
+        return new Snapshot(mountings, openReport);
     }
 
-    private final class Snapshot {
+    private static final class Snapshot {
         private final Map<UUID, List<TireMounting>> mountings;
-        private final Map<UUID, TireTreadReading> lastReading;
+        private final Map<UUID, TireConditionReport> openReport;
 
-        Snapshot(Map<UUID, List<TireMounting>> mountings, Map<UUID, TireTreadReading> lastReading) {
+        Snapshot(Map<UUID, List<TireMounting>> mountings, Map<UUID, TireConditionReport> openReport) {
             this.mountings = mountings;
-            this.lastReading = lastReading;
+            this.openReport = openReport;
         }
 
         long km(Tire tire) {
@@ -579,13 +573,13 @@ public class TireService {
             TireDto.Current current = open == null ? null : new TireDto.Current(open.getVehicle().getId().toString(),
                     open.getVehicle().getPlate(), open.getPosition().toJson(), labelOf(open.getVehicle(), open.getPosition()),
                     open.getMountedAt().toString(), open.getMountedKm());
-            TireTreadReading reading = tire.getId() == null ? null : lastReading.get(tire.getId());
+            TireConditionReport report = tire.getId() == null ? null : openReport.get(tire.getId());
             return new TireDto(tire.getId() == null ? null : tire.getId().toString(), tire.getCode(), tire.getBrand(),
                     tire.getModel(), tire.getSize(), tire.getPurchaseDate().toString(), tire.getCost(),
-                    tire.getInitialTreadMm(), tire.getStatus().toJson(),
+                    tire.getStatus().toJson(),
                     tire.getRetiredAt() == null ? null : tire.getRetiredAt().toString(), tire.getRetiredReason(), km,
                     km == 0 ? null : tire.getCost().divide(BigDecimal.valueOf(km), 2, RoundingMode.HALF_UP), current,
-                    reading == null ? null : toTread(reading));
+                    report == null ? null : toReportDto(report));
         }
     }
 }

@@ -1,6 +1,7 @@
 package org.fleetguard.service;
 
 import org.fleetguard.dto.BlockReasonDto;
+import org.fleetguard.dto.CouplingDto;
 import org.fleetguard.dto.CreateVehicleRequest;
 import org.fleetguard.event.OdometerChangedEvent;
 import org.springframework.context.ApplicationEventPublisher;
@@ -18,6 +19,7 @@ import org.fleetguard.entity.Trip;
 import org.fleetguard.entity.TripStatus;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleMaintenanceAssignment;
+import org.fleetguard.entity.TrailerCoupling;
 import org.fleetguard.entity.VehicleType;
 import org.fleetguard.exception.MaintenanceConflictException;
 import org.fleetguard.exception.VehicleNotFoundException;
@@ -37,6 +39,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -90,13 +93,25 @@ public class VehicleService {
                 .map(Trip::getOpenedById).filter(Objects::nonNull).map(UUID::toString).toList());
         List<Vehicle> vehicles = vehicleRepository.findByActive(active);
         Map<UUID, List<BlockReasonDto>> reasons = availabilityService.reasonsFor(vehicles.stream().map(Vehicle::getId).toList());
+        // CAM-157: con quién está enganchado cada uno, para separar y mostrar remolques sin un pedido por fila.
+        Map<UUID, CouplingDto.VehicleRef> coupledWith = new HashMap<>();
+        for (TrailerCoupling coupling : couplingRepository.findOpenWithVehicles()) {
+            String since = coupling.getCoupledAt().toString();
+            coupledWith.put(coupling.getTrailer().getId(), ref(coupling.getTowing(), since));
+            coupledWith.put(coupling.getTowing().getId(), ref(coupling.getTrailer(), since));
+        }
 
         return vehicles.stream()
                 .sorted(Comparator.comparing(Vehicle::getPlate, String.CASE_INSENSITIVE_ORDER))
                 .map(vehicle -> vehicleMapper.toSummary(vehicle,
                         currentTrip(openTripByVehicle.get(vehicle.getId()), names),
-                        reasons.getOrDefault(vehicle.getId(), List.of())))
+                        reasons.getOrDefault(vehicle.getId(), List.of()), coupledWith.get(vehicle.getId())))
                 .toList();
+    }
+
+    private static CouplingDto.VehicleRef ref(Vehicle vehicle, String since) {
+        return new CouplingDto.VehicleRef(vehicle.getId().toString(), vehicle.getPlate(),
+                VehicleType.toJson(vehicle.getVehicleType()), since);
     }
 
     /** GET /api/vehicles/{id} -- CAM-22. Incluye vehículos dados de baja. */

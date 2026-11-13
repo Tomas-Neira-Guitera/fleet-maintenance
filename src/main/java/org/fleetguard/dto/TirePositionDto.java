@@ -1,5 +1,5 @@
 package org.fleetguard.dto;
 
-/** Una posición con cubierta montada, para que el chofer anote el dibujo en el pre-viaje (CAM-157). */
-public record TirePositionDto(String position, String label) {
+/** CAM-157: una posición del vehículo para el pre-viaje; el chofer solo puede marcar las que tienen cubierta. */
+public record TirePositionDto(String position, String label, int axle, String side, String wheel, boolean mounted) {
 }

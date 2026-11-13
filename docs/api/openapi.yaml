@@ -446,9 +446,10 @@ paths:
                   mountings:
                     type: array
                     items: { $ref: "#/components/schemas/TireMounting" }
-                  treads:
+                  reports:
                     type: array
-                    items: { $ref: "#/components/schemas/TreadMeasurement" }
+                    description: Lo que reportaron los choferes de esta cubierta, del más nuevo al más viejo.
+                    items: { $ref: "#/components/schemas/TireConditionReport" }
         "404":
           description: TIRE_NOT_FOUND
     put:
@@ -712,42 +713,12 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
-  /api/vehicles/{id}/tire-treads:
-    post:
-      summary: El admin carga mediciones del dibujo (CAM-157)
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [readings]
-              properties:
-                readings:
-                  type: array
-                  items:
-                    $ref: "#/components/schemas/TreadReading"
-      responses:
-        "200":
-          description: El vehículo actualizado.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/VehicleTires"
-        "422":
-          $ref: "#/components/responses/FieldValidationErrorResponse"
-
   /api/vehicles/{id}/tire-positions:
     get:
-      summary: Posiciones con cubierta, para el dibujo del pre-viaje (CAM-157)
-      description: ADMIN o CHOFER. Las que ruedan (sin el auxilio) y tienen una cubierta montada.
+      summary: Posiciones del vehículo, para marcar cubiertas con problemas en el pre-viaje (CAM-157)
+      description: >
+        ADMIN o CHOFER. Todas las del tipo, auxilio incluido, con `mounted` en las que tienen cubierta (solo esas
+        se pueden reportar). Sin tipo o en un remolque, positions vacío.
       security:
         - bearerAuth: []
       parameters:
@@ -763,13 +734,21 @@ paths:
               schema:
                 type: object
                 properties:
-                  items:
+                  vehicleType:
+                    allOf:
+                      - $ref: "#/components/schemas/VehicleType"
+                    nullable: true
+                  positions:
                     type: array
                     items:
                       type: object
                       properties:
                         position: { $ref: "#/components/schemas/TirePosition" }
                         label: { type: string }
+                        axle: { type: integer, description: 1 el de adelante, 0 el auxilio. }
+                        side: { type: string, enum: [izq, der], nullable: true }
+                        wheel: { type: string, enum: [simple, exterior, interior] }
+                        mounted: { type: boolean }
 
   /api/vehicles/{id}/costs:
     get:
@@ -3347,6 +3326,13 @@ components:
             - $ref: "#/components/schemas/CurrentTrip"
           nullable: true
           description: CAM-87 -- el viaje abierto, si `status` es "on-trip"; null si está disponible.
+        coupledWith:
+          allOf:
+            - $ref: "#/components/schemas/CouplingRef"
+          nullable: true
+          description: >
+            CAM-157, solo en GET /api/vehicles. En un remolque, quién lo arrastra; en un tractor o camión, qué
+            remolque lleva. null si no está enganchado.
 
     BlockReason:
       type: object
@@ -3717,15 +3703,23 @@ components:
           description: >-
             CAM-153: id que arma el celular. Si llega otra vez (reintento después de un corte), se devuelve la
             inspección ya guardada sin crear otra. Con el id de otro chofer u otro vehículo, 409 DUPLICATE_SUBMISSION.
-        treadReadings:
+        tireConditions:
           type: array
           nullable: true
           description: >-
-            CAM-157: opcional, solo en el pre-viaje (en el post-viaje se ignora). Profundidad del dibujo de las
-            cubiertas montadas, por posición (GET /api/vehicles/{id}/tire-positions). Una posición sin cubierta,
-            repetida o un valor fuera de 0-30 mm da 422 con itemId treadReadings[i].position o .depthMm.
+            CAM-157: opcional, solo con "Neumáticos" (ext-neumaticos) en defecto. Qué cubiertas tienen problemas y
+            cuáles (GET /api/vehicles/{id}/tire-positions). Se suman al detalle del defecto y quedan en cada
+            cubierta. Sin el defecto, 422 con itemId tireConditions; una posición sin cubierta o repetida,
+            tireConditions[i].position; sin estados o uno desconocido, tireConditions[i].conditions.
           items:
-            $ref: "#/components/schemas/TreadReading"
+            type: object
+            required: [position, conditions]
+            properties:
+              position: { $ref: "#/components/schemas/TirePosition" }
+              conditions:
+                type: array
+                minItems: 1
+                items: { $ref: "#/components/schemas/TireCondition" }
         trailerId:
           type: string
           nullable: true
@@ -4864,12 +4858,27 @@ components:
           description: Promedio de horas entre que se creó y se finalizó cada una de esas OTs. null si no finalizó ninguna.
         expensesTotal: { type: number, description: Suma de los gastos cargados en el período en las OTs a su cargo. }
 
-    TreadReading:
+    TireCondition:
+      type: string
+      description: CAM-157. Lo que el chofer ve a simple vista, del más grave al más leve.
+      enum: [se-ve-la-tela, bulto, corte-flanco, pinchada, baja-presion, desgaste-irregular, poco-dibujo]
+
+    TireConditionReport:
       type: object
-      required: [position, depthMm]
       properties:
+        vehicleId: { type: string }
+        plate: { type: string }
         position: { $ref: "#/components/schemas/TirePosition" }
-        depthMm: { type: number, minimum: 0, maximum: 30, description: Hasta 1 decimal. }
+        positionLabel: { type: string }
+        conditions:
+          type: array
+          items: { $ref: "#/components/schemas/TireCondition" }
+        conditionLabels: { type: array, items: { type: string } }
+        severity: { type: string, enum: [blocking, non-blocking], nullable: true, description: La del defecto. }
+        reportedAt: { type: string, format: date-time }
+        reportedBy: { type: string, nullable: true }
+        defectId: { type: string, nullable: true }
+        active: { type: boolean, description: El defecto sigue abierto y la cubierta montada. }
 
     TirePosition:
       type: string
@@ -4926,7 +4935,6 @@ components:
         size: { type: string, maxLength: 30, example: 295/80 R22.5 }
         purchaseDate: { type: string, format: date }
         cost: { type: number, exclusiveMinimum: 0 }
-        initialTreadMm: { type: number, nullable: true, maximum: 30 }
 
     Tire:
       type: object
@@ -4938,7 +4946,6 @@ components:
         size: { type: string }
         purchaseDate: { type: string, format: date }
         cost: { type: number }
-        initialTreadMm: { type: number, nullable: true }
         status: { type: string, enum: [stock, mounted, retired] }
         retiredAt: { type: string, format: date-time, nullable: true }
         retiredReason: { type: string, nullable: true }
@@ -4955,18 +4962,11 @@ components:
             positionLabel: { type: string }
             mountedAt: { type: string, format: date-time }
             mountedKm: { type: integer }
-        lastTread:
+        condition:
           nullable: true
+          description: El último problema reportado que sigue abierto (active); null si no tiene.
           allOf:
-            - $ref: "#/components/schemas/TreadMeasurement"
-
-    TreadMeasurement:
-      type: object
-      properties:
-        depthMm: { type: number }
-        measuredAt: { type: string, format: date-time }
-        measuredBy: { type: string, nullable: true }
-        belowMinimum: { type: boolean }
+            - $ref: "#/components/schemas/TireConditionReport"
 
     TireMounting:
       type: object
@@ -4994,7 +4994,6 @@ components:
           nullable: true
           description: Sin tipo, positions vacío y montar da 409 NO_VEHICLE_TYPE.
         odometerKm: { type: integer }
-        minTreadMm: { type: number }
         positions:
           type: array
           items:
@@ -5101,7 +5100,7 @@ components:
       enum: [work_order_assigned, work_order_unassigned, work_order_cancelled, trip_open_reminder,
              blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue,
              recurring_defect, document_due_soon, document_expired, vehicle_unavailable, vehicle_available,
-             trip_km_anomaly, fuel_consumption_anomaly, tire_tread_low]
+             trip_km_anomaly, fuel_consumption_anomaly, tire_problem_reported]
 
     NotificationChannel:
       type: string

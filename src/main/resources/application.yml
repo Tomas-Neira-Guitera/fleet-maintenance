@@ -105,10 +105,6 @@ fleetguard:
     min-segments: 3
     recent-segments: 10
     ratio: 1.3
-  tires:
-    # CAM-157: una medición del dibujo por debajo de esto (en mm) avisa al admin. 1,6 mm es el mínimo
-    # legal en Argentina para autos; para camiones conviene subirlo.
-    min-tread-mm: 1.6
   maintenance-alerts:
     # CAM-118: revisión diaria de vencimientos por fecha, a las 8 de Argentina (los de km se revisan
     # además cada vez que sube el km del vehículo).

@@ -46,7 +46,7 @@ class VehicleControllerTest extends WebMvcTestBase {
 
     private static VehicleSummaryDto summary() {
         return new VehicleSummaryDto("v-1", "AB123CD", "Ford", "Cargo", "available", "Camión", 2020, null, 50000, true,
-                false, List.of(), null);
+                false, List.of(), null, null);
     }
 
     @Test
@@ -64,7 +64,7 @@ class VehicleControllerTest extends WebMvcTestBase {
     void unVehiculoEnViajeTraeQuienLoAbrioYUnoBloqueadoLoDice() throws Exception {
         VehicleSummaryDto onTrip = new VehicleSummaryDto("v-2", "AC456EF", "Iveco", "Daily", "on-trip", null, null, null,
                 1000, true, true, List.of(new BlockReasonDto("blocking_defect", "Defecto bloqueante: Sin frenos")),
-                new CurrentTripDto("2026-10-07T11:15:00Z", new UserRefDto("u-1", "chofer1")));
+                new CurrentTripDto("2026-10-07T11:15:00Z", new UserRefDto("u-1", "chofer1")), null);
         when(vehicleService.listVehicles(true)).thenReturn(List.of(summary(), onTrip));
 
         // CAM-87 y CAM-89: forma del JSON que consumen el listado del chofer y el detalle del admin.

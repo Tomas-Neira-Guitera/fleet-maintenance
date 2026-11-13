@@ -11,8 +11,8 @@ public record InspectionSubmissionDto(
         String performedAt,
         // CAM-153: UUID que arma el celular. Si llega dos veces, la segunda devuelve la ya guardada.
         String clientSubmissionId,
-        // CAM-157: opcional, solo en el pre-viaje. Dibujo de las cubiertas montadas, por posición.
-        List<TreadReadingInput> treadReadings,
+        // CAM-157: opcional, con "Neumáticos" en defecto. Qué cubiertas tienen problemas y cuáles.
+        List<TireConditionInput> tireConditions,
         // CAM-157: opcional, pre-viaje de un tractor o camión rígido. Id del remolque que lleva, "none" si va sin
         // remolque; sin el campo, el enganche queda como estaba.
         String trailerId

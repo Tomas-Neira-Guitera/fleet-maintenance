@@ -253,7 +253,7 @@ class VehicleServiceTest {
         setId(truck, id);
         when(vehicleRepository.findById(id)).thenReturn(Optional.of(truck));
         Tire tire = new Tire(null, "Fate", null, "295/80 R22.5", java.time.LocalDate.parse("2026-01-01"),
-                java.math.BigDecimal.TEN, null);
+                java.math.BigDecimal.TEN);
         when(tireMountingRepository.findByVehicle_IdAndRemovedAtIsNull(id)).thenReturn(List.of(
                 new TireMounting(tire, truck, TirePosition.E3_IZQ_EXT, java.time.Instant.now(), 0)));
 

@@ -2772,7 +2772,7 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"{{$randomInt}}\",\n  \"brand\": \"Michelin\",\n  \"model\": \"X Multi\",\n  \"size\": \"295/80 R22.5\",\n  \"purchaseDate\": \"2026-10-01\",\n  \"cost\": 450000,\n  \"initialTreadMm\": 16\n}"
+              "raw": "{\n  \"code\": \"{{$randomInt}}\",\n  \"brand\": \"Michelin\",\n  \"model\": \"X Multi\",\n  \"size\": \"295/80 R22.5\",\n  \"purchaseDate\": \"2026-10-01\",\n  \"cost\": 450000\n}"
             }
           },
           "event": [
@@ -2879,7 +2879,7 @@
           ]
         },
         {
-          "name": "Posiciones montadas (chofer)",
+          "name": "Posiciones del vehículo (chofer)",
           "request": {
             "method": "GET",
             "header": [
@@ -2900,7 +2900,7 @@
                 "tire-positions"
               ]
             },
-            "description": ""
+            "description": "CAM-157: todas las posiciones del tipo, con mounted en las que tienen cubierta. Para marcar cubiertas con problemas en el pre-viaje."
           },
           "event": [
             {
@@ -2915,7 +2915,7 @@
           ]
         },
         {
-          "name": "Dibujo bajo (avisa)",
+          "name": "Pre-trip con una cubierta con problemas (avisa)",
           "request": {
             "method": "POST",
             "header": [
@@ -2925,26 +2925,25 @@
               },
               {
                 "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
+                "value": "Bearer {{choferToken}}"
               }
             ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    {\n      \"itemId\": \"ext-luces\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-neumaticos\",\n      \"outcome\": \"defect\",\n      \"defect\": {\n        \"severity\": \"non-blocking\",\n        \"description\": \"Cubierta trasera gastada\",\n        \"details\": \"Se ve gastada del lado de afuera\"\n      }\n    },\n    {\n      \"itemId\": \"ext-carroceria\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-fugas\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"int-km\",\n      \"numberValue\": 82430\n    },\n    {\n      \"itemId\": \"int-documentacion\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"int-testigos\",\n      \"outcome\": \"ok\"\n    }\n  ],\n  \"tireConditions\": [\n    {\n      \"position\": \"e2-der-ext\",\n      \"conditions\": [\n        \"poco-dibujo\",\n        \"desgaste-irregular\"\n      ]\n    }\n  ]\n}"
+            },
             "url": {
-              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/tire-treads",
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "vehicles",
-                "{{vehicleId}}",
-                "tire-treads"
+                "inspections",
+                "{{vehicleId}}"
               ]
             },
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"readings\": [\n    {\n      \"position\": \"e2-der-ext\",\n      \"depthMm\": 1.4\n    }\n  ]\n}"
-            }
+            "description": "CAM-157: con Neumáticos en defecto, qué cubiertas tienen problemas. El resumen se suma al detalle del defecto, la cubierta queda 'a revisar' y avisa (tire_problem_reported). Requiere una cubierta montada en e2-der-ext y el vehículo sin viaje abierto."
           },
           "event": [
             {
@@ -2952,7 +2951,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.json().trip) pm.environment.set('tripId', pm.response.json().trip.id);"
                 ]
               }
             }
@@ -3059,7 +3059,7 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"position\": \"e2-der-ext\",\n  \"retire\": true,\n  \"reason\": \"Dibujo bajo\"\n}"
+              "raw": "{\n  \"position\": \"e2-der-ext\",\n  \"retire\": true,\n  \"reason\": \"Gastada\"\n}"
             }
           },
           "event": [

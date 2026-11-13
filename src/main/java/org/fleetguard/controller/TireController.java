@@ -1,6 +1,5 @@
 package org.fleetguard.controller;
 
-import org.fleetguard.auth.AuthenticatedUser;
 import org.fleetguard.dto.ListResponse;
 import org.fleetguard.dto.MountTireRequest;
 import org.fleetguard.dto.RetireTireRequest;
@@ -8,9 +7,8 @@ import org.fleetguard.dto.RotateTiresRequest;
 import org.fleetguard.dto.TireBrandComparisonDto;
 import org.fleetguard.dto.TireDetailDto;
 import org.fleetguard.dto.TireDto;
-import org.fleetguard.dto.TirePositionDto;
+import org.fleetguard.dto.TirePositionsDto;
 import org.fleetguard.dto.TireRequest;
-import org.fleetguard.dto.TreadReadingsRequest;
 import org.fleetguard.dto.UnmountTireRequest;
 import org.fleetguard.dto.VehicleTiresDto;
 import org.fleetguard.service.TireService;
@@ -95,14 +93,8 @@ public class TireController {
         return service.rotate(id, request);
     }
 
-    @PostMapping("/vehicles/{id}/tire-treads")
-    public VehicleTiresDto recordTreads(@PathVariable String id, @RequestBody(required = false) TreadReadingsRequest request,
-                                        @RequestAttribute(AuthenticatedUser.REQUEST_ATTRIBUTE) AuthenticatedUser admin) {
-        return service.recordAdminReadings(id, request, admin);
-    }
-
     @GetMapping("/vehicles/{id}/tire-positions")
-    public ListResponse<TirePositionDto> mountedPositions(@PathVariable String id) {
-        return new ListResponse<>(service.mountedPositions(id));
+    public TirePositionsDto positions(@PathVariable String id) {
+        return service.positions(id);
     }
 }
