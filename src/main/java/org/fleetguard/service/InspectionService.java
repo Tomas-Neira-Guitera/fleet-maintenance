@@ -45,7 +45,7 @@ import java.util.stream.Collectors;
 @Service
 public class InspectionService {
 
-    // CAM-157: el control del checklist base al que van las cubiertas con problemas.
+    // CAM-157: el control del checklist base al que van los neumáticos con problemas.
     static final String TIRES_ITEM_ID = "ext-neumaticos";
 
     // CAM-153: margen para un reloj del celular apenas adelantado; más que esto es un error.
@@ -128,7 +128,7 @@ public class InspectionService {
         List<ChecklistAnswerDto> answers = submission.answers() == null ? List.of() : submission.answers();
         List<ChecklistItemDef> checklist = checklistService.resolve(vehicleId, type);
         InspectionValidator.ValidationOutcome outcome = validator.validate(type, checklist, answers);
-        // CAM-157: qué cubiertas tienen problemas, solo si "Neumáticos" va en defecto.
+        // CAM-157: qué neumáticos tienen problemas, solo si "Neumáticos" va en defecto.
         boolean tiresInDefect = outcome.recognizedAnswers().stream().anyMatch(a -> TIRES_ITEM_ID.equals(a.itemId())
                 && CheckOutcome.fromJson(a.outcome()) == CheckOutcome.DEFECT && a.defect() != null);
         List<TireService.ConditionReport> tireReports =

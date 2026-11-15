@@ -73,8 +73,8 @@ public final class NotificationCatalog {
         add(NotificationType.FUEL_CONSUMPTION_ANOMALY, "Consumo de combustible alto",
                 "Una carga de tanque lleno da un consumo muy por encima del promedio del vehículo.",
                 Audience.CONFIGURABLE, null, Lead.NONE);
-        add(NotificationType.TIRE_PROBLEM_REPORTED, "Cubiertas con problemas",
-                "Un chofer marca cubiertas con problemas en una inspección (corte, bulto, pinchada…).",
+        add(NotificationType.TIRE_PROBLEM_REPORTED, "Neumáticos con problemas",
+                "Un chofer marca neumáticos con problemas en una inspección (corte, bulto, pinchado…).",
                 Audience.CONFIGURABLE, null, Lead.NONE);
         add(NotificationType.WORK_ORDER_FINALIZED, "Orden de trabajo finalizada",
                 "Se finaliza una orden de trabajo, interna o de un taller externo.", Audience.CONFIGURABLE, null, Lead.NONE);

@@ -4,7 +4,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * CAM-157: posición de una cubierta: eje (1 el delantero; 0 el auxilio), lado y, en un eje dual, la exterior o la
+ * CAM-157: posición de un neumático: eje (1 el delantero; 0 el auxilio), lado y, en un eje dual, la exterior o la
  * interior. Qué posiciones tiene un vehículo y cómo se llaman lo dice su tipo (VehicleType).
  */
 public enum TirePosition {

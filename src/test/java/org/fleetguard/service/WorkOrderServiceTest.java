@@ -245,7 +245,7 @@ class WorkOrderServiceTest {
 
     @Test
     void asignarTecnicoAUnaOtExternaDevuelve422() throws Exception {
-        WorkOrder workOrder = new WorkOrder(vehicleId, WorkOrderSourceType.MANUAL, null, null, null, "Cubiertas", null,
+        WorkOrder workOrder = new WorkOrder(vehicleId, WorkOrderSourceType.MANUAL, null, null, null, "Neumáticos", null,
                 WorkOrderExecutionType.EXTERNO, "Taller Norte", "Carlos", null);
         setId(workOrder, UUID.randomUUID());
         when(workOrderRepository.findById(workOrder.getId())).thenReturn(Optional.of(workOrder));
@@ -256,7 +256,7 @@ class WorkOrderServiceTest {
 
     @Test
     void pasarUnaOtExternaAInternaLimpiaContactoYProveedor() throws Exception {
-        WorkOrder workOrder = new WorkOrder(vehicleId, WorkOrderSourceType.MANUAL, null, null, null, "Cubiertas", null,
+        WorkOrder workOrder = new WorkOrder(vehicleId, WorkOrderSourceType.MANUAL, null, null, null, "Neumáticos", null,
                 WorkOrderExecutionType.EXTERNO, "Taller Norte", "Carlos", null);
         setId(workOrder, UUID.randomUUID());
         when(workOrderRepository.findById(workOrder.getId())).thenReturn(Optional.of(workOrder));

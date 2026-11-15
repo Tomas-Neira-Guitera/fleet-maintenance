@@ -6,7 +6,7 @@ import org.fleetguard.service.NotificationService;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionalEventListener;
 
-/** CAM-157: después del commit, avisa de las cubiertas con problemas. Lleva a la pestaña Neumáticos del vehículo. */
+/** CAM-157: después del commit, avisa de los neumáticos con problemas. Lleva a la pestaña Neumáticos del vehículo. */
 @Component
 public class TireProblemReportedListener {
 
@@ -20,13 +20,13 @@ public class TireProblemReportedListener {
 
     @TransactionalEventListener
     public void onReported(TireProblemReportedEvent event) {
-        dispatcher.dispatch("cubiertas con problemas en " + event.plate(), () ->
+        dispatcher.dispatch("neumáticos con problemas en " + event.plate(), () ->
                 notificationService.notifyConfiguredRecipients(NotificationType.TIRE_PROBLEM_REPORTED,
                         title(event), message(event), "/vehiculos/" + event.vehicleId() + "/neumaticos"));
     }
 
     static String title(TireProblemReportedEvent event) {
-        return (event.tires().size() == 1 ? "Cubierta con problemas en " : "Cubiertas con problemas en ") + event.plate();
+        return (event.tires().size() == 1 ? "Neumático con problemas en " : "Neumáticos con problemas en ") + event.plate();
     }
 
     static String message(TireProblemReportedEvent event) {

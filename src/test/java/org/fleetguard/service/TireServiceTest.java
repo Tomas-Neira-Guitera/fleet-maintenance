@@ -49,7 +49,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-// CAM-157: cubiertas por posición, km recorridos, rotación, dibujo y costo por km por marca.
+// CAM-157: neumáticos por posición, km recorridos, rotación, dibujo y costo por km por marca.
 class TireServiceTest {
 
     /** Un reloj que avanza un minuto en cada lectura, para que los montajes queden en orden. */
@@ -162,7 +162,7 @@ class TireServiceTest {
     }
 
     @Test
-    void elVehiculoMuestraQueCubiertaHayEnCadaPosicionYCuantosKmLleva() {
+    void elVehiculoMuestraQueNeumaticoHayEnCadaPosicionYCuantosKmLleva() {
         type(VehicleType.TRACTOR_4X2);
         TireDto michelin = tire("Michelin", "450000");
         mount(michelin, "e1-izq");
@@ -197,7 +197,7 @@ class TireServiceTest {
         assertEquals(b.id(), at(dto, "e1-izq").tire().id());
         assertEquals(2000, at(dto, "e2-der").tire().km());
         assertEquals(2000, at(dto, "e1-izq").tire().km());
-        // Queda el historial de dónde estuvo cada una.
+        // Queda el historial de dónde estuvo cada uno.
         assertEquals(4, dto.history().size());
         assertEquals(2, service.get(a.id()).mountings().size());
     }
@@ -213,7 +213,7 @@ class TireServiceTest {
     }
 
     @Test
-    void cambiarUnaCubiertaMandaLaAnteriorAlStockOLaDaDeBaja() {
+    void cambiarUnNeumaticoMandaElAnteriorAlStockOLoDaDeBaja() {
         type(VehicleType.UTILITARIO);
         TireDto old = tire("Fate", "80000");
         TireDto fresh = tire("Michelin", "120000");
@@ -235,7 +235,7 @@ class TireServiceTest {
     }
 
     @Test
-    void sacarUnaCubiertaLaDevuelveAlStock() {
+    void sacarUnNeumaticoLoDevuelveAlStock() {
         type(VehicleType.UTILITARIO);
         TireDto tire = tire("Fate", "80000");
         mount(tire, "e1-izq");
@@ -264,7 +264,7 @@ class TireServiceTest {
     }
 
     @Test
-    void lasCubiertasConProblemasSeValidanContraLasMontadas() {
+    void losNeumaticosConProblemasSeValidanContraLosMontados() {
         type(VehicleType.UTILITARIO);
         mount(tire("Fate", "80000"), "e1-izq");
         mount(tire("Fate", "80000"), "e1-der");
@@ -276,7 +276,7 @@ class TireServiceTest {
                         "tireConditions[2].conditions", "tireConditions[3].position"),
                 ex.getDetails().stream().map(d -> d.itemId()).toList());
 
-        // Sin "Neumáticos" en defecto no se aceptan; sin cubiertas marcadas, vale.
+        // Sin "Neumáticos" en defecto no se aceptan; sin neumáticos marcados, vale.
         assertEquals("tireConditions", assertThrows(InspectionValidationException.class,
                 () -> service.validateInspectionConditions(truck, List.of(report("e1-izq", "pinchada")), false))
                 .getDetails().get(0).itemId());
@@ -284,13 +284,13 @@ class TireServiceTest {
     }
 
     @Test
-    void elReporteQuedaEnLaCubiertaMientrasElDefectoSigaAbiertoYAvisa() throws Exception {
+    void elReporteQuedaEnElNeumaticoMientrasElDefectoSigaAbiertoYAvisa() throws Exception {
         type(VehicleType.CAMION_4X2);
         TireDto rear = tire("Michelin", "500000");
         mount(rear, "e2-der-ext");
         List<TireService.ConditionReport> valid = service.validateInspectionConditions(truck,
                 List.of(report("e2-der-ext", "se-ve-la-tela", "poco-dibujo")), true);
-        assertEquals("Cubiertas: Trasera derecha exterior: se ve la tela o el alambre, poco dibujo.",
+        assertEquals("Neumáticos: Trasera derecha exterior: se ve la tela o el alambre, poco dibujo.",
                 service.summary(truck, valid));
 
         Defect defect = new Defect(DefectSeverity.BLOCKING, "Neumático trasero", null, Instant.now());
@@ -308,14 +308,14 @@ class TireServiceTest {
         assertEquals("Trasera derecha exterior", at(service.vehicleTires(truck.getId().toString()), "e2-der-ext")
                 .tire().condition().positionLabel());
 
-        // Resuelto el defecto, la cubierta vuelve a estar sin problemas; el reporte queda en su historial.
+        // Resuelto el defecto, el neumático vuelve a estar sin problemas; el reporte queda en su historial.
         defect.resolve(Instant.now());
         assertNull(service.get(rear.id()).tire().condition());
         assertFalse(service.get(rear.id()).reports().get(0).active());
     }
 
     @Test
-    void elChoferVeTodasLasPosicionesYCualesTienenCubierta() {
+    void elChoferVeTodasLasPosicionesYCualesTienenNeumatico() {
         type(VehicleType.UTILITARIO);
         mount(tire("Fate", "80000"), "e1-izq");
         mount(tire("Fate", "80000"), "auxilio");
@@ -354,7 +354,7 @@ class TireServiceTest {
     }
 
     @Test
-    void unaCubiertaMontadaNoSeDaDeBajaNiUnaConHistoriaSeBorra() {
+    void unNeumaticoMontadoNoSeDaDeBajaNiUnoConHistoriaSeBorra() {
         type(VehicleType.UTILITARIO);
         TireDto tire = tire("Fate", "80000");
         mount(tire, "e1-izq");
@@ -366,7 +366,7 @@ class TireServiceTest {
     }
 
     @Test
-    void validaLosDatosDeLaCubierta() {
+    void validaLosDatosDelNeumatico() {
         VehicleValidationException ex = assertThrows(VehicleValidationException.class, () -> service.create(
                 new TireRequest(null, " ", null, null, "2030-01-01", BigDecimal.ZERO)));
         assertEquals(List.of("brand", "size", "purchaseDate", "cost"),

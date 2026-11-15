@@ -262,7 +262,7 @@ class VehicleServiceTest {
         assertEquals(true, result.active());
     }
 
-    // CAM-157: el tipo es del catálogo y define las cubiertas.
+    // CAM-157: el tipo es del catálogo y define los neumáticos.
     @Test
     void elTipoEsObligatorioYDelCatalogo() {
         VehicleValidationException missing = assertThrows(VehicleValidationException.class,
@@ -275,7 +275,7 @@ class VehicleServiceTest {
     }
 
     @Test
-    void noSeCambiaElTipoSiQuedanCubiertasEnPosicionesQueElNuevoNoTiene() throws Exception {
+    void noSeCambiaElTipoSiQuedanNeumaticosEnPosicionesQueElNuevoNoTiene() throws Exception {
         Vehicle truck = new Vehicle("AB123CD", "Iveco", "Tector");
         truck.setVehicleType(VehicleType.CAMION_6X4);
         UUID id = UUID.randomUUID();

@@ -14,7 +14,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
-// CAM-157: dónde estuvo una cubierta y entre qué km del vehículo. Abierto (removedAt null) mientras sigue ahí.
+// CAM-157: dónde estuvo un neumático y entre qué km del vehículo. Abierto (removedAt null) mientras sigue ahí.
 @Entity
 @Table(name = "tire_mountings")
 public class TireMounting {
@@ -68,7 +68,7 @@ public class TireMounting {
         return removedAt == null;
     }
 
-    /** Km que rodó en este montaje: hasta que se sacó, o hasta el km actual del vehículo si sigue puesta. */
+    /** Km que rodó en este montaje: hasta que se sacó, o hasta el km actual del vehículo si sigue puesto. */
     public long km() {
         if (!position.rolls()) {
             return 0;

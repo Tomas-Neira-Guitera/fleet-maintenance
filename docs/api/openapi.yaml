@@ -348,7 +348,7 @@ paths:
 
   /api/tires:
     get:
-      summary: Cubiertas (CAM-157)
+      summary: Neumáticos (CAM-157)
       description: Solo ADMIN. Ver CAM-157-tires-contract.md.
       security:
         - bearerAuth: []
@@ -373,7 +373,7 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
     post:
-      summary: Cargar una cubierta (CAM-157)
+      summary: Cargar un neumático (CAM-157)
       description: Queda en stock.
       security:
         - bearerAuth: []
@@ -397,9 +397,9 @@ paths:
 
   /api/tires/brand-comparison:
     get:
-      summary: Costo por km por marca de cubierta (CAM-157)
+      summary: Costo por km por marca de neumático (CAM-157)
       description: >
-        Solo ADMIN. Costo total sobre km totales de las cubiertas de cada marca con al menos minKm km,
+        Solo ADMIN. Costo total sobre km totales de los neumáticos de cada marca con al menos minKm km,
         del más barato por km al más caro.
       security:
         - bearerAuth: []
@@ -432,7 +432,7 @@ paths:
         required: true
         schema: { type: string }
     get:
-      summary: Una cubierta con dónde estuvo y sus mediciones (CAM-157)
+      summary: Un neumático con dónde estuvo y sus mediciones (CAM-157)
       security:
         - bearerAuth: []
       responses:
@@ -449,12 +449,12 @@ paths:
                     items: { $ref: "#/components/schemas/TireMounting" }
                   reports:
                     type: array
-                    description: Lo que reportaron los choferes de esta cubierta, del más nuevo al más viejo.
+                    description: Lo que reportaron los choferes de este neumático, del más nuevo al más viejo.
                     items: { $ref: "#/components/schemas/TireConditionReport" }
         "404":
           description: TIRE_NOT_FOUND
     put:
-      summary: Editar los datos de una cubierta (CAM-157)
+      summary: Editar los datos de un neumático (CAM-157)
       security:
         - bearerAuth: []
       requestBody:
@@ -477,8 +477,8 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
     delete:
-      summary: Borrar una cubierta cargada por error (CAM-157)
-      description: Si ya estuvo montada, 409 TIRE_HAS_HISTORY (se da de baja).
+      summary: Borrar un neumático cargado por error (CAM-157)
+      description: Si ya estuvo montado, 409 TIRE_HAS_HISTORY (se da de baja).
       security:
         - bearerAuth: []
       responses:
@@ -491,8 +491,8 @@ paths:
 
   /api/tires/{tireId}/retire:
     post:
-      summary: Dar de baja una cubierta del stock (CAM-157)
-      description: Una montada se da de baja al sacarla (409 TIRE_MOUNTED).
+      summary: Dar de baja un neumático del stock (CAM-157)
+      description: Uno montado se da de baja al sacarlo (409 TIRE_MOUNTED).
       security:
         - bearerAuth: []
       parameters:
@@ -519,7 +519,7 @@ paths:
 
   /api/vehicles/{id}/tires:
     get:
-      summary: Cubiertas del vehículo por posición, con su historial (CAM-157)
+      summary: Neumáticos del vehículo por posición, con su historial (CAM-157)
       security:
         - bearerAuth: []
       parameters:
@@ -615,7 +615,7 @@ paths:
 
   /api/vehicles/{id}/tires/mount:
     post:
-      summary: Montar una cubierta del stock, o cambiar la que hay (CAM-157)
+      summary: Montar un neumático del stock, o cambiar el que hay (CAM-157)
       security:
         - bearerAuth: []
       parameters:
@@ -637,7 +637,7 @@ paths:
                   type: string
                   enum: [stock, retired]
                   nullable: true
-                  description: Si la posición está ocupada, qué pasa con la cubierta que estaba. Sin esto, 409 POSITION_OCCUPIED.
+                  description: Si la posición está ocupada, qué pasa con el neumático que estaba. Sin esto, 409 POSITION_OCCUPIED.
                 retiredReason: { type: string, nullable: true }
       responses:
         "200":
@@ -653,7 +653,7 @@ paths:
 
   /api/vehicles/{id}/tires/unmount:
     post:
-      summary: Sacar una cubierta al stock o darla de baja (CAM-157)
+      summary: Sacar un neumático al stock o darlo de baja (CAM-157)
       security:
         - bearerAuth: []
       parameters:
@@ -684,7 +684,7 @@ paths:
 
   /api/vehicles/{id}/tires/rotate:
     post:
-      summary: Rotar una cubierta a otra posición; si está ocupada, se intercambian (CAM-157)
+      summary: Rotar un neumático a otra posición; si está ocupada, se intercambian (CAM-157)
       security:
         - bearerAuth: []
       parameters:
@@ -716,9 +716,9 @@ paths:
 
   /api/vehicles/{id}/tire-positions:
     get:
-      summary: Posiciones del vehículo, para marcar cubiertas con problemas en el pre-viaje (CAM-157)
+      summary: Posiciones del vehículo, para marcar neumáticos con problemas en el pre-viaje (CAM-157)
       description: >
-        ADMIN o CHOFER. Todas las del tipo, auxilio incluido, con `mounted` en las que tienen cubierta (solo esas
+        ADMIN o CHOFER. Todas las del tipo, auxilio incluido, con `mounted` en las que tienen neumático (solo esas
         se pueden reportar). Sin tipo o en un remolque, positions vacío.
       security:
         - bearerAuth: []
@@ -1207,7 +1207,7 @@ paths:
             VEHICLE_INACTIVE -- si se edita cualquier campo de un vehículo
             dado de baja sin reactivarlo primero.
             TIRES_ON_REMOVED_POSITIONS / VEHICLE_COUPLED -- cambio de tipo
-            con cubiertas en posiciones que el nuevo no tiene, o enganchado (CAM-157).
+            con neumáticos en posiciones que el nuevo no tiene, o enganchado (CAM-157).
           content:
             application/json:
               schema:
@@ -3541,7 +3541,7 @@ components:
     VehicleType:
       type: string
       description: >
-        CAM-157. Catálogo de tipos: define los ejes y cubiertas (CAM-157-tires-contract.md §1). Al crear o
+        CAM-157. Catálogo de tipos: define los ejes y neumáticos (CAM-157-tires-contract.md §1). Al crear o
         editar también se aceptan el nombre ("Camión rígido 4x2") y alias (furgón, pickup, camioneta, semi...).
       enum: [utilitario, camion_4x2, camion_6x4, tractor_4x2, tractor_6x4, semirremolque_2_ejes,
              semirremolque_3_ejes, acoplado]
@@ -3655,7 +3655,7 @@ components:
         vehicleType:
           allOf:
             - $ref: "#/components/schemas/VehicleType"
-          description: No se puede cambiar si quedan cubiertas en posiciones que el nuevo no tiene o si está enganchado (409).
+          description: No se puede cambiar si quedan neumáticos en posiciones que el nuevo no tiene o si está enganchado (409).
         year: { type: integer }
         chassisNumber: { type: string }
         active:
@@ -3785,9 +3785,9 @@ components:
           type: array
           nullable: true
           description: >-
-            CAM-157: opcional, solo con "Neumáticos" (ext-neumaticos) en defecto. Qué cubiertas tienen problemas y
+            CAM-157: opcional, solo con "Neumáticos" (ext-neumaticos) en defecto. Qué neumáticos tienen problemas y
             cuáles (GET /api/vehicles/{id}/tire-positions). Se suman al detalle del defecto y quedan en cada
-            cubierta. Sin el defecto, 422 con itemId tireConditions; una posición sin cubierta o repetida,
+            neumático. Sin el defecto, 422 con itemId tireConditions; una posición sin neumático o repetida,
             tireConditions[i].position; sin estados o uno desconocido, tireConditions[i].conditions.
           items:
             type: object
@@ -4993,7 +4993,7 @@ components:
         reportedAt: { type: string, format: date-time }
         reportedBy: { type: string, nullable: true }
         defectId: { type: string, nullable: true }
-        active: { type: boolean, description: El defecto sigue abierto y la cubierta montada. }
+        active: { type: boolean, description: El defecto sigue abierto y el neumático montado. }
 
     TirePosition:
       type: string
@@ -5069,7 +5069,7 @@ components:
         current:
           type: object
           nullable: true
-          description: Dónde está montada; null si no.
+          description: Dónde está montado; null si no.
           properties:
             vehicleId: { type: string }
             plate: { type: string }

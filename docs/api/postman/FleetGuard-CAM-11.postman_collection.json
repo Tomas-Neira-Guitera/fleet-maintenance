@@ -2746,7 +2746,7 @@
           }
         },
         {
-          "name": "Cargar cubierta",
+          "name": "Cargar neumático",
           "request": {
             "method": "POST",
             "header": [
@@ -2900,7 +2900,7 @@
                 "tire-positions"
               ]
             },
-            "description": "CAM-157: todas las posiciones del tipo, con mounted en las que tienen cubierta. Para marcar cubiertas con problemas en el pre-viaje."
+            "description": "CAM-157: todas las posiciones del tipo, con mounted en las que tienen neumático. Para marcar neumáticos con problemas en el pre-viaje."
           },
           "event": [
             {
@@ -2915,7 +2915,7 @@
           ]
         },
         {
-          "name": "Pre-trip con una cubierta con problemas (avisa)",
+          "name": "Pre-trip con un neumático con problemas (avisa)",
           "request": {
             "method": "POST",
             "header": [
@@ -2930,7 +2930,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    {\n      \"itemId\": \"ext-luces\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-neumaticos\",\n      \"outcome\": \"defect\",\n      \"defect\": {\n        \"severity\": \"non-blocking\",\n        \"description\": \"Cubierta trasera gastada\",\n        \"details\": \"Se ve gastada del lado de afuera\"\n      }\n    },\n    {\n      \"itemId\": \"ext-carroceria\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-fugas\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"int-km\",\n      \"numberValue\": 82430\n    },\n    {\n      \"itemId\": \"int-documentacion\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"int-testigos\",\n      \"outcome\": \"ok\"\n    }\n  ],\n  \"tireConditions\": [\n    {\n      \"position\": \"e2-der-ext\",\n      \"conditions\": [\n        \"poco-dibujo\",\n        \"desgaste-irregular\"\n      ]\n    }\n  ]\n}"
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    {\n      \"itemId\": \"ext-luces\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-neumaticos\",\n      \"outcome\": \"defect\",\n      \"defect\": {\n        \"severity\": \"non-blocking\",\n        \"description\": \"Neumático trasera gastada\",\n        \"details\": \"Se ve gastada del lado de afuera\"\n      }\n    },\n    {\n      \"itemId\": \"ext-carroceria\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-fugas\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"int-km\",\n      \"numberValue\": 82430\n    },\n    {\n      \"itemId\": \"int-documentacion\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"int-testigos\",\n      \"outcome\": \"ok\"\n    }\n  ],\n  \"tireConditions\": [\n    {\n      \"position\": \"e2-der-ext\",\n      \"conditions\": [\n        \"poco-dibujo\",\n        \"desgaste-irregular\"\n      ]\n    }\n  ]\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
@@ -2943,7 +2943,7 @@
                 "{{vehicleId}}"
               ]
             },
-            "description": "CAM-157: con Neumáticos en defecto, qué cubiertas tienen problemas. El resumen se suma al detalle del defecto, la cubierta queda 'a revisar' y avisa (tire_problem_reported). Requiere una cubierta montada en e2-der-ext y el vehículo sin viaje abierto."
+            "description": "CAM-157: con Neumáticos en defecto, qué neumáticos tienen problemas. El resumen se suma al detalle del defecto, el neumático queda 'a revisar' y avisa (tire_problem_reported). Requiere un neumático montado en e2-der-ext y el vehículo sin viaje abierto."
           },
           "event": [
             {
@@ -2959,7 +2959,7 @@
           ]
         },
         {
-          "name": "Cubiertas del vehículo",
+          "name": "Neumáticos del vehículo",
           "request": {
             "method": "GET",
             "header": [

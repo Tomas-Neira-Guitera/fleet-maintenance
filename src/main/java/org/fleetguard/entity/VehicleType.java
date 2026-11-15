@@ -8,7 +8,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Catálogo de tipos de vehículo. El tipo define los ejes y sus cubiertas (CAM-157): ningún vehículo elige
+ * Catálogo de tipos de vehículo. El tipo define los ejes y sus neumáticos (CAM-157): ningún vehículo elige
  * sus posiciones aparte. Los remolques no tienen motor: suman los km de lo que los arrastra mientras están enganchados.
  */
 public enum VehicleType {
@@ -106,7 +106,7 @@ public enum VehicleType {
                 || (kind == Kind.RIGID && trailer.kind == Kind.FULL_TRAILER));
     }
 
-    /** Las posiciones de sus cubiertas, eje por eje y de izquierda a derecha, con el auxilio al final. */
+    /** Las posiciones de sus neumáticos, eje por eje y de izquierda a derecha, con el auxilio al final. */
     public List<TirePosition> positions() {
         List<TirePosition> positions = new ArrayList<>();
         for (int i = 0; i < axles.size(); i++) {

@@ -1,6 +1,6 @@
 -- Datos demo: 10 camiones con 6 meses de operación simulada (viajes, inspecciones DVIR, defectos,
 -- planes de mantenimiento, programaciones y órdenes de trabajo), utilitarios, remolques enganchados, plantillas
--- de checklist, cargas de combustible y cubiertas. Generado por docs/db/generate-seed-demo.py.
+-- de checklist, cargas de combustible y neumáticos. Generado por docs/db/generate-seed-demo.py.
 --
 -- ATENCIÓN: borra TODOS los datos operativos y todos los usuarios salvo 'admin'.
 -- Correr con el backend apagado:
@@ -78,11 +78,11 @@ alter table if exists work_orders drop constraint if exists work_orders_status_c
 alter table if exists notifications drop constraint if exists notifications_type_check;
 alter table if exists notification_settings drop constraint if exists notification_settings_type_check;
 alter table if exists inspections drop constraint if exists inspections_type_check;
--- CAM-157: las posiciones de las cubiertas cambiaron de nombre, y el tipo de vehículo reemplazó a tire_layout.
+-- CAM-157: las posiciones de los neumáticos cambiaron de nombre, y el tipo de vehículo reemplazó a tire_layout.
 alter table if exists tire_mountings drop constraint if exists tire_mountings_position_check;
 alter table if exists tire_condition_reports drop constraint if exists tire_condition_reports_position_check;
 alter table if exists vehicles drop column if exists tire_layout;
--- CAM-157: la medición del dibujo en mm se reemplazó por el estado visual de la cubierta.
+-- CAM-157: la medición del dibujo en mm se reemplazó por el estado visual del neumático.
 drop table if exists tire_tread_readings;
 alter table if exists tires drop column if exists initial_tread_mm;
 alter table if exists tires drop column if exists tread_alerted_at;
@@ -6350,17 +6350,17 @@ insert into defects (id, inspection_answer_id, severity, description, details, p
   ('cbd55aa0-c79d-5aa7-92c7-43fe37965b50', '1d1ddf89-c0ee-5154-80f0-be3d3b1d02ad', 'NON_BLOCKING', 'Luz de posición quemada', null, null, pg_temp.ts(-127,'20:19'), 'resuelto', pg_temp.ts(-116,'16:00')),
   ('ae783c66-3a2a-5108-bed8-4894b32a93c6', '5229eab1-e2aa-5c35-8575-a585109daba7', 'NON_BLOCKING', 'Abolladura lateral de la caja', 'Abolladura en el lateral de la caja por una maniobra en el depósito.', 'http://localhost:8080/api/photos/demo-carroceria-abollada', pg_temp.ts(-119,'05:40'), 'resuelto', pg_temp.ts(-113,'14:00')),
   ('2d24241a-24f5-5ae8-8830-37e7495940bf', 'a1d06763-b894-5e4b-a961-690237ddfe91', 'NON_BLOCKING', 'Farol trasero con tapa partida', 'Farol trasero izquierdo con la tapa partida, la lámpara funciona.', 'http://localhost:8080/api/photos/demo-luz-trasera-rota', pg_temp.ts(-106,'06:29'), 'resuelto', pg_temp.ts(-100,'15:00')),
-  ('458f8364-d40e-5648-aaa9-02ced3f01e4b', 'd991695d-ea54-56d3-a22e-2b4775f06e5c', 'NON_BLOCKING', 'Desgaste irregular neumático', E'Neumático trasero con desgaste irregular en el borde externo.\n\nCubiertas: Trasera derecha interior: desgaste irregular.', 'http://localhost:8080/api/photos/demo-neumatico-gastado', pg_temp.ts(-104,'06:31'), 'resuelto', pg_temp.ts(-86,'15:00')),
+  ('458f8364-d40e-5648-aaa9-02ced3f01e4b', 'd991695d-ea54-56d3-a22e-2b4775f06e5c', 'NON_BLOCKING', 'Desgaste irregular neumático', E'Neumático trasero con desgaste irregular en el borde externo.\n\nNeumáticos: Trasera derecha interior: desgaste irregular.', 'http://localhost:8080/api/photos/demo-neumatico-gastado', pg_temp.ts(-104,'06:31'), 'resuelto', pg_temp.ts(-86,'15:00')),
   ('ff5e2e48-05bb-5513-a84a-3d4fe33a4b79', 'fb9187c1-8948-5590-8242-49a6a483d006', 'NON_BLOCKING', 'Falta tarjeta del seguro', null, null, pg_temp.ts(-101,'05:56'), 'resuelto', pg_temp.ts(-88,'16:00')),
   ('22d1ff64-9b93-5e50-b57a-5c670a4192f4', '14d1b8de-8330-589b-9261-d875b8d6f664', 'BLOCKING', 'Pérdida de aire en frenos', 'Pérdida de aire en el circuito de frenos, se escucha el escape en el eje trasero.', 'http://localhost:8080/api/photos/demo-fuga-aire-frenos', pg_temp.ts(-95,'18:28'), 'resuelto', pg_temp.ts(-94,'12:00')),
   ('78e44279-1e27-592d-be44-0f7fdf027ce6', '873dd02d-0275-5597-8dcf-d692fcaa56b3', 'BLOCKING', 'Pérdida de aceite del motor', 'Pérdida importante de aceite debajo del motor, deja charco al estacionar.', 'http://localhost:8080/api/photos/demo-fuga-aceite', pg_temp.ts(-94,'18:46'), 'resuelto', pg_temp.ts(-93,'13:00')),
   ('2a7c08e1-1211-525d-a682-8af4f602e091', '0dd2fd46-a68c-5eb3-a632-09c9f413c093', 'NON_BLOCKING', 'Parabrisas rajado', 'Rajadura en el parabrisas del lado del acompañante.', null, pg_temp.ts(-89,'05:14'), 'resuelto', pg_temp.ts(-80,'16:00')),
-  ('07a0c4f2-15bc-54bc-9e0a-f3a82c90aec1', 'fecc6bf3-f692-5f4f-b4a9-f0bacc2ea24a', 'NON_BLOCKING', 'Corte en flanco de neumático', E'Corte en el flanco del neumático delantero derecho, de unos tres centímetros. No pierde aire.\n\nCubiertas: Delantera derecha: corte o daño en el flanco.', 'http://localhost:8080/api/photos/demo-neumatico-corte', pg_temp.ts(-87,'07:46'), 'resuelto', pg_temp.ts(-80,'15:00')),
+  ('07a0c4f2-15bc-54bc-9e0a-f3a82c90aec1', 'fecc6bf3-f692-5f4f-b4a9-f0bacc2ea24a', 'NON_BLOCKING', 'Corte en flanco de neumático', E'Corte en el flanco del neumático delantero derecho, de unos tres centímetros. No pierde aire.\n\nNeumáticos: Delantera derecha: corte o daño en el flanco.', 'http://localhost:8080/api/photos/demo-neumatico-corte', pg_temp.ts(-87,'07:46'), 'resuelto', pg_temp.ts(-80,'15:00')),
   ('c5ea6c54-67a4-5f0e-86a1-81afd71879ca', '91e06c4a-1955-55db-b143-d10017be37f3', 'NON_BLOCKING', 'Goteo de aceite bajo el motor', null, 'http://localhost:8080/api/photos/demo-fuga-aceite', pg_temp.ts(-85,'07:09'), 'resuelto', pg_temp.ts(-83,'14:00')),
   ('e0a9d6f3-001d-5962-8e61-745eb72d51c2', '3b97a6d4-cdc7-5415-84d1-2cbd3eb3eed6', 'BLOCKING', 'Pérdida de aceite del motor', 'Pérdida importante de aceite debajo del motor, deja charco al estacionar.', 'http://localhost:8080/api/photos/demo-fuga-aceite', pg_temp.ts(-81,'20:46'), 'resuelto', pg_temp.ts(-80,'15:00')),
   ('c46156fd-8d56-5382-b87c-692e36b15372', '56b95601-9d62-51d5-80c1-b933d10fc8f1', 'NON_BLOCKING', 'Falta tarjeta del seguro', null, null, pg_temp.ts(-78,'06:43'), 'resuelto', pg_temp.ts(-66,'17:00')),
   ('1262eedc-6ccd-548c-a651-ac024992e309', '2c114dbe-ba52-58a1-9e45-4b0780762963', 'NON_BLOCKING', 'Falta tarjeta del seguro', null, null, pg_temp.ts(-74,'05:49'), 'resuelto', pg_temp.ts(-58,'17:00')),
-  ('4ef8b7b5-cc63-54ff-b7ed-a640c43df7b6', 'f7d420cb-1dc7-5a29-9a72-0131caf0d1c4', 'NON_BLOCKING', 'Desgaste irregular neumático', E'Neumático trasero con desgaste irregular en el borde externo.\n\nCubiertas: Trasera izquierda exterior: desgaste irregular.', null, pg_temp.ts(-74,'07:22'), 'resuelto', pg_temp.ts(-72,'12:00')),
+  ('4ef8b7b5-cc63-54ff-b7ed-a640c43df7b6', 'f7d420cb-1dc7-5a29-9a72-0131caf0d1c4', 'NON_BLOCKING', 'Desgaste irregular neumático', E'Neumático trasero con desgaste irregular en el borde externo.\n\nNeumáticos: Trasera izquierda exterior: desgaste irregular.', null, pg_temp.ts(-74,'07:22'), 'resuelto', pg_temp.ts(-72,'12:00')),
   ('3a22b463-43c4-56d4-9201-b2d0ba43c0f0', '984486d8-b5a7-5c20-b5fe-94a9e29dddcf', 'BLOCKING', 'Pérdida de aceite del motor', 'Pérdida importante de aceite debajo del motor, deja charco al estacionar.', 'http://localhost:8080/api/photos/demo-fuga-aceite', pg_temp.ts(-72,'17:54'), 'resuelto', pg_temp.ts(-71,'16:00')),
   ('926ee6b3-0257-5a21-b94c-6f14fad97c7c', '144124f8-b12a-5f14-ad95-62bf940197b5', 'BLOCKING', 'No encienden luces de freno', 'Al pisar el freno no enciende ninguna de las luces traseras. Las de posición sí andan.', 'http://localhost:8080/api/photos/demo-luz-trasera-rota', pg_temp.ts(-71,'17:56'), 'resuelto', pg_temp.ts(-70,'16:00')),
   ('346d2eea-f4b0-54f0-8935-207dd3ed64b8', '33887015-156c-56f9-b4df-f5393d5d5e6d', 'NON_BLOCKING', 'Testigo de ABS intermitente', 'El testigo de ABS se enciende de forma intermitente, sobre todo al frenar en mojado.', null, pg_temp.ts(-70,'06:55'), 'resuelto', pg_temp.ts(-66,'17:00')),
@@ -6375,7 +6375,7 @@ insert into defects (id, inspection_answer_id, severity, description, details, p
   ('b9e12a60-b8b8-59d8-b8f4-30082eafaf99', 'a2d7ca25-b6c7-5046-a087-1adafdc7361a', 'NON_BLOCKING', 'Raspón en paragolpes trasero', null, null, pg_temp.ts(-21,'18:53'), 'resuelto', pg_temp.ts(-11,'12:00')),
   ('fd3e352d-7469-5fea-b3ee-a00ab78580c3', 'f3a0124f-a3ca-5384-8aa2-9ee95853863d', 'NON_BLOCKING', 'Falta tarjeta del seguro', null, null, pg_temp.ts(-22,'05:29'), 'resuelto', pg_temp.ts(-10,'12:00')),
   ('bac4d1ae-e7bd-5453-8f7c-b6890887745c', '56ac859e-e35c-56a1-b43c-6967f0507918', 'BLOCKING', 'Frenos pierden aire detenido', 'Pérdida de aire en el circuito de frenos. El manómetro baja solo con el camión detenido y el motor apagado.', 'http://localhost:8080/api/photos/demo-fuga-aire-frenos', pg_temp.ts(-2,'19:39'), 'open', null),
-  ('9a2077d0-2b06-56c4-9b1c-b5c54b0c34a9', 'ce8a9efd-5152-56e7-a409-ec87bae5cda8', 'NON_BLOCKING', 'Neumático gastado, se ve tela', E'Neumático trasero derecho con desgaste irregular, ya se ve la tela en el borde externo.\n\nCubiertas: Trasera derecha exterior: se ve la tela o el alambre, poco dibujo.', 'http://localhost:8080/api/photos/demo-neumatico-gastado', pg_temp.ts(-5,'06:57'), 'open', null),
+  ('9a2077d0-2b06-56c4-9b1c-b5c54b0c34a9', 'ce8a9efd-5152-56e7-a409-ec87bae5cda8', 'NON_BLOCKING', 'Neumático gastado, se ve tela', E'Neumático trasero derecho con desgaste irregular, ya se ve la tela en el borde externo.\n\nNeumáticos: Trasera derecha exterior: se ve la tela o el alambre, poco dibujo.', 'http://localhost:8080/api/photos/demo-neumatico-gastado', pg_temp.ts(-5,'06:57'), 'open', null),
   ('7aba2567-95c2-5cd0-bd66-88ef297a7d6a', '2fe2b6f0-48a5-5010-82f7-2c05705d1451', 'NON_BLOCKING', 'Testigo de ABS intermitente', 'El testigo de ABS se enciende de forma intermitente, sobre todo al frenar en mojado.', 'http://localhost:8080/api/photos/demo-testigo-tablero', pg_temp.ts(-8,'05:51'), 'open', null),
   ('ebd9b918-9840-5b62-befb-bfc520fdb6bb', 'c732f27e-96b4-56b2-ae43-da22a6ca2632', 'NON_BLOCKING', 'Farol trasero roto sin tapa', 'Farol trasero izquierdo roto, le falta la tapa. Lo golpearon en la playa de carga.', 'http://localhost:8080/api/photos/demo-luz-trasera-rota', pg_temp.ts(-2,'05:20'), 'open', null),
   ('0047c5a9-cd55-52b5-8bd4-a856fc3020c7', 'a8208356-5394-5c53-b65d-95b2268fcd2e', 'NON_BLOCKING', 'Parabrisas rajado (10 cm)', 'Rajadura chica en el parabrisas del lado del acompañante, de unos diez centímetros. No molesta la visión.', 'http://localhost:8080/api/photos/demo-parabrisas-rajado', pg_temp.ts(-12,'05:46'), 'open', null);
@@ -7667,7 +7667,7 @@ insert into fuel_loads (id, vehicle_id, loaded_at, liters, amount, odometer_km, 
   ('3372cf02-5651-5b49-b368-2deb3a1a61cf', 'd87f8483-6b11-5b81-8b01-73d6ac16edc6', pg_temp.ts(-10,'09:09'), 62.20, 93722.96, 72645, true, '497de1f6-cb4d-5dc5-9cf3-acc7bf6e5e71', pg_temp.ts(-10,'09:09'), null, null),
   ('26a4b5ad-6eee-5d07-a44c-6a59c9d80f41', 'd87f8483-6b11-5b81-8b01-73d6ac16edc6', pg_temp.ts(-5,'07:07'), 66.30, 100530.69, 73299, true, '497de1f6-cb4d-5dc5-9cf3-acc7bf6e5e71', pg_temp.ts(-5,'07:07'), null, null);
 
--- Cubiertas, montajes y lo que reportaron los choferes (CAM-157)
+-- Neumáticos, montajes y lo que reportaron los choferes (CAM-157)
 insert into tires (id, code, brand, model, size, purchase_date, cost, status, retired_at, retired_reason, created_at) values
   ('46342e89-d27b-5589-bc72-b394b6a7ec55', 'MI-24-0001', 'Michelin', 'X Multi Z', '295/80 R22.5', pg_temp.d(-491), 670000.00, 'MOUNTED', null, null, pg_temp.ts(-491,'12:00')),
   ('76544a98-19a5-566b-9cd4-5af62a76004f', 'MI-24-0002', 'Michelin', 'X Multi Z', '295/80 R22.5', pg_temp.d(-392), 704000.00, 'MOUNTED', null, null, pg_temp.ts(-392,'12:00')),
@@ -8068,10 +8068,10 @@ insert into tire_condition_reports (id, tire_id, vehicle_id, position, condition
   ('8e608521-6146-5d29-9342-4441315f1dff', '2cc8086c-dbea-517e-ac8f-19c7a3176ea4', 'e33397f9-571a-528e-8613-338f4ce8f549', 'E2_IZQ_EXT', 'DESGASTE_IRREGULAR', pg_temp.ts(-74,'07:22'), '6a77a77d-a6c3-5116-a6ce-80166f5d6abc', 'pablo.acosta', '66419182-8e39-58c9-960f-c2da2f01710e', '4ef8b7b5-cc63-54ff-b7ed-a640c43df7b6'),
   ('9a43db75-26c1-5d68-b84a-f200fe8b195b', '10a5b06c-c4d0-5900-97a6-4b2adbb8e60b', 'e33397f9-571a-528e-8613-338f4ce8f549', 'E2_DER_EXT', 'SE_VE_LA_TELA,POCO_DIBUJO', pg_temp.ts(-5,'06:57'), '6a77a77d-a6c3-5116-a6ce-80166f5d6abc', 'pablo.acosta', '5ffc4059-3531-59d5-8c6c-f1b7886f6f82', '9a2077d0-2b06-56c4-9b1c-b5c54b0c34a9');
 
--- Avisos de consumo alto y cubierta con problemas, para el admin (los demás los genera el backend)
+-- Avisos de consumo alto y neumático con problemas, para el admin (los demás los genera el backend)
 insert into notifications (id, recipient_id, type, title, message, link, created_at) values
   (gen_random_uuid(), (select id from users where username = 'admin'), 'FUEL_CONSUMPTION_ANOMALY', 'Consumo de combustible alto en AF638RB', 'AF638RB consumió 47,4 L cada 100 km en los últimos 2.782 km, un 41% más que su promedio de 33,5 L.', '/vehiculos/f922966c-79f8-5c0c-be7b-9d5d119c96bd/combustible', pg_temp.ts(-12,'11:00')),
-  (gen_random_uuid(), (select id from users where username = 'admin'), 'TIRE_PROBLEM_REPORTED', 'Cubierta con problemas en AF102ZT', 'pablo.acosta reportó en AF102ZT: Trasera derecha exterior (Firestone FS591 N° FI-24-0066): se ve la tela o el alambre, poco dibujo.', '/vehiculos/e33397f9-571a-528e-8613-338f4ce8f549/neumaticos', pg_temp.ts(-5,'06:57'));
+  (gen_random_uuid(), (select id from users where username = 'admin'), 'TIRE_PROBLEM_REPORTED', 'Neumático con problemas en AF102ZT', 'pablo.acosta reportó en AF102ZT: Trasera derecha exterior (Firestone FS591 N° FI-24-0066): se ve la tela o el alambre, poco dibujo.', '/vehiculos/e33397f9-571a-528e-8613-338f4ce8f549/neumaticos', pg_temp.ts(-5,'06:57'));
 
 commit;
 

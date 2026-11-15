@@ -2,13 +2,13 @@ package org.fleetguard.entity;
 
 import java.util.Arrays;
 
-/** Lo que el chofer ve en una cubierta, a simple vista (sin medir el dibujo). Del más grave al más leve. */
+/** Lo que el chofer ve en un neumático, a simple vista (sin medir el dibujo). Del más grave al más leve. */
 public enum TireCondition {
     SE_VE_LA_TELA("Se ve la tela o el alambre"),
     BULTO("Bulto o deformación"),
     CORTE_FLANCO("Corte o daño en el flanco"),
-    PINCHADA("Pinchada"),
-    BAJA_PRESION("Baja presión o desinflada"),
+    PINCHADA("Pinchado"),
+    BAJA_PRESION("Baja presión o desinflado"),
     DESGASTE_IRREGULAR("Desgaste irregular"),
     POCO_DIBUJO("Poco dibujo");
 

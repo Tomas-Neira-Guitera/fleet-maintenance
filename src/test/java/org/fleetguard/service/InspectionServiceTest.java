@@ -405,22 +405,22 @@ class InspectionServiceTest {
     }
 
     @Test
-    void lasCubiertasConProblemasVanAlDetalleDelDefectoYQuedanEnCadaCubierta() {
+    void losNeumaticosConProblemasVanAlDetalleDelDefectoYQuedanEnCadaNeumatico() {
         noOpenTrip();
         List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-neumaticos", "defect", null,
-                new DefectDetailDto("non-blocking", "Cubierta pinchada", null, "Pierde de a poco")));
+                new DefectDetailDto("non-blocking", "Neumático pinchado", null, "Pierde de a poco")));
         List<TireConditionInput> conditions = List.of(new TireConditionInput("e1-izq", List.of("pinchada")));
         List<TireService.ConditionReport> reports = List.of(new TireService.ConditionReport(null, Set.of()));
         when(tireService.validateInspectionConditions(vehicle, conditions, true)).thenReturn(reports);
-        when(tireService.summary(vehicle, reports)).thenReturn("Cubiertas: Delantera izquierda: pinchada.");
+        when(tireService.summary(vehicle, reports)).thenReturn("Neumáticos: Delantera izquierda: pinchado.");
 
         service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", answers, null, null, null,
                 conditions, null), driver);
 
-        // CAM-157: el resumen se suma a lo que escribió el chofer, y cada cubierta queda con el defecto.
+        // CAM-157: el resumen se suma a lo que escribió el chofer, y cada neumático queda con el defecto.
         Defect defect = savedInspection().getAnswers().stream().filter(a -> a.getItemId().equals("ext-neumaticos"))
                 .findFirst().orElseThrow().getDefect();
-        assertEquals("Pierde de a poco\n\nCubiertas: Delantera izquierda: pinchada.", defect.getDetails());
+        assertEquals("Pierde de a poco\n\nNeumáticos: Delantera izquierda: pinchado.", defect.getDetails());
         verify(tireService).recordInspectionConditions(any(), any(), any(), any(), any(), any());
     }
 

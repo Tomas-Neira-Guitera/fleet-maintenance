@@ -1,6 +1,6 @@
 package org.fleetguard.entity;
 
-/** CAM-157: en stock (sin montar), montada en un vehículo o dada de baja. */
+/** CAM-157: en stock (sin montar), montado en un vehículo o dado de baja. */
 public enum TireStatus {
     STOCK, MOUNTED, RETIRED;
 

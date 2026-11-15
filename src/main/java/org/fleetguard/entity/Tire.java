@@ -13,7 +13,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
-// CAM-157: una cubierta. Sus km no se guardan: salen de sus montajes y del odómetro de cada vehículo.
+// CAM-157: un neumático. Sus km no se guardan: salen de sus montajes y del odómetro de cada vehículo.
 @Entity
 @Table(name = "tires")
 public class Tire {
