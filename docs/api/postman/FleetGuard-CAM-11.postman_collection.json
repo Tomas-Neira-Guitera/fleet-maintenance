@@ -2766,6 +2766,138 @@
           }
         },
         {
+          "name": "Checklist del remolque (CAM-159)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{trailerId}}/checklist?type=pre-trip",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{trailerId}}",
+                "checklist"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "pre-trip"
+                }
+              ]
+            },
+            "description": "CAM-159: el catálogo base de un remolque (ids rem-*), sin km. El acoplado no tiene patas de apoyo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('ids del remolque', () => pm.expect(pm.response.json().items.every(i => i.id.startsWith('rem-') || i.id.startsWith('extra-'))).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pre-trip con remolque y sin su checklist (422, CAM-159)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    {\n      \"itemId\": \"ext-luces\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-neumaticos\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-carroceria\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-fugas\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"int-km\",\n      \"numberValue\": 82500\n    },\n    {\n      \"itemId\": \"int-documentacion\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"int-testigos\",\n      \"outcome\": \"ok\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
+            },
+            "description": "CAM-159: con un remolque enganchado, trailerAnswers es obligatorio. Correrlo antes del anterior (con el vehículo sin viaje abierto)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422', () => pm.response.to.have.status(422));",
+                  "pm.test('señala trailerAnswers', () => pm.expect(pm.response.json().details[0].itemId).to.eql('trailerAnswers'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pre-trip del tractor con su remolque (CAM-159)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    {\n      \"itemId\": \"ext-luces\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-neumaticos\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-carroceria\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-fugas\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"int-km\",\n      \"numberValue\": 82500\n    },\n    {\n      \"itemId\": \"int-documentacion\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"int-testigos\",\n      \"outcome\": \"ok\"\n    }\n  ],\n  \"trailerAnswers\": [\n    {\n      \"itemId\": \"rem-enganche\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"rem-aire\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"rem-luces\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"rem-neumaticos\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"rem-patas\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"rem-carga\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"rem-paragolpes\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"rem-frenos\",\n      \"outcome\": \"defect\",\n      \"defect\": {\n        \"severity\": \"non-blocking\",\n        \"description\": \"Frena despareja\"\n      }\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
+            },
+            "description": "CAM-159: después de enganchar. El remolque se revisa en el mismo envío: queda su inspección (trailerInspection), a su nombre y en el mismo viaje. Un bloqueante en el remolque cierra el viaje al abrirlo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('trae la inspección del remolque', () => pm.expect(pm.response.json().trailerInspection.vehicleId).to.eql(pm.environment.get('trailerId')));",
+                  "if (pm.response.json().trip) pm.environment.set('tripId', pm.response.json().trip.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Enganche: desenganchar",
           "request": {
             "method": "DELETE",

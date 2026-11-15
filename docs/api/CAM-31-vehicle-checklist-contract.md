@@ -66,6 +66,13 @@ Errores: `404 VEHICLE_NOT_FOUND` / `CHECKLIST_ITEM_NOT_FOUND`, `409 ITEM_LOCKED`
 `BASE_ITEM_NOT_DELETABLE`, `422`
 con `details[].field` para `label`/`type`/`section`/`enabled`.
 
+### 6 bis. Remolques (CAM-159)
+
+Un semirremolque o un acoplado tiene su propio catálogo base, que se revisa en el pre-viaje de lo que lo
+arrastra: enganche, mangueras de aire y cable, luces, neumáticos (`rem-neumaticos`), frenos, patas de
+apoyo (solo semirremolque), carga y paragolpes. Todos `rem-*`, del exterior y sin km obligatorio. Se
+configuran igual que los de un vehículo (quitar, agregar extras, aplicar plantillas).
+
 ### 7. Plantillas (CAM-150)
 
 Una plantilla es un nombre y una lista de controles (`label`, `type`, `section`) que el admin

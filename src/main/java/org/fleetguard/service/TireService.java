@@ -269,12 +269,18 @@ public class TireService {
      */
     public List<ConditionReport> validateInspectionConditions(Vehicle vehicle, List<TireConditionInput> inputs,
                                                               boolean tiresInDefect) {
+        return validateInspectionConditions(vehicle, inputs, tiresInDefect, "tireConditions");
+    }
+
+    /** CAM-159: igual, con el nombre del campo para los errores ("trailerTireConditions" en el remolque). */
+    public List<ConditionReport> validateInspectionConditions(Vehicle vehicle, List<TireConditionInput> inputs,
+                                                              boolean tiresInDefect, String fieldName) {
         if (inputs == null || inputs.isEmpty()) {
             return List.of();
         }
         if (!tiresInDefect) {
             throw new InspectionValidationException("Los neumáticos con problemas van con Neumáticos en defecto.",
-                    List.of(new ValidationErrorDetail("tireConditions", "Marcá Neumáticos con defecto.")));
+                    List.of(new ValidationErrorDetail(fieldName, "Marcá Neumáticos con defecto.")));
         }
         Map<TirePosition, TireMounting> open = openByPosition(vehicle);
         Set<TirePosition> seen = EnumSet.noneOf(TirePosition.class);
@@ -282,7 +288,7 @@ public class TireService {
         List<ConditionReport> reports = new ArrayList<>();
         for (int i = 0; i < inputs.size(); i++) {
             TireConditionInput input = inputs.get(i);
-            String field = "tireConditions[" + i + "]";
+            String field = fieldName + "[" + i + "]";
             TirePosition position = input == null ? null : TirePosition.fromJson(input.position());
             TireMounting mounting = position == null ? null : open.get(position);
             if (mounting == null) {

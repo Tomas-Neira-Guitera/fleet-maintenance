@@ -1,5 +1,6 @@
 package org.fleetguard.entity.checklist;
 
+import org.fleetguard.entity.VehicleType;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -26,6 +27,22 @@ class ChecklistCatalogTest {
     void postTripItemsMatchTheFrontendDefinitionsExactly() {
         List<String> ids = ChecklistCatalog.postTripItems().stream().map(ChecklistItemDef::id).toList();
         assertEquals(List.of("post-danos", "post-luces", "post-fugas", "post-km"), ids);
+    }
+
+    @Test
+    void elRemolqueTieneSuChecklistSinKmYConIdsPropios() {
+        List<ChecklistItemDef> semi = ChecklistCatalog.trailerItems(VehicleType.SEMIRREMOLQUE_2_EJES);
+        List<ChecklistItemDef> acoplado = ChecklistCatalog.trailerItems(VehicleType.ACOPLADO);
+
+        assertTrue(semi.stream().allMatch(i -> i.id().startsWith("rem-") && !i.required()));
+        assertTrue(semi.stream().anyMatch(i -> i.id().equals("rem-patas")));
+        // El acoplado no tiene patas de apoyo y se engancha con la lanza.
+        assertTrue(acoplado.stream().noneMatch(i -> i.id().equals("rem-patas")));
+        assertEquals("Lanza y perno de enganche trabados", acoplado.get(0).label());
+        assertEquals("Perno rey y quinta rueda trabados", semi.get(0).label());
+        assertEquals(semi, ChecklistCatalog.preTripBaseItems(VehicleType.SEMIRREMOLQUE_2_EJES));
+        assertEquals(ChecklistCatalog.preTripItems(), ChecklistCatalog.preTripBaseItems(VehicleType.TRACTOR_4X2));
+        assertEquals(ChecklistCatalog.preTripItems(), ChecklistCatalog.preTripBaseItems(null));
     }
 
     @Test

@@ -1596,6 +1596,16 @@ paths:
         propio pre-trip reporta un defecto bloqueante (CAM-86), la inspección
         y el defecto se guardan pero el vehículo no queda en viaje: `trip`
         vuelve ya cerrado, con `startedAt` igual a `endedAt`.
+
+
+        CAM-159: en el pre-trip de un tractor o camión rígido que sale con un
+        remolque (el de `trailerId` o, sin el campo, el que ya tenía
+        enganchado), `trailerAnswers` es obligatorio: el checklist del
+        remolque (GET /api/vehicles/{trailerId}/checklist, ids `rem-*`), con
+        las mismas reglas. Se guarda como otra inspección, a nombre del
+        remolque y en el mismo viaje (`trailerInspection`). Un bloqueante en
+        el remolque deja el viaje cerrado igual que uno del vehículo, y un
+        remolque que no puede salir da 409 TRAILER_BLOCKED.
       security:
         - bearerAuth: []
       parameters:
@@ -1629,8 +1639,10 @@ paths:
             (ej. pre-trip sobre un vehículo que ya está "en viaje", o post-trip
             sobre uno sin viaje abierto), o es un pre-trip sobre un vehículo
             que no puede salir (bloqueado o dado de baja, CAM-89).
-            VEHICLE_IS_TRAILER -- los remolques no se inspeccionan desde la app
-            del chofer; NOT_A_TRAILER / CANNOT_TOW por el trailerId (CAM-157).
+            VEHICLE_IS_TRAILER -- un remolque no se inspecciona solo: va en el
+            pre-trip de lo que lo arrastra (CAM-159); NOT_A_TRAILER / CANNOT_TOW
+            por el trailerId (CAM-157); TRAILER_BLOCKED si el remolque que lleva
+            tiene un bloqueante abierto o un documento vencido (CAM-159).
           content:
             application/json:
               schema:
@@ -3871,6 +3883,30 @@ components:
           description: >-
             CAM-157: solo en el pre-viaje de un tractor o camión rígido. El id de un remolque lo engancha,
             "none" desengancha el que tenía, sin el campo no cambia nada. Errores como en PUT /coupling.
+        trailerAnswers:
+          type: array
+          nullable: true
+          description: >-
+            CAM-159: el checklist del remolque que sale con este pre-viaje, obligatorio si lleva uno (422 con
+            itemId trailerAnswers si falta). Mismas reglas que answers; los errores van con el itemId del
+            control (rem-*). Se ignora si no lleva remolque.
+          items:
+            $ref: "#/components/schemas/ChecklistAnswer"
+        trailerTireConditions:
+          type: array
+          nullable: true
+          description: >-
+            CAM-159: como tireConditions, para el remolque, con "Neumáticos" del remolque (rem-neumaticos) en
+            defecto. Errores en trailerTireConditions[i].
+          items:
+            type: object
+            required: [position, conditions]
+            properties:
+              position: { $ref: "#/components/schemas/TirePosition" }
+              conditions:
+                type: array
+                minItems: 1
+                items: { $ref: "#/components/schemas/TireCondition" }
 
     Trip:
       type: object
@@ -3917,6 +3953,11 @@ components:
           $ref: "#/components/schemas/Inspection"
         trip:
           $ref: "#/components/schemas/Trip"
+        trailerInspection:
+          allOf:
+            - $ref: "#/components/schemas/Inspection"
+          nullable: true
+          description: CAM-159 -- la del remolque revisado en el mismo pre-trip; null si no llevaba.
 
     DefectSummary:
       type: object

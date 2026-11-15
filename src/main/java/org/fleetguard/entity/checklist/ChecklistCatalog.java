@@ -1,5 +1,7 @@
 package org.fleetguard.entity.checklist;
 
+import org.fleetguard.entity.VehicleType;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +49,24 @@ public final class ChecklistCatalog {
             new ChecklistItemDef(ODOMETER_ITEM_ID_POST_TRIP, "Kilómetros finales", NUMBER, POSTTRIP, true)
     );
 
+    /**
+     * CAM-159: el remolque se revisa en el pre-viaje de lo que lo arrastra. Ids propios ("rem-"), para que sus
+     * respuestas y errores no se confundan con los del camión en el mismo envío.
+     */
+    public static final String TRAILER_TIRES_ITEM_ID = "rem-neumaticos";
+    public static final String TRAILER_LANDING_GEAR_ITEM_ID = "rem-patas";
+
+    private static final List<ChecklistItemDef> TRAILER_ITEMS = List.of(
+            new ChecklistItemDef("rem-enganche", "Enganche trabado", CHECK, EXTERIOR),
+            new ChecklistItemDef("rem-aire", "Mangueras de aire y cable de luces conectados", CHECK, EXTERIOR),
+            new ChecklistItemDef("rem-luces", "Luces, patente y reflectivos", CHECK, EXTERIOR),
+            new ChecklistItemDef(TRAILER_TIRES_ITEM_ID, "Neumáticos", CHECK, EXTERIOR),
+            new ChecklistItemDef("rem-frenos", "Frenos", CHECK, EXTERIOR),
+            new ChecklistItemDef(TRAILER_LANDING_GEAR_ITEM_ID, "Patas de apoyo levantadas", CHECK, EXTERIOR),
+            new ChecklistItemDef("rem-carga", "Puertas, lona y sujeción de la carga", CHECK, EXTERIOR),
+            new ChecklistItemDef("rem-paragolpes", "Paragolpes trasero", CHECK, EXTERIOR)
+    );
+
     // CAM-144: controles del post-viaje que son el mismo control que uno del pre-viaje.
     private static final Map<String, String> SAME_CONTROL_IN_PRE_TRIP = Map.of(
             "post-luces", "ext-luces",
@@ -78,5 +98,21 @@ public final class ChecklistCatalog {
 
     public static List<ChecklistItemDef> postTripItems() {
         return POST_TRIP_ITEMS;
+    }
+
+    /** CAM-159: el checklist base de un remolque. El acoplado no tiene patas de apoyo y se engancha con la lanza. */
+    public static List<ChecklistItemDef> trailerItems(VehicleType type) {
+        boolean fullTrailer = type != null && type.kind() == VehicleType.Kind.FULL_TRAILER;
+        return TRAILER_ITEMS.stream()
+                .filter(i -> !(fullTrailer && i.id().equals(TRAILER_LANDING_GEAR_ITEM_ID)))
+                .map(i -> !i.id().equals("rem-enganche") ? i : new ChecklistItemDef(i.id(),
+                        fullTrailer ? "Lanza y perno de enganche trabados" : "Perno rey y quinta rueda trabados",
+                        i.type(), i.section()))
+                .toList();
+    }
+
+    /** El checklist base del pre-viaje del vehículo: el de un remolque o el de siempre. */
+    public static List<ChecklistItemDef> preTripBaseItems(VehicleType type) {
+        return type != null && type.isTrailer() ? trailerItems(type) : preTripItems();
     }
 }

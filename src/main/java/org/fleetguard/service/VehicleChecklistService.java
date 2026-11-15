@@ -6,6 +6,7 @@ import org.fleetguard.dto.FieldValidationErrorDetail;
 import org.fleetguard.dto.UpdateVehicleChecklistItemRequest;
 import org.fleetguard.dto.VehicleChecklistItemDto;
 import org.fleetguard.entity.InspectionType;
+import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleChecklistItem;
 import org.fleetguard.entity.VehicleDisabledChecklistItem;
 import org.fleetguard.entity.checklist.ChecklistCatalog;
@@ -34,7 +35,8 @@ import java.util.stream.Collectors;
 
 /**
  * CAM-31: checklist pre-trip por vehículo = catálogo base − ítems desactivados + ítems extra incluidos.
- * El post-trip sigue siendo la lista fija acotada. Los ítems obligatorios (km) no se pueden quitar.
+ * El post-trip sigue siendo la lista fija acotada. Los ítems obligatorios (km) no se pueden quitar. Un remolque
+ * tiene su propio catálogo base (CAM-159).
  */
 @Service
 public class VehicleChecklistService {
@@ -59,11 +61,12 @@ public class VehicleChecklistService {
             return ChecklistCatalog.postTripItems();
         }
         Set<String> disabled = disabledBaseIds(vehicleId);
+        List<ChecklistItemDef> base = baseFor(vehicleId);
         List<VehicleChecklistItem> extras = extraRepository.findByVehicleIdAndActiveTrueOrderByCreatedAtAsc(vehicleId);
 
         List<ChecklistItemDef> items = new ArrayList<>();
         for (ChecklistSection section : List.of(ChecklistSection.EXTERIOR, ChecklistSection.INTERIOR)) {
-            ChecklistCatalog.preTripItems().stream()
+            base.stream()
                     .filter(i -> i.section() == section)
                     .filter(i -> i.required() || !disabled.contains(i.id()))
                     .forEach(items::add);
@@ -92,7 +95,7 @@ public class VehicleChecklistService {
         UUID vehicleId = requireVehicle(vehicleIdRaw);
         Set<String> disabled = disabledBaseIds(vehicleId);
         List<VehicleChecklistItemDto> result = new ArrayList<>();
-        for (ChecklistItemDef base : ChecklistCatalog.preTripItems()) {
+        for (ChecklistItemDef base : baseFor(vehicleId)) {
             boolean enabled = base.required() || !disabled.contains(base.id());
             result.add(new VehicleChecklistItemDto(base.id(), base.label(), base.type().toJson(),
                     base.section().toJson(), base.required(), "base", enabled, base.required()));
@@ -156,7 +159,7 @@ public class VehicleChecklistService {
     @Transactional
     public CopyResult copyItems(UUID vehicleId, List<ItemSpec> items, UUID templateId) {
         Set<String> existing = new HashSet<>();
-        ChecklistCatalog.preTripItems().forEach(base -> existing.add(sameControlKey(base.label(), base.section())));
+        baseFor(vehicleId).forEach(base -> existing.add(sameControlKey(base.label(), base.section())));
         extraRepository.findByVehicleIdOrderByCreatedAtAsc(vehicleId)
                 .forEach(extra -> existing.add(sameControlKey(extra.getLabel(), extra.getSection())));
 
@@ -225,7 +228,7 @@ public class VehicleChecklistService {
             return toExtraDto(extra);
         }
 
-        ChecklistItemDef base = ChecklistCatalog.preTripItems().stream()
+        ChecklistItemDef base = baseFor(vehicleId).stream()
                 .filter(i -> i.id().equals(itemId))
                 .findFirst()
                 .orElseThrow(() -> new ChecklistItemNotFoundException(itemId));
@@ -248,7 +251,7 @@ public class VehicleChecklistService {
     public void deleteExtra(String vehicleIdRaw, String itemId) {
         UUID vehicleId = requireVehicle(vehicleIdRaw);
         if (!itemId.startsWith(VehicleChecklistItem.ID_PREFIX)) {
-            boolean base = ChecklistCatalog.preTripItems().stream().anyMatch(i -> i.id().equals(itemId));
+            boolean base = baseFor(vehicleId).stream().anyMatch(i -> i.id().equals(itemId));
             if (!base) {
                 throw new ChecklistItemNotFoundException(itemId);
             }
@@ -268,6 +271,12 @@ public class VehicleChecklistService {
         return extraRepository.findById(id)
                 .filter(e -> e.getVehicleId().equals(vehicleId))
                 .orElseThrow(() -> new ChecklistItemNotFoundException(itemId));
+    }
+
+    /** CAM-159: el catálogo base según el tipo: un remolque tiene el suyo. */
+    private List<ChecklistItemDef> baseFor(UUID vehicleId) {
+        return ChecklistCatalog.preTripBaseItems(
+                vehicleRepository.findById(vehicleId).map(Vehicle::getVehicleType).orElse(null));
     }
 
     private Set<String> disabledBaseIds(UUID vehicleId) {

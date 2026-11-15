@@ -15,14 +15,23 @@ public record InspectionSubmissionDto(
         List<TireConditionInput> tireConditions,
         // CAM-157: opcional, pre-viaje de un tractor o camión rígido. Id del remolque que lleva, "none" si va sin
         // remolque; sin el campo, el enganche queda como estaba.
-        String trailerId
+        String trailerId,
+        // CAM-159: el checklist del remolque que lleva (el elegido o el que ya tenía), obligatorio si lleva uno.
+        List<ChecklistAnswerDto> trailerAnswers,
+        // CAM-159: como tireConditions, con "Neumáticos" del remolque (rem-neumaticos) en defecto.
+        List<TireConditionInput> trailerTireConditions
 ) {
     public InspectionSubmissionDto(String type, List<ChecklistAnswerDto> answers, String notes) {
-        this(type, answers, notes, null, null, null, null);
+        this(type, answers, notes, null, null, null, null, null, null);
     }
 
     public InspectionSubmissionDto(String type, List<ChecklistAnswerDto> answers, String notes, String performedAt,
                                    String clientSubmissionId) {
-        this(type, answers, notes, performedAt, clientSubmissionId, null, null);
+        this(type, answers, notes, performedAt, clientSubmissionId, null, null, null, null);
+    }
+
+    public InspectionSubmissionDto(String type, List<ChecklistAnswerDto> answers, String notes, String performedAt,
+                                   String clientSubmissionId, List<TireConditionInput> tireConditions, String trailerId) {
+        this(type, answers, notes, performedAt, clientSubmissionId, tireConditions, trailerId, null, null);
     }
 }

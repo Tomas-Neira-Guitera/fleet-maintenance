@@ -19,6 +19,7 @@ import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.dto.BlockReasonDto;
 import org.fleetguard.dto.ChecklistAnswerDto;
+import org.fleetguard.dto.InspectionDto;
 import org.fleetguard.dto.InspectionResultDto;
 import org.fleetguard.dto.InspectionSubmissionDto;
 import org.fleetguard.entity.Trip;
@@ -26,6 +27,7 @@ import org.fleetguard.mapper.TripMapper;
 import org.fleetguard.repository.TripRepository;
 import org.fleetguard.entity.TripStatus;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.checklist.ChecklistCatalog;
 import org.fleetguard.entity.checklist.ChecklistItemDef;
 import org.fleetguard.repository.VehicleRepository;
 import org.springframework.stereotype.Service;
@@ -103,7 +105,7 @@ public class InspectionService {
         // CAM-157: un remolque no tiene chofer ni viajes propios; se revisa desde el admin.
         if (vehicle.getVehicleType() != null && vehicle.getVehicleType().isTrailer()) {
             throw new VehicleStateConflictException("VEHICLE_IS_TRAILER",
-                    vehicle.getPlate() + " es un remolque: no se inspecciona desde el celular.");
+                    vehicle.getPlate() + " es un remolque: se revisa en el pre-viaje del vehículo que lo arrastra.");
         }
 
         // CAM-153: un reintento de una inspección que ya llegó devuelve la guardada, sin volver a validar el
@@ -135,17 +137,20 @@ public class InspectionService {
                 tireService.validateInspectionConditions(vehicle, submission.tireConditions(), tiresInDefect);
         String trailerIdRaw = type == InspectionType.PRE_TRIP ? submission.trailerId() : null;
         Optional<Vehicle> trailer = couplingService.resolveInspectionTrailer(vehicle, trailerIdRaw);
-        Map<String, String> labelById = checklist.stream()
-                .collect(Collectors.toMap(ChecklistItemDef::id, ChecklistItemDef::label));
+        // CAM-159: el remolque que sale con este pre-viaje (el elegido o, sin elegir, el que ya llevaba) se revisa acá.
+        Optional<Vehicle> towedTrailer = type != InspectionType.PRE_TRIP ? Optional.empty()
+                : trailerIdRaw == null || trailerIdRaw.isBlank() ? couplingService.currentTrailer(vehicle) : trailer;
+        TrailerCheck trailerCheck = towedTrailer.map(t -> checkTrailer(t, submission)).orElse(null);
+        boolean blocking = outcome.hasBlockingDefect() || (trailerCheck != null && trailerCheck.outcome().hasBlockingDefect());
 
         // CAM-153: el viaje, la inspección y los defectos quedan con la hora en que el chofer la hizo.
         Instant now = performedAt(submission.performedAt(), openTrip.filter(t -> type == InspectionType.POST_TRIP));
         Trip trip;
         if (type == InspectionType.PRE_TRIP) {
             trip = new Trip(vehicle, now, driver.id(), driver.username());
-            // CAM-86: con un defecto bloqueante el vehículo no sale, así que no queda en viaje.
-            // inspections.trip_id es obligatorio: el viaje se abre y se cierra en el mismo instante.
-            if (outcome.hasBlockingDefect()) {
+            // CAM-86: con un defecto bloqueante el vehículo no sale, así que no queda en viaje. Tampoco si lo tiene
+            // su remolque (CAM-159). inspections.trip_id es obligatorio: el viaje se abre y se cierra en el mismo instante.
+            if (blocking) {
                 trip.close(now, driver.id(), driver.username());
             }
         } else {
@@ -157,62 +162,34 @@ public class InspectionService {
         Inspection inspection = new Inspection(trip, vehicleId, driver.id().toString(), driver.username(), type, now,
                 outcome.odometerKm(), submission.notes(), outcome.hasBlockingDefect());
         inspection.setClientSubmissionId(clientSubmissionId);
-
-        for (ChecklistAnswerDto answerDto : outcome.recognizedAnswers()) {
-            CheckOutcome checkOutcome = CheckOutcome.fromJson(answerDto.outcome());
-            InspectionAnswer answerEntity = new InspectionAnswer(answerDto.itemId(), labelById.get(answerDto.itemId()),
-                    checkOutcome, answerDto.numberValue());
-            inspection.addAnswer(answerEntity);
-
-            if (checkOutcome == CheckOutcome.DEFECT && answerDto.defect() != null) {
-                DefectSeverity severity = DefectSeverity.fromJson(answerDto.defect().severity());
-                String defectDetails = answerDto.defect().details();
-                if (TIRES_ITEM_ID.equals(answerDto.itemId()) && !tireReports.isEmpty()) {
-                    String summary = tireService.summary(vehicle, tireReports);
-                    defectDetails = defectDetails == null || defectDetails.isBlank() ? summary
-                            : defectDetails.trim() + "\n\n" + summary;
-                }
-                Defect defect = new Defect(severity, answerDto.defect().description(),
-                        defectDetails == null || defectDetails.isBlank() ? null : defectDetails.trim(),
-                        answerDto.defect().photoUrl(), now);
-                answerEntity.attachDefect(defect);
-            }
-        }
-
+        addAnswers(inspection, vehicle, checklist, outcome, tireReports, TIRES_ITEM_ID, now);
         inspectionRepository.save(inspection);
-        Defect tiresDefect = inspection.getAnswers().stream()
-                .filter(answer -> TIRES_ITEM_ID.equals(answer.getItemId()))
-                .map(InspectionAnswer::getDefect)
-                .filter(Objects::nonNull)
-                .findFirst().orElse(null);
-        tireService.recordInspectionConditions(vehicle, tireReports, now, driver, inspection.getId(), tiresDefect);
+        tireService.recordInspectionConditions(vehicle, tireReports, now, driver, inspection.getId(),
+                defectOf(inspection, TIRES_ITEM_ID));
+
+        // CAM-159: la del remolque va aparte, a su nombre y en el mismo viaje, ligada a la del vehículo.
+        Inspection trailerInspection = null;
+        if (trailerCheck != null) {
+            Vehicle towed = trailerCheck.trailer();
+            trailerInspection = new Inspection(trip, towed.getId(), driver.id().toString(), driver.username(),
+                    InspectionType.PRE_TRIP, now, null, null, trailerCheck.outcome().hasBlockingDefect());
+            trailerInspection.setTowingInspectionId(inspection.getId());
+            addAnswers(trailerInspection, towed, trailerCheck.checklist(), trailerCheck.outcome(), trailerCheck.tireReports(),
+                    ChecklistCatalog.TRAILER_TIRES_ITEM_ID, now);
+            inspectionRepository.save(trailerInspection);
+            tireService.recordInspectionConditions(towed, trailerCheck.tireReports(), now, driver, trailerInspection.getId(),
+                    defectOf(trailerInspection, ChecklistCatalog.TRAILER_TIRES_ITEM_ID));
+        }
         couplingService.applyInspectionTrailer(vehicle, trailerIdRaw, trailer, driver.username());
 
-        // CAM-97: el aviso sale después del commit (BlockingDefectNotificationListener).
-        List<String> blockingTitles = inspection.getAnswers().stream()
-                .map(InspectionAnswer::getDefect)
-                .filter(defect -> defect != null && defect.getSeverity() == DefectSeverity.BLOCKING)
-                .map(Defect::getDescription)
-                .toList();
-        if (!blockingTitles.isEmpty()) {
-            eventPublisher.publishEvent(new BlockingDefectReportedEvent(vehicleId, vehicle.getPlate(), type,
-                    driver.username(), blockingTitles));
-            // CAM-102/103: registra desde cuándo no está disponible, para avisar cuando vuelva.
-            availabilityService.sync(vehicle, null);
+        publishDefectEvents(inspection, vehicle, type, driver);
+        if (trailerInspection != null) {
+            publishDefectEvents(trailerInspection, trailerCheck.trailer(), type, driver);
         }
 
         // CAM-143: si salió de viaje con turno de taller ese día, después del commit se avisa al admin.
-        if (type == InspectionType.PRE_TRIP && !outcome.hasBlockingDefect()) {
+        if (type == InspectionType.PRE_TRIP && !blocking) {
             eventPublisher.publishEvent(new TripStartedEvent(vehicleId, vehicle.getPlate(), driver.username(), now));
-        }
-
-        // CAM-135: con cualquier defecto, después del commit se revisa si el control se volvió recurrente.
-        List<String> failedItemIds = inspection.getAnswers().stream()
-                .filter(answer -> answer.getDefect() != null)
-                .map(InspectionAnswer::getItemId)
-                .toList();
-        if (!failedItemIds.isEmpty()) {
-            eventPublisher.publishEvent(new DefectsReportedEvent(vehicleId, vehicle.getPlate(), failedItemIds));
         }
 
         // CAM-152: antes de que el post-viaje mueva el km del vehículo, se compara con el que tenía y
@@ -228,7 +205,99 @@ public class InspectionService {
             odometerReadings.apply(vehicle, (long) Math.floor(outcome.odometerKm()));
         }
 
-        return new InspectionResultDto(inspectionMapper.toDto(inspection), tripMapper.toDto(trip));
+        return new InspectionResultDto(inspectionMapper.toDto(inspection), tripMapper.toDto(trip),
+                trailerInspection == null ? null : inspectionMapper.toDto(trailerInspection));
+    }
+
+    /** CAM-159: el remolque ya validado, para guardarlo después de la inspección del vehículo. */
+    private record TrailerCheck(Vehicle trailer, List<ChecklistItemDef> checklist,
+                                InspectionValidator.ValidationOutcome outcome, List<TireService.ConditionReport> tireReports) {
+    }
+
+    /**
+     * CAM-159: el checklist del remolque, con las mismas reglas que el del vehículo. Un remolque que no puede salir
+     * (bloqueante abierto o documento vencido, CAM-127) frena el pre-viaje entero: hay que elegir otro.
+     */
+    private TrailerCheck checkTrailer(Vehicle trailer, InspectionSubmissionDto submission) {
+        List<BlockReasonDto> reasons = availabilityService.reasons(trailer.getId());
+        if (!reasons.isEmpty()) {
+            throw new VehicleStateConflictException("TRAILER_BLOCKED",
+                    VehicleAvailabilityService.blockedMessage(trailer.getPlate(), reasons));
+        }
+        if (submission.trailerAnswers() == null) {
+            throw new InspectionValidationException("Falta el checklist del remolque " + trailer.getPlate() + ".",
+                    List.of(new ValidationErrorDetail("trailerAnswers", "Obligatorio cuando se lleva un remolque.")));
+        }
+        List<ChecklistItemDef> checklist = checklistService.resolve(trailer.getId(), InspectionType.PRE_TRIP);
+        InspectionValidator.ValidationOutcome outcome =
+                validator.validate(InspectionType.PRE_TRIP, checklist, submission.trailerAnswers());
+        boolean tiresInDefect = outcome.recognizedAnswers().stream()
+                .anyMatch(a -> ChecklistCatalog.TRAILER_TIRES_ITEM_ID.equals(a.itemId())
+                        && CheckOutcome.fromJson(a.outcome()) == CheckOutcome.DEFECT && a.defect() != null);
+        List<TireService.ConditionReport> tireReports = tireService.validateInspectionConditions(trailer,
+                submission.trailerTireConditions(), tiresInDefect, "trailerTireConditions");
+        return new TrailerCheck(trailer, checklist, outcome, tireReports);
+    }
+
+    /** Las respuestas y sus defectos. Los neumáticos con problemas se suman al detalle del defecto de Neumáticos. */
+    private void addAnswers(Inspection inspection, Vehicle vehicle, List<ChecklistItemDef> checklist,
+                            InspectionValidator.ValidationOutcome outcome, List<TireService.ConditionReport> tireReports,
+                            String tiresItemId, Instant now) {
+        Map<String, String> labelById = checklist.stream()
+                .collect(Collectors.toMap(ChecklistItemDef::id, ChecklistItemDef::label));
+        for (ChecklistAnswerDto answerDto : outcome.recognizedAnswers()) {
+            CheckOutcome checkOutcome = CheckOutcome.fromJson(answerDto.outcome());
+            InspectionAnswer answerEntity = new InspectionAnswer(answerDto.itemId(), labelById.get(answerDto.itemId()),
+                    checkOutcome, answerDto.numberValue());
+            inspection.addAnswer(answerEntity);
+
+            if (checkOutcome == CheckOutcome.DEFECT && answerDto.defect() != null) {
+                DefectSeverity severity = DefectSeverity.fromJson(answerDto.defect().severity());
+                String defectDetails = answerDto.defect().details();
+                if (tiresItemId.equals(answerDto.itemId()) && !tireReports.isEmpty()) {
+                    String summary = tireService.summary(vehicle, tireReports);
+                    defectDetails = defectDetails == null || defectDetails.isBlank() ? summary
+                            : defectDetails.trim() + "\n\n" + summary;
+                }
+                Defect defect = new Defect(severity, answerDto.defect().description(),
+                        defectDetails == null || defectDetails.isBlank() ? null : defectDetails.trim(),
+                        answerDto.defect().photoUrl(), now);
+                answerEntity.attachDefect(defect);
+            }
+        }
+    }
+
+    private static Defect defectOf(Inspection inspection, String itemId) {
+        return inspection.getAnswers().stream()
+                .filter(answer -> itemId.equals(answer.getItemId()))
+                .map(InspectionAnswer::getDefect)
+                .filter(Objects::nonNull)
+                .findFirst().orElse(null);
+    }
+
+    /** Los avisos de los defectos de una inspección, para el vehículo de esa inspección. Salen después del commit. */
+    private void publishDefectEvents(Inspection inspection, Vehicle vehicle, InspectionType type, AuthenticatedUser driver) {
+        // CAM-97: el aviso de bloqueante (BlockingDefectNotificationListener).
+        List<String> blockingTitles = inspection.getAnswers().stream()
+                .map(InspectionAnswer::getDefect)
+                .filter(defect -> defect != null && defect.getSeverity() == DefectSeverity.BLOCKING)
+                .map(Defect::getDescription)
+                .toList();
+        if (!blockingTitles.isEmpty()) {
+            eventPublisher.publishEvent(new BlockingDefectReportedEvent(vehicle.getId(), vehicle.getPlate(), type,
+                    driver.username(), blockingTitles));
+            // CAM-102/103: registra desde cuándo no está disponible, para avisar cuando vuelva.
+            availabilityService.sync(vehicle, null);
+        }
+
+        // CAM-135: con cualquier defecto, se revisa si el control se volvió recurrente.
+        List<String> failedItemIds = inspection.getAnswers().stream()
+                .filter(answer -> answer.getDefect() != null)
+                .map(InspectionAnswer::getItemId)
+                .toList();
+        if (!failedItemIds.isEmpty()) {
+            eventPublisher.publishEvent(new DefectsReportedEvent(vehicle.getId(), vehicle.getPlate(), failedItemIds));
+        }
     }
 
     /**
@@ -276,7 +345,10 @@ public class InspectionService {
             throw new VehicleStateConflictException("DUPLICATE_SUBMISSION",
                     "Ya hay otra inspección guardada con ese clientSubmissionId.");
         }
-        return new InspectionResultDto(inspectionMapper.toDto(existing), tripMapper.toDto(existing.getTrip()));
+        InspectionDto trailerInspection = inspectionRepository.findFirstByTowingInspectionId(existing.getId())
+                .map(inspectionMapper::toDto).orElse(null);
+        return new InspectionResultDto(inspectionMapper.toDto(existing), tripMapper.toDto(existing.getTrip()),
+                trailerInspection);
     }
 
     /** CAM-89: el servidor es el que impide abrir un viaje con un vehículo que no puede salir. */

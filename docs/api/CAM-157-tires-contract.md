@@ -120,8 +120,8 @@ promedio por neumático.
 ## 7. Remolques y enganche
 
 Semirremolques y acoplados son vehículos (tienen neumáticos, documentación, mantenimiento, órdenes de
-trabajo), pero **solo los ve el admin**: no aparecen en el listado del chofer, no se inspeccionan desde la
-app (`409 VEHICLE_IS_TRAILER`) ni cargan combustible (ídem).
+trabajo), pero no aparecen en el listado del chofer, no se inspeccionan solos (`409 VEHICLE_IS_TRAILER`) ni
+cargan combustible (ídem). CAM-159: se revisan en el pre-viaje de lo que los arrastra (ver abajo).
 
 - `PUT /vehicles/{trailerId}/coupling` con `{ towingId }` lo engancha. Un tractor arrastra semirremolques y
   un camión rígido acoplados (`409 CANNOT_TOW`); `{trailerId}` tiene que ser un remolque
@@ -131,6 +131,14 @@ app (`409 VEHICLE_IS_TRAILER`) ni cargan combustible (ídem).
   `canTow` y el historial (`trailer_couplings`).
 - En el **pre-viaje** de un tractor o camión el chofer elige qué remolque lleva: `trailerId` con un id lo
   engancha, `"none"` desengancha, sin el campo no cambia nada. Se valida antes de guardar la inspección.
+- **Checklist del remolque** (CAM-159): el que sale con el pre-viaje (el de `trailerId` o el que ya tenía)
+  se revisa en el mismo envío, con `trailerAnswers` (obligatorio) y `trailerTireConditions`. Tiene su catálogo
+  base (`rem-*`, sin km; el acoplado sin patas de apoyo), configurable por remolque como cualquier vehículo
+  (CAM-31) y con plantillas. Queda como una inspección del remolque en el mismo viaje, con
+  `towing_inspection_id` = la del vehículo; sus defectos son del remolque (bloqueo, OT, recurrentes, avisos).
+  Un bloqueante en el remolque deja el viaje cerrado al abrirlo, como uno del vehículo. Un remolque que no
+  puede salir (bloqueante abierto o documento vencido) da `409 TRAILER_BLOCKED`. Esa inspección no cuenta
+  aparte en las estadísticas del chofer ni en el pre-viaje del viaje (CAM-146, CAM-152).
 - **Km del remolque**: no tiene odómetro. Cada km que suma el que arrastra (inspecciones, CAM-90) se le
   suma también al remolque enganchado. Así sus neumáticos suman km y su mantenimiento por km vence solo.
 
