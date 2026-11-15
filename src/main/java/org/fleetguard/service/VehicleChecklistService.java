@@ -8,6 +8,7 @@ import org.fleetguard.dto.VehicleChecklistItemDto;
 import org.fleetguard.entity.InspectionType;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleChecklistItem;
+import org.fleetguard.entity.VehicleType;
 import org.fleetguard.entity.VehicleDisabledChecklistItem;
 import org.fleetguard.entity.checklist.ChecklistCatalog;
 import org.fleetguard.entity.checklist.ChecklistItemDef;
@@ -58,7 +59,7 @@ public class VehicleChecklistService {
     /** Checklist efectivo de un vehículo, en el orden en que lo ve el chofer. */
     public List<ChecklistItemDef> resolve(UUID vehicleId, InspectionType type) {
         if (type != InspectionType.PRE_TRIP) {
-            return ChecklistCatalog.postTripItems();
+            return ChecklistCatalog.postTripItems(typeOf(vehicleId));
         }
         Set<String> disabled = disabledBaseIds(vehicleId);
         List<ChecklistItemDef> base = baseFor(vehicleId);
@@ -275,8 +276,11 @@ public class VehicleChecklistService {
 
     /** CAM-159: el catálogo base según el tipo: un remolque tiene el suyo. */
     private List<ChecklistItemDef> baseFor(UUID vehicleId) {
-        return ChecklistCatalog.preTripBaseItems(
-                vehicleRepository.findById(vehicleId).map(Vehicle::getVehicleType).orElse(null));
+        return ChecklistCatalog.preTripBaseItems(typeOf(vehicleId));
+    }
+
+    private VehicleType typeOf(UUID vehicleId) {
+        return vehicleRepository.findById(vehicleId).map(Vehicle::getVehicleType).orElse(null);
     }
 
     private Set<String> disabledBaseIds(UUID vehicleId) {

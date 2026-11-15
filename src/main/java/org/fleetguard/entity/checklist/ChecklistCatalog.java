@@ -67,10 +67,24 @@ public final class ChecklistCatalog {
             new ChecklistItemDef("rem-paragolpes", "Paragolpes trasero", CHECK, EXTERIOR)
     );
 
+    // CAM-159: el post-viaje del remolque, corto. Lo que no dio OK se marca contra su pre-viaje (CAM-146).
+    public static final String TRAILER_POST_TRIP_TIRES_ITEM_ID = "rem-post-neumaticos";
+    public static final String TRAILER_NEW_DAMAGE_ITEM_ID = "rem-post-danos";
+
+    private static final List<ChecklistItemDef> TRAILER_POST_TRIP_ITEMS = List.of(
+            new ChecklistItemDef(TRAILER_NEW_DAMAGE_ITEM_ID, "Daños nuevos en el remolque", CHECK, POSTTRIP),
+            new ChecklistItemDef("rem-post-luces", "Luces", CHECK, POSTTRIP),
+            new ChecklistItemDef(TRAILER_POST_TRIP_TIRES_ITEM_ID, "Neumáticos", CHECK, POSTTRIP),
+            new ChecklistItemDef("rem-post-enganche", "Enganche y mangueras", CHECK, POSTTRIP)
+    );
+
     // CAM-144: controles del post-viaje que son el mismo control que uno del pre-viaje.
     private static final Map<String, String> SAME_CONTROL_IN_PRE_TRIP = Map.of(
             "post-luces", "ext-luces",
-            "post-fugas", "ext-fugas"
+            "post-fugas", "ext-fugas",
+            "rem-post-luces", "rem-luces",
+            TRAILER_POST_TRIP_TIRES_ITEM_ID, TRAILER_TIRES_ITEM_ID,
+            "rem-post-enganche", "rem-enganche"
     );
 
     private ChecklistCatalog() {
@@ -109,6 +123,15 @@ public final class ChecklistCatalog {
                         fullTrailer ? "Lanza y perno de enganche trabados" : "Perno rey y quinta rueda trabados",
                         i.type(), i.section()))
                 .toList();
+    }
+
+    public static List<ChecklistItemDef> trailerPostTripItems() {
+        return TRAILER_POST_TRIP_ITEMS;
+    }
+
+    /** CAM-159: el post-viaje del vehículo: el de un remolque o el de siempre. */
+    public static List<ChecklistItemDef> postTripItems(VehicleType type) {
+        return type != null && type.isTrailer() ? TRAILER_POST_TRIP_ITEMS : POST_TRIP_ITEMS;
     }
 
     /** El checklist base del pre-viaje del vehículo: el de un remolque o el de siempre. */

@@ -71,7 +71,8 @@ con `details[].field` para `label`/`type`/`section`/`enabled`.
 Un semirremolque o un acoplado tiene su propio catálogo base, que se revisa en el pre-viaje de lo que lo
 arrastra: enganche, mangueras de aire y cable, luces, neumáticos (`rem-neumaticos`), frenos, patas de
 apoyo (solo semirremolque), carga y paragolpes. Todos `rem-*`, del exterior y sin km obligatorio. Se
-configuran igual que los de un vehículo (quitar, agregar extras, aplicar plantillas).
+configuran igual que los de un vehículo (quitar, agregar extras, aplicar plantillas). El post-viaje del
+remolque es una lista fija y corta (`rem-post-*`), como el del vehículo.
 
 ### 7. Plantillas (CAM-150)
 

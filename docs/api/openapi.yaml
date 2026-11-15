@@ -1605,7 +1605,10 @@ paths:
         las mismas reglas. Se guarda como otra inspección, a nombre del
         remolque y en el mismo viaje (`trailerInspection`). Un bloqueante en
         el remolque deja el viaje cerrado igual que uno del vehículo, y un
-        remolque que no puede salir da 409 TRAILER_BLOCKED.
+        remolque que no puede salir da 409 TRAILER_BLOCKED. En el post-trip,
+        `trailerAnswers` es opcional (el viaje siempre se tiene que poder
+        cerrar): con el campo, se guarda el post-trip del remolque que lleva
+        (ids `rem-post-*`).
       security:
         - bearerAuth: []
       parameters:
@@ -3887,17 +3890,17 @@ components:
           type: array
           nullable: true
           description: >-
-            CAM-159: el checklist del remolque que sale con este pre-viaje, obligatorio si lleva uno (422 con
-            itemId trailerAnswers si falta). Mismas reglas que answers; los errores van con el itemId del
-            control (rem-*). Se ignora si no lleva remolque.
+            CAM-159: el checklist del remolque. En el pre-viaje, el del que sale, obligatorio si lleva uno (422
+            con itemId trailerAnswers si falta). En el post-viaje, el del que lleva, opcional. Mismas reglas
+            que answers; los errores van con el itemId del control (rem-*). Se ignora si no lleva remolque.
           items:
             $ref: "#/components/schemas/ChecklistAnswer"
         trailerTireConditions:
           type: array
           nullable: true
           description: >-
-            CAM-159: como tireConditions, para el remolque, con "Neumáticos" del remolque (rem-neumaticos) en
-            defecto. Errores en trailerTireConditions[i].
+            CAM-159: como tireConditions, para el remolque, con su "Neumáticos" en defecto (rem-neumaticos en el
+            pre-viaje, rem-post-neumaticos en el post-viaje). Errores en trailerTireConditions[i].
           items:
             type: object
             required: [position, conditions]
@@ -3957,7 +3960,7 @@ components:
           allOf:
             - $ref: "#/components/schemas/Inspection"
           nullable: true
-          description: CAM-159 -- la del remolque revisado en el mismo pre-trip; null si no llevaba.
+          description: CAM-159 -- la del remolque revisado en el mismo envío; null si no llevaba o no se mandó.
 
     DefectSummary:
       type: object

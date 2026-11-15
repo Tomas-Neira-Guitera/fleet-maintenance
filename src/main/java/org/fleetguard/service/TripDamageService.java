@@ -50,14 +50,16 @@ public class TripDamageService {
                 .map(defect -> inspection(defect).getTrip().getId())
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
-        Map<UUID, Inspection> preTripByTripId = tripIds.isEmpty() ? Map.of()
+        // CAM-159: un viaje con remolque tiene dos pre-viajes; cada post-viaje se compara con el de su vehículo.
+        Map<String, Inspection> preTripByTripAndVehicle = tripIds.isEmpty() ? Map.of()
                 : inspectionRepository.findPreTripsWithAnswersByTripIds(tripIds).stream()
-                        .collect(Collectors.toMap(preTrip -> preTrip.getTrip().getId(), preTrip -> preTrip,
-                                (first, second) -> first));
+                        .collect(Collectors.toMap(preTrip -> key(preTrip.getTrip().getId(), preTrip.getVehicleId()),
+                                preTrip -> preTrip, (first, second) -> first));
 
         for (Defect defect : postTrip) {
             UUID tripId = inspection(defect).getTrip().getId();
-            Inspection preTrip = tripId == null ? null : preTripByTripId.get(tripId);
+            Inspection preTrip = tripId == null ? null
+                    : preTripByTripAndVehicle.get(key(tripId, inspection(defect).getVehicleId()));
             if (occurredOnTrip(defect.getInspectionAnswer().getItemId(), preTrip)) {
                 result.put(defect.getId(), toDto(tripId, preTrip));
             }
@@ -67,7 +69,7 @@ public class TripDamageService {
 
     /** Un control sin equivalente en el pre-viaje no se marca: no hay contra qué comparar. */
     static boolean occurredOnTrip(String postTripItemId, Inspection preTrip) {
-        if (NEW_BODY_DAMAGE_ITEM_ID.equals(postTripItemId)) {
+        if (NEW_BODY_DAMAGE_ITEM_ID.equals(postTripItemId) || ChecklistCatalog.TRAILER_NEW_DAMAGE_ITEM_ID.equals(postTripItemId)) {
             return true;
         }
         String control = ChecklistCatalog.controlKey(postTripItemId);
@@ -90,6 +92,10 @@ public class TripDamageService {
                 preTrip.getId() == null ? null : preTrip.getId().toString(),
                 preTrip.getTimestamp().toString()
         );
+    }
+
+    private static String key(UUID tripId, UUID vehicleId) {
+        return tripId + "|" + vehicleId;
     }
 
     private static Inspection inspection(Defect defect) {

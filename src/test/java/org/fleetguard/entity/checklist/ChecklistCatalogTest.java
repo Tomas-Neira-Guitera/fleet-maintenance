@@ -46,6 +46,15 @@ class ChecklistCatalogTest {
     }
 
     @Test
+    void elPostViajeDelRemolqueSeComparaConSuPreViaje() {
+        assertEquals(ChecklistCatalog.trailerPostTripItems(), ChecklistCatalog.postTripItems(VehicleType.ACOPLADO));
+        assertEquals(ChecklistCatalog.postTripItems(), ChecklistCatalog.postTripItems(VehicleType.TRACTOR_4X2));
+        assertEquals("rem-luces", ChecklistCatalog.controlKey("rem-post-luces"));
+        assertEquals("rem-neumaticos", ChecklistCatalog.controlKey("rem-post-neumaticos"));
+        assertEquals("rem-enganche", ChecklistCatalog.controlKey("rem-post-enganche"));
+    }
+
+    @Test
     void lucesYFugasDelPostViajeSonElMismoControlQueEnElPreViaje() {
         assertEquals("ext-luces", ChecklistCatalog.controlKey("post-luces"));
         assertEquals("ext-fugas", ChecklistCatalog.controlKey("post-fugas"));

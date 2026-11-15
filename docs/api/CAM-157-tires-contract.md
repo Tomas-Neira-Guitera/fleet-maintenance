@@ -139,6 +139,10 @@ cargan combustible (ídem). CAM-159: se revisan en el pre-viaje de lo que los ar
   Un bloqueante en el remolque deja el viaje cerrado al abrirlo, como uno del vehículo. Un remolque que no
   puede salir (bloqueante abierto o documento vencido) da `409 TRAILER_BLOCKED`. Esa inspección no cuenta
   aparte en las estadísticas del chofer ni en el pre-viaje del viaje (CAM-146, CAM-152).
+- **Post-viaje del remolque** (CAM-159): opcional, con `trailerAnswers` del que lleva enganchado: daños nuevos,
+  luces, neumáticos y enganche (`rem-post-*`). El chofer lo ve en OK y solo lo despliega si algo volvió mal; con
+  OK se manda todo en OK. El viaje se cierra igual (un remolque bloqueado no lo frena). "Ocurrido en el viaje"
+  (CAM-146) compara contra el pre-viaje del remolque, no contra el del vehículo.
 - **Km del remolque**: no tiene odómetro. Cada km que suma el que arrastra (inspecciones, CAM-90) se le
   suma también al remolque enganchado. Así sus neumáticos suman km y su mantenimiento por km vence solo.
 

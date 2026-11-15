@@ -23,10 +23,9 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
     /** CAM-153: la inspección que ya se guardó con ese id del celular, si llegó antes. */
     Optional<Inspection> findByClientSubmissionId(String clientSubmissionId);
 
-    /** CAM-146: los pre-viajes de esos viajes, con el viaje y sus respuestas. El del remolque no (CAM-159). */
+    /** CAM-146: los pre-viajes de esos viajes, con el viaje y sus respuestas. Con el remolque, también el suyo. */
     @Query("select distinct i from Inspection i join fetch i.trip t left join fetch i.answers "
-            + "where t.id in :tripIds and i.type = org.fleetguard.entity.InspectionType.PRE_TRIP "
-            + "and i.towingInspectionId is null")
+            + "where t.id in :tripIds and i.type = org.fleetguard.entity.InspectionType.PRE_TRIP")
     List<Inspection> findPreTripsWithAnswersByTripIds(@Param("tripIds") Collection<UUID> tripIds);
 
     /**

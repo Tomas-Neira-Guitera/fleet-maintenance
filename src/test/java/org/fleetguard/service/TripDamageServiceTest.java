@@ -95,6 +95,31 @@ class TripDamageServiceTest {
     }
 
     @Test
+    void elPostViajeDelRemolqueSeComparaConElPreViajeDelRemolque() throws Exception {
+        UUID trailerId = UUID.randomUUID();
+        // CAM-159: el camión tenía las luces mal; las del remolque dieron OK al salir.
+        Inspection truckPreTrip = preTrip(Map.of("ext-luces", CheckOutcome.DEFECT));
+        Inspection trailerPreTrip = new Inspection(trip, trailerId, "driver-1", "carlos.gomez",
+                InspectionType.PRE_TRIP, STARTED, null, null, false);
+        setId(trailerPreTrip, UUID.randomUUID());
+        trailerPreTrip.addAnswer(new InspectionAnswer("rem-luces", CheckOutcome.OK, null));
+        when(inspectionRepository.findPreTripsWithAnswersByTripIds(any())).thenReturn(List.of(truckPreTrip, trailerPreTrip));
+
+        Inspection trailerPostTrip = new Inspection(trip, trailerId, "driver-1", "carlos.gomez",
+                InspectionType.POST_TRIP, ENDED, null, null, false);
+        InspectionAnswer answer = new InspectionAnswer("rem-post-luces", CheckOutcome.DEFECT, null);
+        trailerPostTrip.addAnswer(answer);
+        Defect lights = new Defect(DefectSeverity.NON_BLOCKING, "Sin luz de freno", null, ENDED);
+        setId(lights, UUID.randomUUID());
+        answer.attachDefect(lights);
+
+        OccurredOnTripDto result = service.occurredOnTrip(List.of(lights)).get(lights.getId());
+
+        assertNotNull(result);
+        assertEquals(trailerPreTrip.getId().toString(), result.preTripInspectionId());
+    }
+
+    @Test
     void siYaFallabaEnElPreViajeNoSeMarca() throws Exception {
         when(inspectionRepository.findPreTripsWithAnswersByTripIds(any()))
                 .thenReturn(List.of(preTrip(Map.of("ext-luces", CheckOutcome.DEFECT))));

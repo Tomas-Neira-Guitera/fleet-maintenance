@@ -101,6 +101,26 @@ class InspectionServiceTrailerTest {
             return inspection;
         });
         when(couplingService.currentTrailer(tractor)).thenReturn(Optional.of(semi));
+        when(checklistService.resolve(tractor.getId(), InspectionType.POST_TRIP)).thenReturn(ChecklistCatalog.postTripItems());
+        when(checklistService.resolve(semi.getId(), InspectionType.POST_TRIP)).thenReturn(ChecklistCatalog.trailerPostTripItems());
+    }
+
+    private Trip openTrip() throws Exception {
+        Trip trip = new Trip(tractor, java.time.Instant.now().minusSeconds(3600), driver.id(), driver.username());
+        setId(trip, UUID.randomUUID());
+        when(tripRepository.findFirstByVehicle_IdAndStatus(tractor.getId(), org.fleetguard.entity.TripStatus.OPEN))
+                .thenReturn(Optional.of(trip));
+        return trip;
+    }
+
+    private InspectionResultDto submitPostTrip(List<ChecklistAnswerDto> trailer) {
+        List<ChecklistAnswerDto> truck = List.of(
+                new ChecklistAnswerDto("post-danos", "ok", null, null),
+                new ChecklistAnswerDto("post-luces", "ok", null, null),
+                new ChecklistAnswerDto("post-fugas", "ok", null, null),
+                new ChecklistAnswerDto("post-km", null, 12500.0, null));
+        return service.submit(tractor.getId().toString(), new InspectionSubmissionDto("post-trip", truck, null,
+                null, null, null, null, trailer, null), driver);
     }
 
     private static List<ChecklistAnswerDto> tractorOk() {
@@ -190,6 +210,50 @@ class InspectionServiceTrailerTest {
 
         assertEquals(1, saved.size());
         assertNull(result.trailerInspection());
+    }
+
+    @Test
+    void elPostViajeGuardaLoQueVolvioMalEnElRemolqueYCierraElViaje() throws Exception {
+        Trip trip = openTrip();
+        List<ChecklistAnswerDto> trailer = List.of(
+                new ChecklistAnswerDto("rem-post-danos", "defect", null,
+                        new DefectDetailDto("non-blocking", "Lona rota", null)),
+                new ChecklistAnswerDto("rem-post-luces", "ok", null, null),
+                new ChecklistAnswerDto("rem-post-neumaticos", "ok", null, null),
+                new ChecklistAnswerDto("rem-post-enganche", "ok", null, null));
+
+        InspectionResultDto result = submitPostTrip(trailer);
+
+        assertEquals("closed", result.trip().status());
+        assertEquals(2, saved.size());
+        Inspection trailerInspection = saved.get(1);
+        assertEquals(semi.getId(), trailerInspection.getVehicleId());
+        assertEquals(InspectionType.POST_TRIP, trailerInspection.getType());
+        assertEquals(trip, trailerInspection.getTrip());
+        assertEquals("Lona rota", trailerInspection.getAnswers().get(0).getDefect().getDescription());
+    }
+
+    @Test
+    void sinElChecklistDelRemolqueElPostViajeCierraIgual() throws Exception {
+        openTrip();
+
+        InspectionResultDto result = submitPostTrip(null);
+
+        assertEquals("closed", result.trip().status());
+        assertEquals(1, saved.size());
+        assertNull(result.trailerInspection());
+    }
+
+    @Test
+    void unRemolqueBloqueadoNoFrenaElPostViaje() throws Exception {
+        openTrip();
+        when(availabilityService.reasons(semi.getId()))
+                .thenReturn(List.of(new BlockReasonDto("blocking_defect", "Frenos")));
+        List<ChecklistAnswerDto> allOk = ChecklistCatalog.trailerPostTripItems().stream()
+                .map(i -> new ChecklistAnswerDto(i.id(), "ok", null, null)).toList();
+
+        assertEquals("closed", submitPostTrip(allOk).trip().status());
+        assertEquals(2, saved.size());
     }
 
     @Test

@@ -137,10 +137,13 @@ public class InspectionService {
                 tireService.validateInspectionConditions(vehicle, submission.tireConditions(), tiresInDefect);
         String trailerIdRaw = type == InspectionType.PRE_TRIP ? submission.trailerId() : null;
         Optional<Vehicle> trailer = couplingService.resolveInspectionTrailer(vehicle, trailerIdRaw);
-        // CAM-159: el remolque que sale con este pre-viaje (el elegido o, sin elegir, el que ya llevaba) se revisa acá.
-        Optional<Vehicle> towedTrailer = type != InspectionType.PRE_TRIP ? Optional.empty()
-                : trailerIdRaw == null || trailerIdRaw.isBlank() ? couplingService.currentTrailer(vehicle) : trailer;
-        TrailerCheck trailerCheck = towedTrailer.map(t -> checkTrailer(t, submission)).orElse(null);
+        // CAM-159: el remolque se revisa en el pre-viaje (el elegido o, sin elegir, el que ya llevaba) y en el
+        // post-viaje (el que lleva). En el post-viaje es opcional: el viaje se tiene que poder cerrar siempre.
+        Optional<Vehicle> towedTrailer = trailerIdRaw == null || trailerIdRaw.isBlank()
+                ? couplingService.currentTrailer(vehicle) : trailer;
+        TrailerCheck trailerCheck = towedTrailer
+                .filter(t -> type == InspectionType.PRE_TRIP || submission.trailerAnswers() != null)
+                .map(t -> checkTrailer(t, submission, type)).orElse(null);
         boolean blocking = outcome.hasBlockingDefect() || (trailerCheck != null && trailerCheck.outcome().hasBlockingDefect());
 
         // CAM-153: el viaje, la inspección y los defectos quedan con la hora en que el chofer la hizo.
@@ -172,13 +175,13 @@ public class InspectionService {
         if (trailerCheck != null) {
             Vehicle towed = trailerCheck.trailer();
             trailerInspection = new Inspection(trip, towed.getId(), driver.id().toString(), driver.username(),
-                    InspectionType.PRE_TRIP, now, null, null, trailerCheck.outcome().hasBlockingDefect());
+                    type, now, null, null, trailerCheck.outcome().hasBlockingDefect());
             trailerInspection.setTowingInspectionId(inspection.getId());
             addAnswers(trailerInspection, towed, trailerCheck.checklist(), trailerCheck.outcome(), trailerCheck.tireReports(),
-                    ChecklistCatalog.TRAILER_TIRES_ITEM_ID, now);
+                    trailerCheck.tiresItemId(), now);
             inspectionRepository.save(trailerInspection);
             tireService.recordInspectionConditions(towed, trailerCheck.tireReports(), now, driver, trailerInspection.getId(),
-                    defectOf(trailerInspection, ChecklistCatalog.TRAILER_TIRES_ITEM_ID));
+                    defectOf(trailerInspection, trailerCheck.tiresItemId()));
         }
         couplingService.applyInspectionTrailer(vehicle, trailerIdRaw, trailer, driver.username());
 
@@ -210,16 +213,16 @@ public class InspectionService {
     }
 
     /** CAM-159: el remolque ya validado, para guardarlo después de la inspección del vehículo. */
-    private record TrailerCheck(Vehicle trailer, List<ChecklistItemDef> checklist,
-                                InspectionValidator.ValidationOutcome outcome, List<TireService.ConditionReport> tireReports) {
+    private record TrailerCheck(Vehicle trailer, List<ChecklistItemDef> checklist, InspectionValidator.ValidationOutcome outcome,
+                                String tiresItemId, List<TireService.ConditionReport> tireReports) {
     }
 
     /**
-     * CAM-159: el checklist del remolque, con las mismas reglas que el del vehículo. Un remolque que no puede salir
-     * (bloqueante abierto o documento vencido, CAM-127) frena el pre-viaje entero: hay que elegir otro.
+     * CAM-159: el checklist del remolque, con las mismas reglas que el del vehículo. En el pre-viaje, un remolque que no
+     * puede salir (bloqueante abierto o documento vencido, CAM-127) frena el envío entero: hay que elegir otro.
      */
-    private TrailerCheck checkTrailer(Vehicle trailer, InspectionSubmissionDto submission) {
-        List<BlockReasonDto> reasons = availabilityService.reasons(trailer.getId());
+    private TrailerCheck checkTrailer(Vehicle trailer, InspectionSubmissionDto submission, InspectionType type) {
+        List<BlockReasonDto> reasons = type == InspectionType.PRE_TRIP ? availabilityService.reasons(trailer.getId()) : List.of();
         if (!reasons.isEmpty()) {
             throw new VehicleStateConflictException("TRAILER_BLOCKED",
                     VehicleAvailabilityService.blockedMessage(trailer.getPlate(), reasons));
@@ -228,15 +231,16 @@ public class InspectionService {
             throw new InspectionValidationException("Falta el checklist del remolque " + trailer.getPlate() + ".",
                     List.of(new ValidationErrorDetail("trailerAnswers", "Obligatorio cuando se lleva un remolque.")));
         }
-        List<ChecklistItemDef> checklist = checklistService.resolve(trailer.getId(), InspectionType.PRE_TRIP);
-        InspectionValidator.ValidationOutcome outcome =
-                validator.validate(InspectionType.PRE_TRIP, checklist, submission.trailerAnswers());
+        List<ChecklistItemDef> checklist = checklistService.resolve(trailer.getId(), type);
+        InspectionValidator.ValidationOutcome outcome = validator.validate(type, checklist, submission.trailerAnswers());
+        String tiresItemId = type == InspectionType.PRE_TRIP
+                ? ChecklistCatalog.TRAILER_TIRES_ITEM_ID : ChecklistCatalog.TRAILER_POST_TRIP_TIRES_ITEM_ID;
         boolean tiresInDefect = outcome.recognizedAnswers().stream()
-                .anyMatch(a -> ChecklistCatalog.TRAILER_TIRES_ITEM_ID.equals(a.itemId())
+                .anyMatch(a -> tiresItemId.equals(a.itemId())
                         && CheckOutcome.fromJson(a.outcome()) == CheckOutcome.DEFECT && a.defect() != null);
         List<TireService.ConditionReport> tireReports = tireService.validateInspectionConditions(trailer,
                 submission.trailerTireConditions(), tiresInDefect, "trailerTireConditions");
-        return new TrailerCheck(trailer, checklist, outcome, tireReports);
+        return new TrailerCheck(trailer, checklist, outcome, tiresItemId, tireReports);
     }
 
     /** Las respuestas y sus defectos. Los neumáticos con problemas se suman al detalle del defecto de Neumáticos. */
