@@ -6,6 +6,7 @@ import org.fleetguard.dto.ChecklistTemplateDto;
 import org.fleetguard.dto.ChecklistTemplateItemInput;
 import org.fleetguard.dto.ChecklistTemplateRequest;
 import org.fleetguard.dto.FieldValidationErrorDetail;
+import org.fleetguard.dto.UnapplyChecklistTemplateResultDto;
 import org.fleetguard.entity.ChecklistTemplate;
 import org.fleetguard.entity.ChecklistTemplateItem;
 import org.fleetguard.entity.Vehicle;
@@ -29,7 +30,8 @@ import java.util.UUID;
 
 /**
  * CAM-150: plantillas de checklist. Aplicar una plantilla copia sus controles a cada vehículo como
- * controles propios (VehicleChecklistService.copyItems); el vehículo no queda vinculado a la plantilla.
+ * controles propios (VehicleChecklistService.copyItems). CAM-159: cada copia recuerda su plantilla, así que
+ * se puede quitar; editar la plantilla sigue sin cambiar los vehículos.
  */
 @Service
 public class ChecklistTemplateService {
@@ -51,7 +53,7 @@ public class ChecklistTemplateService {
 
     @Transactional(readOnly = true)
     public List<ChecklistTemplateDto> list() {
-        return templateRepository.findAllByOrderByNameAsc().stream().map(ChecklistTemplateService::toDto).toList();
+        return templateRepository.findAllByOrderByNameAsc().stream().map(this::toDto).toList();
     }
 
     @Transactional(readOnly = true)
@@ -86,26 +88,48 @@ public class ChecklistTemplateService {
     /** Los controles ya copiados quedan en los vehículos y las inspecciones viejas no cambian. */
     @Transactional
     public void delete(String id) {
-        templateRepository.delete(find(id));
+        ChecklistTemplate template = find(id);
+        checklistService.detachTemplate(template.getId());
+        templateRepository.delete(template);
     }
 
     @Transactional
     public ApplyChecklistTemplateResultDto apply(String id, ApplyChecklistTemplateRequest request) {
         ChecklistTemplate template = find(id);
-        List<Vehicle> vehicles = requireActiveVehicles(request == null ? null : request.vehicleIds());
+        List<Vehicle> vehicles = requireVehicles(request == null ? null : request.vehicleIds(), true);
         List<ItemSpec> items = specsOf(template);
 
         int added = 0;
         int skipped = 0;
         List<ApplyChecklistTemplateResultDto.VehicleResult> results = new ArrayList<>();
         for (Vehicle vehicle : vehicles) {
-            CopyResult copy = checklistService.copyItems(vehicle.getId(), items);
+            CopyResult copy = checklistService.copyItems(vehicle.getId(), items, template.getId());
             added += copy.added();
             skipped += copy.skippedLabels().size();
             results.add(new ApplyChecklistTemplateResultDto.VehicleResult(vehicle.getId().toString(), vehicle.getPlate(),
                     copy.added(), copy.skippedLabels().size(), copy.skippedLabels()));
         }
         return new ApplyChecklistTemplateResultDto(template.getId().toString(), added, skipped, results);
+    }
+
+    /**
+     * CAM-159: quita la plantilla de cada vehículo: borra los controles que se copiaron de ella. También vale en uno
+     * dado de baja. Las inspecciones viejas conservan el nombre del control.
+     */
+    @Transactional
+    public UnapplyChecklistTemplateResultDto unapply(String id, ApplyChecklistTemplateRequest request) {
+        ChecklistTemplate template = find(id);
+        List<Vehicle> vehicles = requireVehicles(request == null ? null : request.vehicleIds(), false);
+
+        int removed = 0;
+        List<UnapplyChecklistTemplateResultDto.VehicleResult> results = new ArrayList<>();
+        for (Vehicle vehicle : vehicles) {
+            List<String> labels = checklistService.removeTemplateItems(vehicle.getId(), template.getId());
+            removed += labels.size();
+            results.add(new UnapplyChecklistTemplateResultDto.VehicleResult(vehicle.getId().toString(), vehicle.getPlate(),
+                    labels.size(), labels));
+        }
+        return new UnapplyChecklistTemplateResultDto(template.getId().toString(), removed, results);
     }
 
     /** CAM-150: el alta de un vehículo con plantilla. Se valida antes de crear el vehículo. */
@@ -119,7 +143,8 @@ public class ChecklistTemplateService {
 
     @Transactional
     public CopyResult applyToNewVehicle(String id, UUID vehicleId) {
-        return checklistService.copyItems(vehicleId, specsOf(find(id)));
+        ChecklistTemplate template = find(id);
+        return checklistService.copyItems(vehicleId, specsOf(template), template.getId());
     }
 
     private record Valid(String name, List<ItemSpec> items) {
@@ -164,7 +189,7 @@ public class ChecklistTemplateService {
         return new Valid(name, items);
     }
 
-    private List<Vehicle> requireActiveVehicles(List<String> rawIds) {
+    private List<Vehicle> requireVehicles(List<String> rawIds, boolean active) {
         if (rawIds == null || rawIds.isEmpty()) {
             throw new VehicleValidationException("Datos inválidos",
                     List.of(new FieldValidationErrorDetail("vehicleIds", "Elegí al menos un vehículo")));
@@ -178,7 +203,7 @@ public class ChecklistTemplateService {
         for (String raw : unique) {
             Vehicle vehicle = Uuids.parse(raw).flatMap(vehicleRepository::findById)
                     .orElseThrow(() -> new VehicleNotFoundException(raw));
-            if (!vehicle.isActive()) {
+            if (active && !vehicle.isActive()) {
                 throw new VehicleStateConflictException("VEHICLE_INACTIVE",
                         vehicle.getPlate() + " está dado de baja: no se le puede aplicar una plantilla");
             }
@@ -210,12 +235,13 @@ public class ChecklistTemplateService {
         return new VehicleStateConflictException("DUPLICATE_TEMPLATE_NAME", "Ya existe una plantilla llamada \"" + name + "\"");
     }
 
-    private static ChecklistTemplateDto toDto(ChecklistTemplate template) {
+    private ChecklistTemplateDto toDto(ChecklistTemplate template) {
+        List<String> applied = checklistService.vehiclesWithTemplate(template.getId()).stream().map(UUID::toString).toList();
         return new ChecklistTemplateDto(template.getId().toString(), template.getName(),
                 template.getItems().stream()
                         .map(i -> new ChecklistTemplateDto.Item(i.getId() == null ? null : i.getId().toString(),
                                 i.getLabel(), i.getType().toJson(), i.getSection().toJson()))
                         .toList(),
-                template.getCreatedAt().toString());
+                template.getCreatedAt().toString(), applied);
     }
 }

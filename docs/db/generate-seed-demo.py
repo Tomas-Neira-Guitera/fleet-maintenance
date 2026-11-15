@@ -899,7 +899,7 @@ for tpl in TEMPLATES:
             if any(c["vehicle"] == k and c["label"].lower() == label.lower() and c["section"] == sec for c in checklist_extras):
                 continue
             checklist_extras.append(dict(id=uid("checklistitem"), vehicle=k, label=label, type=typ, section=sec,
-                                         active=True, created=tpl["day"]))
+                                         active=True, created=tpl["day"], template=tpl["id"]))
 
 # ---- CAM-156: cargas de combustible. Tanque lleno la mayoría; algunas parciales en el medio de un tramo.
 CONS = {"larga": 33.0, "regional": 27.0, "urbano": 19.0, "kangoo": 8.4, "hilux": 10.6}
@@ -1201,7 +1201,7 @@ KNOWN_COLUMNS = {
                    "external_provider assignee technician_id status closing_description created_at updated_at finalized_at",
     "work_order_expenses": "id work_order_id category description amount created_at",
     "work_order_photos": "id work_order_id photo_url created_at",
-    "vehicle_checklist_items": "id vehicle_id label type section active created_at",
+    "vehicle_checklist_items": "id vehicle_id label type section active created_at template_id",
     "vehicle_disabled_checklist_items": "id vehicle_id base_item_id",
     "vehicle_documents": "id vehicle_id type name number issued_at expires_at file_url replaced_by_id active created_at",
     "checklist_templates": "id name created_at",
@@ -1336,9 +1336,10 @@ insert("inspection_answers", ["id", "inspection_id", "item_id", "item_label", "o
          str(a["number"]) if a["number"] is not None else "null"]
         for i in inspections for a in i["answers"]])
 w("-- Checklist pre-trip propio de cada camión (CAM-31)")
-insert("vehicle_checklist_items", ["id", "vehicle_id", "label", "type", "section", "active", "created_at"],
+# CAM-159: los copiados de una plantilla la recuerdan, para poder quitarla.
+insert("vehicle_checklist_items", ["id", "vehicle_id", "label", "type", "section", "active", "created_at", "template_id"],
        [[q(c["id"]), q(ALLV[c["vehicle"]]["id"]), q(c["label"]), q(c["type"]), q(c["section"]), "true" if c["active"] else "false",
-         ts(c.get("created", -30), 10)] for c in checklist_extras])
+         ts(c.get("created", -30), 10), qn(c.get("template"))] for c in checklist_extras])
 w("-- Defectos")
 insert("defects", ["id", "inspection_answer_id", "severity", "description", "details", "photo_url", "created_at", "status",
                    "resolved_at"],

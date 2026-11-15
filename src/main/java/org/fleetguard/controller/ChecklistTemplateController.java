@@ -5,6 +5,7 @@ import org.fleetguard.dto.ApplyChecklistTemplateResultDto;
 import org.fleetguard.dto.ChecklistTemplateDto;
 import org.fleetguard.dto.ChecklistTemplateRequest;
 import org.fleetguard.dto.ListResponse;
+import org.fleetguard.dto.UnapplyChecklistTemplateResultDto;
 import org.fleetguard.service.ChecklistTemplateService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -58,5 +59,11 @@ public class ChecklistTemplateController {
     public ApplyChecklistTemplateResultDto apply(@PathVariable String id,
                                                  @RequestBody ApplyChecklistTemplateRequest request) {
         return service.apply(id, request);
+    }
+
+    @PostMapping("/{id}/unapply")
+    public UnapplyChecklistTemplateResultDto unapply(@PathVariable String id,
+                                                     @RequestBody ApplyChecklistTemplateRequest request) {
+        return service.unapply(id, request);
     }
 }

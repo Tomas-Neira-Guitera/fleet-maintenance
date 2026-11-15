@@ -69,9 +69,10 @@ con `details[].field` para `label`/`type`/`section`/`enabled`.
 ### 7. Plantillas (CAM-150)
 
 Una plantilla es un nombre y una lista de controles (`label`, `type`, `section`) que el admin
-**copia** a varios vehículos. No queda vinculada: lo copiado son controles extra comunes del
-vehículo, que se quitan o eliminan como cualquier otro. Editar o borrar la plantilla no cambia
-los vehículos ni las inspecciones viejas. Se copia y no se vincula porque los defectos
+**copia** a varios vehículos. Lo copiado son controles extra comunes del vehículo, que se quitan o
+eliminan como cualquier otro; cada uno recuerda de qué plantilla vino (`template_id`, CAM-159), así
+que la plantilla se puede quitar. Editar o borrar la plantilla no cambia los vehículos ni las
+inspecciones viejas. Se copia y no se vincula porque los defectos
 recurrentes (CAM-135) se identifican por el id de cada control, y así editar una plantilla no
 cambia de golpe el checklist de muchos vehículos.
 
@@ -86,6 +87,13 @@ cambia de golpe el checklist de muchos vehículos.
 - Un vehículo dado de baja no se puede elegir: `409 VEHICLE_INACTIVE` y no se copia nada a
   ningún vehículo del pedido. Un id inexistente da `404 VEHICLE_NOT_FOUND`. Hasta 200 vehículos
   por pedido; los ids repetidos cuentan una vez.
+- **Quitar** (CAM-159): borra del vehículo los controles que se copiaron de esa plantilla, igual que
+  eliminar un extra: las inspecciones viejas conservan el nombre. Lo que el vehículo ya tenía antes
+  (salteado al aplicar) no vino de la plantilla y se queda. Vale también en un vehículo dado de baja.
+  Los controles copiados antes de CAM-159 no tienen `template_id` y no se quitan así.
+- `appliedVehicleIds` en cada plantilla: los vehículos con al menos un control copiado de ella.
+- Al **borrar** una plantilla, sus controles quedan en los vehículos sin `template_id`, como cargados
+  a mano.
 - **Alta con plantilla**: `POST /api/vehicles` acepta `checklistTemplateId` opcional. Se valida
   antes de crear el vehículo (`422` con `field: checklistTemplateId` si no existe) y se copia en
   la misma transacción del alta.
@@ -98,12 +106,15 @@ Endpoints (solo ADMIN; sin token `401`, otro rol `403`):
 - `DELETE /api/checklist-templates/{id}` → 204.
 - `POST /api/checklist-templates/{id}/apply` con `{ vehicleIds: [...] }` →
   `{ templateId, added, skipped, vehicles: [{ vehicleId, plate, added, skipped, skippedLabels }] }`.
+- `POST /api/checklist-templates/{id}/unapply` con `{ vehicleIds: [...] }` →
+  `{ templateId, removed, vehicles: [{ vehicleId, plate, removed, removedLabels }] }` (CAM-159).
 
 `404 CHECKLIST_TEMPLATE_NOT_FOUND` si la plantilla no existe.
 
 ## Fuera de alcance
 
-- Desde una plantilla, quitar controles base, y sincronizar los vehículos cuando cambia (CAM-150).
+- Desde una plantilla, quitar controles base, y sincronizar los vehículos cuando cambia (CAM-150). Quitar
+  la plantilla borra lo que se copió en su momento, no lo que tiene hoy.
 - Configurar el post-trip.
 - Editar el nombre de un ítem extra (se elimina y se agrega otro).
 - Protección por rol del checklist de cada vehículo: queda para CAM-73. Las plantillas

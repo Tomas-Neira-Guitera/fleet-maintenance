@@ -150,10 +150,11 @@ public class VehicleChecklistService {
 
     /**
      * CAM-150: copia controles al vehículo como controles propios. Se saltea el que ya tiene (base o propio,
-     * activo o no) con la misma etiqueta y sección, sin importar mayúsculas ni acentos.
+     * activo o no) con la misma etiqueta y sección, sin importar mayúsculas ni acentos. CAM-159: cada copia
+     * guarda la plantilla, para poder quitarla después.
      */
     @Transactional
-    public CopyResult copyItems(UUID vehicleId, List<ItemSpec> items) {
+    public CopyResult copyItems(UUID vehicleId, List<ItemSpec> items, UUID templateId) {
         Set<String> existing = new HashSet<>();
         ChecklistCatalog.preTripItems().forEach(base -> existing.add(sameControlKey(base.label(), base.section())));
         extraRepository.findByVehicleIdOrderByCreatedAtAsc(vehicleId)
@@ -166,10 +167,38 @@ public class VehicleChecklistService {
                 skipped.add(item.label());
                 continue;
             }
-            extraRepository.save(new VehicleChecklistItem(vehicleId, item.label(), item.type(), item.section()));
+            extraRepository.save(new VehicleChecklistItem(vehicleId, item.label(), item.type(), item.section(), true,
+                    templateId));
             added++;
         }
         return new CopyResult(added, skipped);
+    }
+
+    /**
+     * CAM-159: borra del vehículo los controles que se copiaron de esa plantilla, como deleteExtra. Los que ya tenía
+     * antes de aplicarla no vinieron de ahí y se quedan. Devuelve las etiquetas borradas.
+     */
+    @Transactional
+    public List<String> removeTemplateItems(UUID vehicleId, UUID templateId) {
+        List<VehicleChecklistItem> copied = extraRepository.findByVehicleIdAndTemplateId(vehicleId, templateId);
+        extraRepository.deleteAll(copied);
+        return copied.stream().map(VehicleChecklistItem::getLabel).toList();
+    }
+
+    /** CAM-159: los vehículos que tienen al menos un control copiado de la plantilla. */
+    public List<UUID> vehiclesWithTemplate(UUID templateId) {
+        return extraRepository.findByTemplateId(templateId).stream()
+                .map(VehicleChecklistItem::getVehicleId)
+                .distinct()
+                .toList();
+    }
+
+    /** CAM-159: al borrar una plantilla, sus controles quedan en los vehículos como cargados a mano. */
+    @Transactional
+    public void detachTemplate(UUID templateId) {
+        List<VehicleChecklistItem> copied = extraRepository.findByTemplateId(templateId);
+        copied.forEach(item -> item.setTemplateId(null));
+        extraRepository.saveAll(copied);
     }
 
     static String sameControlKey(String label, ChecklistSection section) {

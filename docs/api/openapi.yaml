@@ -1084,6 +1084,50 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
+  /api/checklist-templates/{templateId}/unapply:
+    post:
+      summary: Quitar una plantilla de varios vehículos (CAM-159)
+      description: >
+        Borra de cada vehículo los controles que se copiaron de esta plantilla, como eliminar un extra
+        (las inspecciones viejas conservan el nombre). Lo que el vehículo ya tenía no se toca. Vale
+        también en un vehículo dado de baja.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vehicleIds]
+              properties:
+                vehicleIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items: { type: string }
+      responses:
+        "200":
+          description: Lo borrado, por vehículo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnapplyChecklistTemplateResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND / VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
   /api/vehicles/{vehicleId}/checklist-items/{itemId}:
     patch:
       summary: Quitar del checklist o volver a incluir un ítem del vehículo (CAM-31)
@@ -3583,7 +3627,7 @@ components:
 
     ChecklistTemplate:
       type: object
-      required: [id, name, items, createdAt]
+      required: [id, name, items, createdAt, appliedVehicleIds]
       properties:
         id: { type: string }
         name: { type: string }
@@ -3598,6 +3642,10 @@ components:
               type: { type: string, enum: [check, number] }
               section: { type: string, enum: [exterior, interior] }
         createdAt: { type: string, format: date-time }
+        appliedVehicleIds:
+          type: array
+          description: Vehículos con al menos un control copiado de esta plantilla (CAM-159).
+          items: { type: string }
 
     ApplyChecklistTemplateResult:
       type: object
@@ -3617,6 +3665,25 @@ components:
               added: { type: integer }
               skipped: { type: integer }
               skippedLabels:
+                type: array
+                items: { type: string }
+
+    UnapplyChecklistTemplateResult:
+      type: object
+      required: [templateId, removed, vehicles]
+      properties:
+        templateId: { type: string }
+        removed: { type: integer, description: Controles borrados en total. }
+        vehicles:
+          type: array
+          items:
+            type: object
+            required: [vehicleId, plate, removed, removedLabels]
+            properties:
+              vehicleId: { type: string }
+              plate: { type: string }
+              removed: { type: integer }
+              removedLabels:
                 type: array
                 items: { type: string }
 

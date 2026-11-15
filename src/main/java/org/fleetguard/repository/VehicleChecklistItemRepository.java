@@ -11,4 +11,9 @@ public interface VehicleChecklistItemRepository extends JpaRepository<VehicleChe
     List<VehicleChecklistItem> findByVehicleIdAndActiveTrueOrderByCreatedAtAsc(UUID vehicleId);
 
     List<VehicleChecklistItem> findByVehicleIdOrderByCreatedAtAsc(UUID vehicleId);
+
+    // CAM-159: los controles copiados de una plantilla, en toda la flota o en un vehículo.
+    List<VehicleChecklistItem> findByTemplateId(UUID templateId);
+
+    List<VehicleChecklistItem> findByVehicleIdAndTemplateId(UUID vehicleId, UUID templateId);
 }

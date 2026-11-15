@@ -5,6 +5,7 @@ import org.fleetguard.dto.ApplyChecklistTemplateResultDto;
 import org.fleetguard.dto.ChecklistTemplateDto;
 import org.fleetguard.dto.ChecklistTemplateItemInput;
 import org.fleetguard.dto.ChecklistTemplateRequest;
+import org.fleetguard.dto.UnapplyChecklistTemplateResultDto;
 import org.fleetguard.entity.ChecklistTemplate;
 import org.fleetguard.entity.InspectionType;
 import org.fleetguard.entity.Vehicle;
@@ -82,6 +83,15 @@ class ChecklistTemplateServiceTest {
                 .filter(e -> e.getVehicleId().equals(inv.getArgument(0))).toList());
         when(extraRepository.findByVehicleIdAndActiveTrueOrderByCreatedAtAsc(any())).thenAnswer(inv -> extras.stream()
                 .filter(e -> e.getVehicleId().equals(inv.getArgument(0)) && e.isActive()).toList());
+        when(extraRepository.findByTemplateId(any())).thenAnswer(inv -> extras.stream()
+                .filter(e -> inv.getArgument(0).equals(e.getTemplateId())).toList());
+        when(extraRepository.findByVehicleIdAndTemplateId(any(), any())).thenAnswer(inv -> extras.stream()
+                .filter(e -> e.getVehicleId().equals(inv.getArgument(0)) && inv.getArgument(1).equals(e.getTemplateId()))
+                .toList());
+        doAnswer(inv -> {
+            inv.<Iterable<VehicleChecklistItem>>getArgument(0).forEach(extras::remove);
+            return null;
+        }).when(extraRepository).deleteAll(any());
         when(extraRepository.save(any(VehicleChecklistItem.class))).thenAnswer(inv -> {
             VehicleChecklistItem item = inv.getArgument(0);
             setId(item, UUID.randomUUID());
@@ -258,6 +268,61 @@ class ChecklistTemplateServiceTest {
                 new ApplyChecklistTemplateRequest(List.of(UUID.randomUUID().toString()))));
         assertThrows(ChecklistTemplateNotFoundException.class, () -> service.apply("no-existe",
                 new ApplyChecklistTemplateRequest(List.of(UUID.randomUUID().toString()))));
+    }
+
+    @Test
+    void laPlantillaDiceEnQueVehiculosEstaAplicada() throws Exception {
+        ChecklistTemplateDto template = service.create(frigorifico());
+        Vehicle a = vehicle("AA111AA", true);
+        vehicle("BB222BB", true);
+        assertTrue(template.appliedVehicleIds().isEmpty());
+
+        service.apply(template.id(), new ApplyChecklistTemplateRequest(List.of(a.getId().toString())));
+
+        assertEquals(List.of(a.getId().toString()), service.get(template.id()).appliedVehicleIds());
+    }
+
+    @Test
+    void quitarBorraSoloLoQueVinoDeLaPlantilla() throws Exception {
+        ChecklistTemplateDto template = service.create(frigorifico());
+        Vehicle vehicle = vehicle("AA111AA", true);
+        // Ya lo tenía cargado a mano: al aplicar se salteó, así que no es de la plantilla.
+        extras.add(new VehicleChecklistItem(vehicle.getId(), "Equipo de frío", ChecklistItemType.CHECK,
+                ChecklistSection.EXTERIOR));
+        extras.add(new VehicleChecklistItem(vehicle.getId(), "Rampa", ChecklistItemType.CHECK, ChecklistSection.EXTERIOR));
+        ApplyChecklistTemplateRequest request = new ApplyChecklistTemplateRequest(List.of(vehicle.getId().toString()));
+        service.apply(template.id(), request);
+
+        UnapplyChecklistTemplateResultDto result = service.unapply(template.id(), request);
+
+        assertEquals(2, result.removed());
+        assertEquals(List.of("Temperatura de la cámara", "Burletes de la puerta"), result.vehicles().get(0).removedLabels());
+        assertEquals(List.of("Equipo de frío", "Rampa"), extrasOf(vehicle).stream().map(VehicleChecklistItem::getLabel).toList());
+        assertTrue(service.get(template.id()).appliedVehicleIds().isEmpty());
+    }
+
+    @Test
+    void sePuedeQuitarDeUnVehiculoDadoDeBaja() throws Exception {
+        ChecklistTemplateDto template = service.create(frigorifico());
+        Vehicle vehicle = vehicle("AA111AA", true);
+        ApplyChecklistTemplateRequest request = new ApplyChecklistTemplateRequest(List.of(vehicle.getId().toString()));
+        service.apply(template.id(), request);
+        vehicle.setActive(false);
+
+        assertEquals(3, service.unapply(template.id(), request).removed());
+        assertTrue(extrasOf(vehicle).isEmpty());
+    }
+
+    @Test
+    void borrarLaPlantillaDejaSusControlesComoCargadosAMano() throws Exception {
+        ChecklistTemplateDto template = service.create(frigorifico());
+        Vehicle vehicle = vehicle("AA111AA", true);
+        service.apply(template.id(), new ApplyChecklistTemplateRequest(List.of(vehicle.getId().toString())));
+
+        service.delete(template.id());
+
+        assertEquals(3, extrasOf(vehicle).size());
+        assertTrue(extrasOf(vehicle).stream().allMatch(e -> e.getTemplateId() == null));
     }
 
     @Test
