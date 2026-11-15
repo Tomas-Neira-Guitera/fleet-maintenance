@@ -1,6 +1,7 @@
 package org.fleetguard.event;
 
 import org.fleetguard.entity.NotificationType;
+import org.fleetguard.entity.Role;
 import org.fleetguard.entity.ScheduledMaintenance;
 import org.fleetguard.entity.User;
 import org.fleetguard.entity.Vehicle;
@@ -31,6 +32,8 @@ public class WorkOrderNotificationListener {
     private static final ZoneId FLEET_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
     private static final DateTimeFormatter PLANNED_FORMAT = DateTimeFormatter.ofPattern("dd/MM 'a las' HH:mm");
     private static final String LINK = "/";
+    // CAM-149: cuánto del comentario entra en el aviso.
+    static final int COMMENT_PREVIEW = 140;
 
     private final WorkOrderRepository workOrderRepository;
     private final VehicleRepository vehicleRepository;
@@ -77,6 +80,34 @@ public class WorkOrderNotificationListener {
                         notificationService.notify(event.technicianId(), NotificationType.WORK_ORDER_CANCELLED,
                                 "Se canceló una orden de trabajo",
                                 subject(workOrder) + ". Ya no tenés que hacerla.", LINK)));
+    }
+
+    /**
+     * CAM-149: si comenta el técnico, a los destinatarios configurados (por defecto, los admins); si comenta el
+     * admin, al técnico a cargo. Nadie recibe aviso por su propio comentario. Lleva a la OT: en el admin, por la
+     * URL; el técnico la abre desde la campanita (TechnicianShell).
+     */
+    @TransactionalEventListener
+    public void onCommented(WorkOrderCommentedEvent event) {
+        dispatcher.dispatch("comentario en la OT " + event.workOrderId(), () ->
+                workOrderRepository.findById(event.workOrderId()).ifPresent(workOrder -> {
+                    String link = "/ordenes-trabajo/" + workOrder.getId();
+                    String message = commentMessage(event.authorName(), subject(workOrder), event.text());
+                    if (event.authorRole() == Role.TECNICO) {
+                        notificationService.notifyConfiguredRecipientsExcept(NotificationType.WORK_ORDER_COMMENT,
+                                "Comentario del técnico", message, link, event.authorId());
+                    } else if (workOrder.getTechnicianId() != null && !workOrder.getTechnicianId().equals(event.authorId())) {
+                        notificationService.notify(workOrder.getTechnicianId(), NotificationType.WORK_ORDER_COMMENT,
+                                "Comentario en tu orden de trabajo", message, link);
+                    }
+                }));
+    }
+
+    /** "javier.romero en Cambio de pastillas (AB123CD): «¿Lo reparo o lo cambio?»", con el texto cortado si es largo. */
+    static String commentMessage(String author, String subject, String text) {
+        String flat = text.replaceAll("\\s+", " ").strip();
+        String shown = flat.length() <= COMMENT_PREVIEW ? flat : flat.substring(0, COMMENT_PREVIEW - 1).stripTrailing() + "…";
+        return author + " en " + subject + ": «" + shown + "»";
     }
 
     /** CAM-98: al admin (o a quien diga la configuración); lleva al detalle de la OT. */

@@ -40,12 +40,14 @@ public class MaintenanceAlertService {
     private final NotificationSettingsService settings;
     private final NotificationService notificationService;
     private final NotificationDispatcher dispatcher;
+    private final LinkedDocumentDueDates linkedDueDates;
     private final Clock clock;
 
     public MaintenanceAlertService(VehicleMaintenanceAssignmentRepository assignmentRepository,
                                    VehicleRepository vehicleRepository, MaintenanceAlertLogRepository alertLogRepository,
                                    PlanNotificationSettingsService planSettings, NotificationSettingsService settings,
-                                   NotificationService notificationService, NotificationDispatcher dispatcher, Clock clock) {
+                                   NotificationService notificationService, NotificationDispatcher dispatcher,
+                                   LinkedDocumentDueDates linkedDueDates, Clock clock) {
         this.assignmentRepository = assignmentRepository;
         this.vehicleRepository = vehicleRepository;
         this.alertLogRepository = alertLogRepository;
@@ -53,6 +55,7 @@ public class MaintenanceAlertService {
         this.settings = settings;
         this.notificationService = notificationService;
         this.dispatcher = dispatcher;
+        this.linkedDueDates = linkedDueDates;
         this.clock = clock;
     }
 
@@ -84,6 +87,10 @@ public class MaintenanceAlertService {
             MaintenancePlan plan = assignment.getMaintenancePlan();
             Vehicle vehicle = vehicles.get(assignment.getVehicleId());
             if (vehicle == null || !plan.isActive()) {
+                continue;
+            }
+            // CAM-127: si vence con un documento cargado, avisa el documento (DocumentAlertService), no el plan.
+            if (linkedDueDates.documentDueDate(assignment).isPresent()) {
                 continue;
             }
             PlanNotificationSettingsService.AlertConfig config = plans.computeIfAbsent(plan.getId(), planSettings::alertConfig);

@@ -136,11 +136,22 @@ era un `422`). Un estado desconocido, aunque venga junto a otros válidos, es un
 "Atrasado" no es un estado del backend: el frontend lo calcula como un turno `scheduled`
 cuyo `scheduledAt` ya pasó.
 
+### 11. El turno de hoy en el vehículo, y avisos del turno (CAM-143)
+`VehicleSummary` (`GET /api/vehicles` y `GET /api/vehicles/{id}`) suma `scheduledToday`: la
+fecha y hora del turno `scheduled` más temprano de hoy, o `null`. "Hoy" es el día de Argentina
+(CAM-88): un turno a las 22:00 es de ese día, no del siguiente. Se resuelve para todo el listado
+con una sola consulta. Un turno hecho o cancelado no cuenta; uno que ya pasó la hora sin marcarse
+hecho sí, porque el vehículo sigue debiendo el turno. Reprogramar a otro día lo saca del anterior.
+
+**El turno no bloquea:** el pre-trip se acepta igual. El front advierte al elegir el vehículo y
+deja seguir; puede ser un turno a última hora, y quien decide es la persona.
+
+Los avisos (`scheduled_maintenance_upcoming` al chofer en viaje, `trip_started_with_maintenance`
+al admin) están en `CAM-96-notifications-contract.md`.
+
 ## Fuera de alcance
 
 - Historial de reprogramaciones (ver decisión 3).
 - Cierre automático de una programación de origen `defect` (depende de 5.3, fuera de
   alcance -- ver decisión 4).
-- Notificaciones/alertas sobre mantenimientos programados (distinto de las alertas de
-  vencimiento de 5.6, ya fuera de alcance de CAM-40).
 - Recurrencia -- cada programación es un evento puntual.

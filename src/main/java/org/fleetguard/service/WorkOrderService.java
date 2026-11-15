@@ -21,9 +21,11 @@ import org.fleetguard.entity.WorkOrder;
 import org.fleetguard.entity.WorkOrderExecutionType;
 import org.fleetguard.entity.WorkOrderExpense;
 import org.fleetguard.entity.WorkOrderExpenseCategory;
+import org.fleetguard.entity.WorkOrderPauseReason;
 import org.fleetguard.entity.WorkOrderPhoto;
 import org.fleetguard.entity.WorkOrderSourceType;
 import org.fleetguard.entity.WorkOrderStatus;
+import org.fleetguard.event.DefectResolvedEvent;
 import org.fleetguard.event.WorkOrderCancelledEvent;
 import org.fleetguard.event.WorkOrderFinalizedEvent;
 import org.fleetguard.event.WorkOrderTechnicianChangedEvent;
@@ -84,6 +86,7 @@ public class WorkOrderService {
     private final DefectMapper defectMapper;
     private final OdometerReadings odometerReadings;
     private final ApplicationEventPublisher eventPublisher;
+    private final VehicleAvailabilityService availabilityService;
 
     public WorkOrderService(WorkOrderRepository workOrderRepository, WorkOrderExpenseRepository expenseRepository,
                              WorkOrderPhotoRepository photoRepository, VehicleRepository vehicleRepository,
@@ -91,7 +94,7 @@ public class WorkOrderService {
                              ScheduledMaintenanceService scheduledMaintenanceService,
                              MaintenanceCompletionService completionService, UserRepository userRepository,
                              WorkOrderMapper mapper, DefectMapper defectMapper, OdometerReadings odometerReadings,
-                             ApplicationEventPublisher eventPublisher) {
+                             ApplicationEventPublisher eventPublisher, VehicleAvailabilityService availabilityService) {
         this.workOrderRepository = workOrderRepository;
         this.expenseRepository = expenseRepository;
         this.photoRepository = photoRepository;
@@ -105,6 +108,7 @@ public class WorkOrderService {
         this.defectMapper = defectMapper;
         this.odometerReadings = odometerReadings;
         this.eventPublisher = eventPublisher;
+        this.availabilityService = availabilityService;
     }
 
     /** created=false si ya había una OT abierta para el mismo origen y se devolvió esa. */
@@ -117,7 +121,10 @@ public class WorkOrderService {
     /** Id de una foto de GET /api/photos/{id}: los mismos caracteres que acepta el almacenamiento. */
     private static final Pattern PHOTO_ID = Pattern.compile("[A-Za-z0-9_-]+");
 
-    private static final List<WorkOrderStatus> OPEN_STATUSES = List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO);
+    private static final List<WorkOrderStatus> OPEN_STATUSES = WorkOrderStatus.OPEN;
+
+    /** Largo máximo del comentario de una pausa (CAM-148). */
+    static final int PAUSE_COMMENT_MAX_LENGTH = 500;
 
     @Transactional
     public CreateResult create(CreateWorkOrderRequest request) {
@@ -382,29 +389,57 @@ public class WorkOrderService {
     private void applyStatusChange(WorkOrder workOrder, UpdateWorkOrderRequest request) {
         WorkOrderStatus newStatus = WorkOrderStatus.fromJson(request.status());
         if (newStatus == null) {
-            throw new WorkOrderValidationException("Estado inválido",
-                    List.of(new FieldValidationErrorDetail("status", "Debe ser 'en_proceso', 'finalizada' o 'cancelada'")));
+            throw new WorkOrderValidationException("Estado inválido", List.of(new FieldValidationErrorDetail("status",
+                    "Debe ser 'en_proceso', 'en_espera', 'finalizada' o 'cancelada'")));
         }
 
+        // CAM-148: en_espera solo desde en_proceso, y se vuelve a en_proceso para seguir. Una OT en
+        // espera no se finaliza sin retomarla, pero sí se cancela.
         WorkOrderStatus current = workOrder.getStatus();
         boolean validTransition = switch (newStatus) {
-            case EN_PROCESO -> current == WorkOrderStatus.ASIGNADA;
+            case EN_PROCESO -> current == WorkOrderStatus.ASIGNADA || current == WorkOrderStatus.EN_ESPERA;
+            case EN_ESPERA -> current == WorkOrderStatus.EN_PROCESO;
             case FINALIZADA -> current == WorkOrderStatus.EN_PROCESO;
-            case CANCELADA -> current == WorkOrderStatus.ASIGNADA || current == WorkOrderStatus.EN_PROCESO;
+            case CANCELADA -> current.isOpen();
             case ASIGNADA -> false;
         };
         if (!validTransition) {
             throw new WorkOrderConflictException("INVALID_STATUS_TRANSITION",
-                    "No se puede pasar de '" + current.toJson() + "' a '" + newStatus.toJson() + "'");
+                    current == WorkOrderStatus.EN_ESPERA && newStatus == WorkOrderStatus.FINALIZADA
+                            ? "La orden de trabajo está en espera: retomala antes de finalizarla"
+                            : "No se puede pasar de '" + current.toJson() + "' a '" + newStatus.toJson() + "'");
         }
 
-        if (newStatus == WorkOrderStatus.EN_PROCESO) {
-            workOrder.start();
-        } else if (newStatus == WorkOrderStatus.CANCELADA) {
-            workOrder.cancel();
-        } else {
-            finalizeWorkOrder(workOrder, request);
+        switch (newStatus) {
+            case EN_PROCESO -> workOrder.start();
+            case EN_ESPERA -> pause(workOrder, request);
+            case CANCELADA -> workOrder.cancel();
+            default -> finalizeWorkOrder(workOrder, request);
         }
+    }
+
+    /** CAM-148: el motivo es obligatorio, y con "otro" también el comentario, que dice cuál. */
+    private void pause(WorkOrder workOrder, UpdateWorkOrderRequest request) {
+        List<FieldValidationErrorDetail> details = new ArrayList<>();
+        WorkOrderPauseReason reason = WorkOrderPauseReason.fromJson(request.pauseReason());
+        if (reason == null) {
+            details.add(new FieldValidationErrorDetail("pauseReason", request.pauseReason() == null
+                    ? "Obligatorio para poner la orden de trabajo en espera"
+                    : "Debe ser 'esperando_repuesto', 'esperando_proveedor', 'esperando_vehiculo' u 'otro'"));
+        }
+        String comment = request.pauseComment() == null || request.pauseComment().isBlank()
+                ? null : request.pauseComment().trim();
+        if (reason == WorkOrderPauseReason.OTRO && comment == null) {
+            details.add(new FieldValidationErrorDetail("pauseComment", "Contá qué está frenando la orden de trabajo"));
+        }
+        if (comment != null && comment.length() > PAUSE_COMMENT_MAX_LENGTH) {
+            details.add(new FieldValidationErrorDetail("pauseComment",
+                    "No puede superar los " + PAUSE_COMMENT_MAX_LENGTH + " caracteres"));
+        }
+        if (!details.isEmpty()) {
+            throw new WorkOrderValidationException("Datos inválidos para poner la orden de trabajo en espera", details);
+        }
+        workOrder.pause(reason, comment);
     }
 
     /**
@@ -423,6 +458,9 @@ public class WorkOrderService {
             details.add(new FieldValidationErrorDetail("photos", "Hace falta al menos una foto para finalizar la orden de trabajo"));
         }
         Long completedKm = validateCompletedKm(workOrder, request.completedKm(), details);
+        if (request.document() != null && workOrder.getAssignmentId() == null) {
+            details.add(new FieldValidationErrorDetail("document", "Solo una orden de un plan de mantenimiento renueva un documento"));
+        }
         if (!details.isEmpty()) {
             throw new WorkOrderValidationException("Datos inválidos para finalizar la orden de trabajo", details);
         }
@@ -432,7 +470,7 @@ public class WorkOrderService {
         if (workOrder.getAssignmentId() != null) {
             CreateCompletionRequest completionRequest = new CreateCompletionRequest(
                     LocalDate.now().toString(), completedKm, workOrder.getId().toString(),
-                    "Registrado automáticamente al finalizar la orden de trabajo");
+                    "Registrado automáticamente al finalizar la orden de trabajo", request.document());
             completionService.create(workOrder.getVehicleId().toString(), workOrder.getAssignmentId().toString(), completionRequest);
         } else if (workOrder.getScheduledMaintenanceId() != null) {
             scheduleRepository.findById(workOrder.getScheduledMaintenanceId()).ifPresent(schedule -> {
@@ -443,7 +481,19 @@ public class WorkOrderService {
         }
 
         if (workOrder.getDefectId() != null) {
-            defectRepository.findById(workOrder.getDefectId()).ifPresent(Defect::resolve);
+            defectRepository.findById(workOrder.getDefectId()).ifPresent(defect -> {
+                boolean wasOpen = "open".equals(defect.getStatus());
+                defect.resolve(workOrder.getFinalizedAt());
+                defectRepository.saveAndFlush(defect);
+                // CAM-103: si era el último bloqueante, el vehículo vuelve a estar disponible.
+                boolean becameAvailable = vehicleRepository.findById(workOrder.getVehicleId())
+                        .map(vehicle -> availabilityService.sync(vehicle, workOrder.getId()))
+                        .orElse(false);
+                // CAM-141: una segunda OT de un defecto ya resuelto no le vuelve a avisar al chofer.
+                if (wasOpen) {
+                    eventPublisher.publishEvent(new DefectResolvedEvent(defect.getId(), workOrder.getId(), becameAvailable));
+                }
+            });
         }
 
         // CAM-90: el km de cierre avanza el del vehículo. Si la OT venía de un plan, el completion de

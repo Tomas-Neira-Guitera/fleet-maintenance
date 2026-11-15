@@ -14,6 +14,7 @@ import org.fleetguard.exception.MaintenanceValidationException;
 import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.mapper.MaintenancePlanMapper;
 import org.fleetguard.repository.MaintenancePlanRepository;
+import org.fleetguard.repository.VehicleDocumentRepository;
 import org.fleetguard.repository.VehicleMaintenanceAssignmentRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,9 +47,12 @@ class VehicleMaintenanceAssignmentServiceTest {
     private final VehicleMaintenanceAssignmentRepository assignmentRepository = mock(VehicleMaintenanceAssignmentRepository.class);
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final MaintenancePlanRepository planRepository = mock(MaintenancePlanRepository.class);
+    private final VehicleDocumentRepository documentRepository = mock(VehicleDocumentRepository.class);
+    private final LinkedDocumentDueDates linkedDueDates = new LinkedDocumentDueDates(documentRepository, assignmentRepository);
     private final VehicleMaintenanceAssignmentService service = new VehicleMaintenanceAssignmentService(
             assignmentRepository, vehicleRepository,
-            new MaintenancePlanService(planRepository, assignmentRepository, new MaintenancePlanMapper()));
+            new MaintenancePlanService(planRepository, assignmentRepository, new MaintenancePlanMapper(), linkedDueDates),
+            linkedDueDates);
 
     private Vehicle vehicle;
 

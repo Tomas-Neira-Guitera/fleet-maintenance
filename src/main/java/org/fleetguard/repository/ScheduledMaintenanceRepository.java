@@ -3,6 +3,8 @@ package org.fleetguard.repository;
 import org.fleetguard.entity.ScheduleStatus;
 import org.fleetguard.entity.ScheduledMaintenance;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -15,6 +17,10 @@ public interface ScheduledMaintenanceRepository extends JpaRepository<ScheduledM
     Optional<ScheduledMaintenance> findFirstByAssignmentIdAndStatus(UUID assignmentId, ScheduleStatus status);
 
     Optional<ScheduledMaintenance> findFirstByDefectIdAndStatus(UUID defectId, ScheduleStatus status);
+
+    /** CAM-142: los defectos que tienen un turno en ese estado (programado: el defecto está atendido). */
+    @Query("select distinct s.defectId from ScheduledMaintenance s where s.defectId is not null and s.status = :status")
+    List<UUID> findDefectIdsWithStatus(@Param("status") ScheduleStatus status);
 
     /** Varios estados a la vez: el calendario (CAM-65) pide programadas, hechas y canceladas en una sola llamada. */
     List<ScheduledMaintenance> findByScheduledAtBetweenAndStatusInOrderByScheduledAtAsc(

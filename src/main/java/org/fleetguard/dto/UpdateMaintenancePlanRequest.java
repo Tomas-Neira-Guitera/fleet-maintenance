@@ -7,6 +7,8 @@ public record UpdateMaintenancePlanRequest(
         String intervalType,
         Integer intervalKm,
         Integer intervalDays,
-        Boolean active
+        Boolean active,
+        // CAM-127: ausente no cambia nada; "" quita el vínculo.
+        String documentType
 ) {
 }

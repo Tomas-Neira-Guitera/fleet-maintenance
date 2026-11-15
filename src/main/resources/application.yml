@@ -66,6 +66,11 @@ fleetguard:
     # cuánto se revisa (cron de Spring: segundo minuto hora día mes día-de-semana; acá, cada hora).
     reminder-after-hours: 12
     reminder-cron: "0 0 * * * *"
+  document-alerts:
+    # CAM-127: cada día a las 08:05 (hora de Argentina) se revisan los vencimientos de los documentos y
+    # la disponibilidad de la flota. La anticipación de "por vencer" (15 días por defecto) se configura en
+    # Notificaciones, como la de los planes.
+    cron: "0 5 8 * * *"
   push:
     # CAM-119: claves VAPID con las que el servidor firma las push al navegador. Igual que el secreto
     # del JWT, este par es SOLO para desarrollo local y se commitea a propósito, para que el proyecto
@@ -81,6 +86,35 @@ fleetguard:
     from: "FleetMaintenance <avisos@fleetguard.local>"
   # Base de los links de los emails (el link de un aviso es una ruta del front).
   frontend-url: http://localhost:5173
+  recurring-defects:
+    # CAM-135: un control del checklist es recurrente cuando falla en el mismo vehículo esta cantidad
+    # de veces en los últimos window-days días. Se avisa al admin una sola vez por ventana.
+    threshold: 3
+    window-days: 30
+  unattended-defects:
+    # CAM-142: un defecto abierto está sin atender si lleva más de days días desde que se reportó sin una OT
+    # abierta ni un turno programado. Cada día a las 08:10 (hora de Argentina) se le avisa al admin, un aviso
+    # por vehículo y una sola vez por defecto.
+    days: 7
+    cron: "0 10 8 * * *"
+  scheduled-maintenance-alerts:
+    # CAM-143: cada día a las 08:15 (hora de Argentina) se le avisa al chofer que tiene el vehículo en viaje
+    # de los turnos de taller de hoy (los que todavía no pasaron) y de mañana. Una vez por turno y fecha.
+    cron: "0 15 8 * * *"
+  trip-km-alerts:
+    # CAM-152: al cerrar un viaje se avisa si recorrió más de ratio veces el promedio de los últimos
+    # recent-trips viajes del vehículo, o menos del promedio dividido ratio. Sin min-trips viajes
+    # anteriores no hay promedio. El texto del aviso dice "el doble" y "la mitad": va con ratio 2.
+    min-trips: 3
+    recent-trips: 10
+    ratio: 2
+  fuel-alerts:
+    # CAM-156: una carga de tanque lleno avisa si el consumo del tramo que cierra supera ratio veces el
+    # de los últimos recent-segments tramos del vehículo (litros totales sobre km totales). Sin
+    # min-segments tramos anteriores no hay promedio. 1.3 = un 30% más que lo habitual.
+    min-segments: 3
+    recent-segments: 10
+    ratio: 1.3
   maintenance-alerts:
     # CAM-118: revisión diaria de vencimientos por fecha, a las 8 de Argentina (los de km se revisan
     # además cada vez que sube el km del vehículo).

@@ -18,6 +18,8 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -43,7 +45,7 @@ class PhotoAndAuthControllerTest extends WebMvcTestBase {
 
     @Test
     void subirUnaFotoDevuelve201ConSuUrl() throws Exception {
-        when(photoService.upload(any())).thenReturn(new PhotoUploadResultDto("ph-1", "http://localhost:8080/api/photos/ph-1"));
+        when(photoService.upload(any(), isNull())).thenReturn(new PhotoUploadResultDto("ph-1", "http://localhost:8080/api/photos/ph-1"));
 
         mvc.perform(multipart("/photos").file(JPG))
                 .andExpect(status().isCreated())
@@ -51,15 +53,26 @@ class PhotoAndAuthControllerTest extends WebMvcTestBase {
     }
 
     @Test
+    void elComprobanteDeUnDocumentoPasaElPropositoAlServicio() throws Exception {
+        MockMultipartFile pdf = new MockMultipartFile("file", "poliza.pdf", "application/pdf", new byte[]{1});
+        when(photoService.upload(any(), eq("document"))).thenReturn(new PhotoUploadResultDto("ph-2", "http://localhost:8080/api/photos/ph-2"));
+
+        // CAM-127: ?purpose=document también acepta PDF.
+        mvc.perform(multipart("/photos").file(pdf).param("purpose", "document"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.photoId").value("ph-2"));
+    }
+
+    @Test
     void unaFotoQueNoEsJpgNiPngDevuelve415YUnaMuyPesadaDevuelve413() throws Exception {
-        doThrow(UnsupportedPhotoTypeException.wrongType("image/heic")).when(photoService).upload(any());
+        doThrow(UnsupportedPhotoTypeException.wrongType("image/heic")).when(photoService).upload(any(), any());
         mvc.perform(multipart("/photos").file(JPG))
                 .andExpect(status().isUnsupportedMediaType())
                 .andExpect(jsonPath("$.error").value("UNSUPPORTED_MEDIA_TYPE"));
 
         // En producción el 413 sale de Spring cuando el archivo pasa el límite de multipart
         // (spring.servlet.multipart.max-file-size = 8MB): es esa excepción la que se simula.
-        doThrow(new MaxUploadSizeExceededException(8L * 1024 * 1024)).when(photoService).upload(any());
+        doThrow(new MaxUploadSizeExceededException(8L * 1024 * 1024)).when(photoService).upload(any(), any());
         mvc.perform(multipart("/photos").file(JPG))
                 .andExpect(status().isPayloadTooLarge())
                 .andExpect(jsonPath("$.error").value("PAYLOAD_TOO_LARGE"))

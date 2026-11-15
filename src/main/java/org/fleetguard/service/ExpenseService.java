@@ -2,63 +2,220 @@ package org.fleetguard.service;
 
 import org.fleetguard.dto.ExpenseDto;
 import org.fleetguard.dto.FieldValidationErrorDetail;
+import org.fleetguard.dto.VehicleExpenseRequest;
+import org.fleetguard.entity.FuelLoad;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.VehicleExpense;
+import org.fleetguard.entity.VehicleExpenseCategory;
 import org.fleetguard.entity.WorkOrder;
 import org.fleetguard.entity.WorkOrderExpense;
-import org.fleetguard.entity.WorkOrderExpenseCategory;
+import org.fleetguard.exception.ExpenseNotFoundException;
+import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.WorkOrderValidationException;
+import org.fleetguard.repository.FuelLoadRepository;
+import org.fleetguard.repository.VehicleExpenseRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.fleetguard.repository.WorkOrderExpenseRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
- * Lógica de GET /api/expenses (CAM-52): los gastos que ya se cargan dentro de cada orden de
- * trabajo (CAM-63), todos juntos. Solo lectura: no hay modelo nuevo. Los totales los calcula
- * el cliente sobre este listado.
+ * Lógica de /api/expenses: los gastos que se cargan dentro de cada orden de trabajo (CAM-63), solo
+ * lectura acá (CAM-52), y los gastos operativos del vehículo, con su alta, edición y baja (CAM-109).
+ * CAM-156 suma las cargas de combustible (origin "fuel", solo lectura acá). Los totales los calcula el
+ * cliente sobre el listado.
  */
 @Service
 public class ExpenseService {
 
-    private final WorkOrderExpenseRepository expenseRepository;
-    private final VehicleRepository vehicleRepository;
+    private static final ZoneId FLEET_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
+    private static final String OPERATING_ORIGIN = "operating";
+    public static final String FUEL_ORIGIN = "fuel";
+    // Lo que entra en la columna: numeric(12, 2).
+    private static final BigDecimal MAX_AMOUNT = new BigDecimal("9999999999.99");
 
-    public ExpenseService(WorkOrderExpenseRepository expenseRepository, VehicleRepository vehicleRepository) {
+    private final WorkOrderExpenseRepository expenseRepository;
+    private final VehicleExpenseRepository vehicleExpenseRepository;
+    private final VehicleRepository vehicleRepository;
+    private final FuelLoadRepository fuelLoadRepository;
+
+    public ExpenseService(WorkOrderExpenseRepository expenseRepository, VehicleExpenseRepository vehicleExpenseRepository,
+                          VehicleRepository vehicleRepository, FuelLoadRepository fuelLoadRepository) {
         this.expenseRepository = expenseRepository;
+        this.vehicleExpenseRepository = vehicleExpenseRepository;
         this.vehicleRepository = vehicleRepository;
+        this.fuelLoadRepository = fuelLoadRepository;
     }
 
-    /** Todos los filtros son opcionales. Un vehicleId o category que no existe da lista vacía, no error. */
+    /** CAM-156: un gasto operativo o una carga de combustible, que no salen de una OT. */
+    public static boolean isOperating(ExpenseDto expense) {
+        return OPERATING_ORIGIN.equals(expense.origin()) || FUEL_ORIGIN.equals(expense.origin());
+    }
+
+    /** Todos los filtros son opcionales. Un vehicleId, category u origin que no existe da lista vacía, no error. */
     @Transactional(readOnly = true)
-    public List<ExpenseDto> list(String vehicleIdParam, String categoryParam, String from, String to) {
+    public List<ExpenseDto> list(String vehicleIdParam, String categoryParam, String originParam, String from, String to) {
         List<FieldValidationErrorDetail> details = new ArrayList<>();
         DateRange range = DateRange.parse(from, to, details);
         if (!details.isEmpty()) {
             throw new WorkOrderValidationException("Período inválido", details);
         }
 
-        List<WorkOrderExpense> expenses = expenseRepository.findInRangeWithWorkOrder(range.from(), range.to());
+        Stream<ExpenseDto> expenses = Stream.concat(Stream.concat(workOrderExpenses(range), operatingExpenses(range)),
+                fuelExpenses(range));
         if (vehicleIdParam != null && !vehicleIdParam.isBlank()) {
-            UUID vehicleId = Uuids.parse(vehicleIdParam.trim()).orElse(null);
-            expenses = expenses.stream().filter(e -> e.getWorkOrder().getVehicleId().equals(vehicleId)).toList();
+            String vehicleId = Uuids.parse(vehicleIdParam.trim()).map(UUID::toString).orElse(null);
+            expenses = expenses.filter(e -> e.vehicleId().equals(vehicleId));
         }
         if (categoryParam != null && !categoryParam.isBlank()) {
-            WorkOrderExpenseCategory category = WorkOrderExpenseCategory.fromJson(categoryParam);
-            expenses = expenses.stream().filter(e -> e.getCategory() == category).toList();
+            expenses = expenses.filter(e -> e.category().equals(categoryParam));
+        }
+        if (originParam != null && !originParam.isBlank()) {
+            expenses = expenses.filter(e -> e.origin().equals(originParam));
+        }
+        return expenses.sorted(Comparator.comparing((ExpenseDto e) -> Instant.parse(e.date())).reversed()).toList();
+    }
+
+    @Transactional
+    public ExpenseDto create(VehicleExpenseRequest request) {
+        Valid valid = validate(request);
+        if (valid.category() == VehicleExpenseCategory.COMBUSTIBLE) {
+            throw fuelGoesToFuelLoads();
+        }
+        VehicleExpense expense = new VehicleExpense(valid.vehicle(), valid.date(), valid.category(),
+                request.description().trim(), request.amount());
+        return toDto(vehicleExpenseRepository.save(expense));
+    }
+
+    @Transactional
+    public ExpenseDto update(String id, VehicleExpenseRequest request) {
+        VehicleExpense expense = findOperating(id);
+        Valid valid = validate(request);
+        // Los de combustible anteriores a CAM-156 se pueden seguir editando; uno nuevo, no.
+        if (valid.category() == VehicleExpenseCategory.COMBUSTIBLE && expense.getCategory() != VehicleExpenseCategory.COMBUSTIBLE) {
+            throw fuelGoesToFuelLoads();
+        }
+        expense.update(valid.vehicle(), valid.date(), valid.category(), request.description().trim(), request.amount());
+        return toDto(expense);
+    }
+
+    @Transactional
+    public void delete(String id) {
+        vehicleExpenseRepository.delete(findOperating(id));
+    }
+
+    private static WorkOrderValidationException fuelGoesToFuelLoads() {
+        return new WorkOrderValidationException("Datos inválidos para el gasto", List.of(new FieldValidationErrorDetail(
+                "category", "El combustible se carga en Combustible, con los litros y los km (CAM-156)")));
+    }
+
+    /** Un id de gasto de OT tampoco existe acá: esos se manejan desde su orden de trabajo. */
+    private VehicleExpense findOperating(String id) {
+        return Uuids.parse(id).flatMap(vehicleExpenseRepository::findById)
+                .orElseThrow(() -> new ExpenseNotFoundException(id));
+    }
+
+    private record Valid(Vehicle vehicle, LocalDate date, VehicleExpenseCategory category) {
+    }
+
+    private Valid validate(VehicleExpenseRequest request) {
+        List<FieldValidationErrorDetail> details = new ArrayList<>();
+        if (request.vehicleId() == null || request.vehicleId().isBlank()) {
+            details.add(new FieldValidationErrorDetail("vehicleId", "Obligatorio"));
+        }
+        LocalDate date = parseDate(request.date(), details);
+        VehicleExpenseCategory category = VehicleExpenseCategory.fromJson(request.category());
+        if (category == null) {
+            details.add(new FieldValidationErrorDetail("category",
+                    "Debe ser 'combustible', 'seguro', 'patente', 'vtv', 'peajes' u 'otro'"));
+        }
+        if (request.description() == null || request.description().isBlank()) {
+            details.add(new FieldValidationErrorDetail("description", "Obligatoria"));
+        }
+        validateAmount(request.amount(), details);
+        if (!details.isEmpty()) {
+            throw new WorkOrderValidationException("Datos inválidos para el gasto", details);
         }
 
+        Vehicle vehicle = Uuids.parse(request.vehicleId().trim()).flatMap(vehicleRepository::findById)
+                .orElseThrow(() -> new VehicleNotFoundException(request.vehicleId()));
+        return new Valid(vehicle, date, category);
+    }
+
+    private static LocalDate parseDate(String value, List<FieldValidationErrorDetail> details) {
+        if (value == null || value.isBlank()) {
+            details.add(new FieldValidationErrorDetail("date", "Obligatoria"));
+            return null;
+        }
+        try {
+            LocalDate date = LocalDate.parse(value.trim());
+            if (date.isAfter(LocalDate.now(FLEET_ZONE))) {
+                details.add(new FieldValidationErrorDetail("date", "No puede ser una fecha futura"));
+            }
+            return date;
+        } catch (DateTimeParseException e) {
+            details.add(new FieldValidationErrorDetail("date", "Fecha inválida, formato esperado YYYY-MM-DD"));
+            return null;
+        }
+    }
+
+    private static void validateAmount(BigDecimal amount, List<FieldValidationErrorDetail> details) {
+        if (amount == null || amount.signum() <= 0) {
+            details.add(new FieldValidationErrorDetail("amount", "Debe ser mayor a 0"));
+        } else if (amount.compareTo(MAX_AMOUNT) > 0) {
+            details.add(new FieldValidationErrorDetail("amount", "Es demasiado alto"));
+        } else if (amount.stripTrailingZeros().scale() > 2) {
+            details.add(new FieldValidationErrorDetail("amount", "Hasta 2 decimales"));
+        }
+    }
+
+    private Stream<ExpenseDto> workOrderExpenses(DateRange range) {
+        List<WorkOrderExpense> expenses = expenseRepository.findInRangeWithWorkOrder(range.from(), range.to());
         Map<UUID, String> plateByVehicleId = vehicleRepository
                 .findAllById(expenses.stream().map(e -> e.getWorkOrder().getVehicleId()).distinct().toList())
                 .stream()
                 .collect(Collectors.toMap(Vehicle::getId, Vehicle::getPlate));
+        return expenses.stream().map(e -> toDto(e, plateByVehicleId.get(e.getWorkOrder().getVehicleId())));
+    }
 
-        return expenses.stream().map(e -> toDto(e, plateByVehicleId.get(e.getWorkOrder().getVehicleId()))).toList();
+    /** El repositorio corta por día; el corte exacto [from, to) es sobre el instante que sale en `date`. */
+    private Stream<ExpenseDto> operatingExpenses(DateRange range) {
+        LocalDate firstDay = range.from().atZone(FLEET_ZONE).toLocalDate();
+        LocalDate lastDay = range.to().atZone(FLEET_ZONE).toLocalDate();
+        return vehicleExpenseRepository.findInRangeWithVehicle(firstDay, lastDay).stream()
+                .filter(e -> {
+                    Instant date = instantOf(e);
+                    return !date.isBefore(range.from()) && date.isBefore(range.to());
+                })
+                .map(ExpenseService::toDto);
+    }
+
+    private Stream<ExpenseDto> fuelExpenses(DateRange range) {
+        return fuelLoadRepository.findInRangeWithVehicle(range.from(), range.to()).stream().map(ExpenseService::toDto);
+    }
+
+    private static ExpenseDto toDto(FuelLoad load) {
+        return new ExpenseDto(load.getId().toString(), load.getLoadedAt().toString(), load.getVehicle().getId().toString(),
+                load.getVehicle().getPlate(), VehicleExpenseCategory.COMBUSTIBLE.toJson(),
+                FuelLoadService.expenseDescription(load), load.getAmount(), null, null, null, FUEL_ORIGIN, null, null,
+                null);
+    }
+
+    private static Instant instantOf(VehicleExpense expense) {
+        return expense.getDate().atStartOfDay(FLEET_ZONE).toInstant();
     }
 
     private static ExpenseDto toDto(WorkOrderExpense expense, String plate) {
@@ -78,6 +235,25 @@ public class ExpenseService {
                 workOrder.getExecutionType().toJson(),
                 expense.getReceiptNumber(),
                 expense.getReceiptPhotoUrl()
+        );
+    }
+
+    private static ExpenseDto toDto(VehicleExpense expense) {
+        return new ExpenseDto(
+                expense.getId().toString(),
+                instantOf(expense).toString(),
+                expense.getVehicle().getId().toString(),
+                expense.getVehicle().getPlate(),
+                expense.getCategory().toJson(),
+                expense.getDescription(),
+                expense.getAmount(),
+                null,
+                null,
+                null,
+                OPERATING_ORIGIN,
+                null,
+                null,
+                null
         );
     }
 

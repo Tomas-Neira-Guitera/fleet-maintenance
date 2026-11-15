@@ -11,7 +11,20 @@ public enum NotificationType {
     BLOCKING_DEFECT_REPORTED("blocking_defect_reported"),
     WORK_ORDER_FINALIZED("work_order_finalized"),
     MAINTENANCE_DUE_SOON("maintenance_due_soon"),
-    MAINTENANCE_OVERDUE("maintenance_overdue");
+    MAINTENANCE_OVERDUE("maintenance_overdue"),
+    RECURRING_DEFECT("recurring_defect"),
+    DOCUMENT_DUE_SOON("document_due_soon"),
+    DOCUMENT_EXPIRED("document_expired"),
+    VEHICLE_UNAVAILABLE("vehicle_unavailable"),
+    VEHICLE_AVAILABLE("vehicle_available"),
+    TRIP_KM_ANOMALY("trip_km_anomaly"),
+    FUEL_CONSUMPTION_ANOMALY("fuel_consumption_anomaly"),
+    TIRE_PROBLEM_REPORTED("tire_problem_reported"),
+    DEFECT_RESOLVED("defect_resolved"),
+    DEFECT_UNATTENDED("defect_unattended"),
+    SCHEDULED_MAINTENANCE_UPCOMING("scheduled_maintenance_upcoming"),
+    TRIP_STARTED_WITH_MAINTENANCE("trip_started_with_maintenance"),
+    WORK_ORDER_COMMENT("work_order_comment");
 
     private final String json;
 

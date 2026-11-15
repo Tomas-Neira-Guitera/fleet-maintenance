@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,6 +41,43 @@ public interface DefectRepository extends JpaRepository<Defect, UUID> {
     @Query("select distinct i.vehicleId from Defect d join d.inspectionAnswer a join a.inspection i "
             + "where d.status = 'open' and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING")
     List<UUID> findVehicleIdsWithOpenBlockingDefect();
+
+    /**
+     * Bloqueantes reportados antes de {@code before} que pueden tocar un período que empieza en {@code after}:
+     * abiertos, resueltos después de {@code after}, o resueltos antes de CAM-134 (sin fecha, la decide el servicio).
+     * Con su inspección, de donde sale el vehículo -- tiempo fuera de servicio, CAM-134.
+     */
+    @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i "
+            + "where d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING and d.createdAt < :before "
+            + "and (d.status = 'open' or d.resolvedAt is null or d.resolvedAt > :after)")
+    List<Defect> findBlockingInPeriodWithInspection(@Param("after") Instant after, @Param("before") Instant before);
+
+    /** CAM-155: defectos resueltos en [from, to). Los resueltos antes de CAM-134 no tienen fecha y no entran. */
+    @Query("select d from Defect d where d.resolvedAt >= :from and d.resolvedAt < :to")
+    List<Defect> findResolvedBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+    /** Defectos reportados desde {@code from}, con su respuesta e inspección -- CAM-135, todos los vehículos. */
+    @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i "
+            + "where d.createdAt >= :from")
+    List<Defect> findReportedSinceWithInspection(@Param("from") Instant from);
+
+    /** Igual que {@link #findReportedSinceWithInspection}, de un solo vehículo -- CAM-135. */
+    @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i "
+            + "where i.vehicleId = :vehicleId and d.createdAt >= :from")
+    List<Defect> findReportedSinceByVehicleIdWithInspection(@Param("vehicleId") UUID vehicleId,
+                                                            @Param("from") Instant from);
+
+    /** CAM-127: los bloqueantes abiertos de esos vehículos, con su inspección (el motivo de "No disponible"). */
+    @Query("select d from Defect d join fetch d.inspectionAnswer a join fetch a.inspection i "
+            + "where d.status = 'open' and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING "
+            + "and i.vehicleId in :vehicleIds order by d.createdAt")
+    List<Defect> findOpenBlockingWithInspection(@Param("vehicleIds") Collection<UUID> vehicleIds);
+
+    /** CAM-103: quiénes reportaron los bloqueantes de ese vehículo que se resolvieron desde {@code since}. */
+    @Query("select distinct i.driverId from Defect d join d.inspectionAnswer a join a.inspection i "
+            + "where i.vehicleId = :vehicleId and d.severity = org.fleetguard.entity.DefectSeverity.BLOCKING "
+            + "and d.status = 'resuelto' and d.resolvedAt >= :since")
+    List<String> findReportersOfBlockingResolvedSince(@Param("vehicleId") UUID vehicleId, @Param("since") Instant since);
 
     /** Defectos de esa gravedad reportados en [from, to), por chofer -- CAM-91. */
     @Query("select new org.fleetguard.repository.DriverCount(i.driverId, count(d)) from Defect d "

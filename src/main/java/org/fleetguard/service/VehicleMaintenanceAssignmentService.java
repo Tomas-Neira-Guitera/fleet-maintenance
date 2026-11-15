@@ -8,6 +8,7 @@ import org.fleetguard.entity.IntervalType;
 import org.fleetguard.entity.MaintenancePlan;
 import org.fleetguard.entity.MaintenanceStatus;
 import org.fleetguard.entity.Vehicle;
+import org.fleetguard.entity.VehicleDocumentType;
 import org.fleetguard.entity.VehicleMaintenanceAssignment;
 import org.fleetguard.exception.AssignmentNotFoundException;
 import org.fleetguard.exception.MaintenanceConflictException;
@@ -36,13 +37,16 @@ public class VehicleMaintenanceAssignmentService {
     private final VehicleMaintenanceAssignmentRepository assignmentRepository;
     private final VehicleRepository vehicleRepository;
     private final MaintenancePlanService maintenancePlanService;
+    private final LinkedDocumentDueDates linkedDueDates;
 
     public VehicleMaintenanceAssignmentService(VehicleMaintenanceAssignmentRepository assignmentRepository,
                                                 VehicleRepository vehicleRepository,
-                                                MaintenancePlanService maintenancePlanService) {
+                                                MaintenancePlanService maintenancePlanService,
+                                                LinkedDocumentDueDates linkedDueDates) {
         this.assignmentRepository = assignmentRepository;
         this.vehicleRepository = vehicleRepository;
         this.maintenancePlanService = maintenancePlanService;
+        this.linkedDueDates = linkedDueDates;
     }
 
     public List<AssignmentDto> list(String vehicleId, boolean active) {
@@ -106,7 +110,7 @@ public class VehicleMaintenanceAssignmentService {
         assignment.setLastDoneKm(lastDoneKm);
         assignment.setLastDoneDate(lastDoneDate);
         assignment.setActive(true);
-        assignment.recalculateNextDue();
+        linkedDueDates.recalculate(assignment);
 
         return toDto(assignmentRepository.save(assignment), vehicle.getOdometerKm());
     }
@@ -127,7 +131,7 @@ public class VehicleMaintenanceAssignmentService {
             }
             assignment.setLastDoneDate(parsed);
         }
-        assignment.recalculateNextDue();
+        linkedDueDates.recalculate(assignment);
         if (request.active() != null) {
             assignment.setActive(request.active());
         }
@@ -155,6 +159,7 @@ public class VehicleMaintenanceAssignmentService {
     }
 
     AssignmentDto toDto(VehicleMaintenanceAssignment assignment, long currentKm) {
+        VehicleDocumentType documentType = assignment.getMaintenancePlan().getDocumentType();
         MaintenanceStatus status = MaintenanceStatusCalculator.computeStatus(
                 assignment.getNextDueKm(), assignment.getNextDueDate(), currentKm, LocalDate.now());
         return new AssignmentDto(
@@ -168,7 +173,9 @@ public class VehicleMaintenanceAssignmentService {
                 assignment.getNextDueKm(),
                 assignment.getNextDueDate() == null ? null : assignment.getNextDueDate().toString(),
                 status.toJson(),
-                assignment.isActive()
+                assignment.isActive(),
+                documentType == null ? null : documentType.toJson(),
+                documentType != null && linkedDueDates.documentDueDate(assignment).isPresent()
         );
     }
 

@@ -28,6 +28,10 @@ public record WorkOrderDto(
         List<WorkOrderPhotoDto> photos,
         String createdAt,
         String updatedAt,
-        String finalizedAt
+        String finalizedAt,
+        /** CAM-148: la pausa actual si está en espera; si no, null. */
+        WorkOrderPauseDto pause,
+        /** CAM-148: segundos en espera en total, contando la pausa actual hasta ahora. */
+        long pausedSeconds
 ) {
 }

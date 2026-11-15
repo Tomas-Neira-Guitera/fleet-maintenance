@@ -40,7 +40,7 @@ class NotificationSettingsControllerTest extends WebMvcTestBase {
 
     private static NotificationSettingDto setting() {
         return new NotificationSettingDto("work_order_finalized", "Orden de trabajo finalizada", "…", "configurable", null,
-                true, List.of("in_app", "email"), List.of("ADMIN"), List.of(), false, null, null, true);
+                true, List.of("in_app", "email"), List.of("ADMIN"), List.of(), false, false, null, null, true);
     }
 
     @Test

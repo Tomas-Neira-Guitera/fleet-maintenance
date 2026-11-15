@@ -52,7 +52,10 @@ desde la pantalla "Vehículos".
 ## 6. Campos obligatorios vs. opcionales en el alta
 
 `plate`, `brand`, `model` obligatorios (ya lo eran antes de CAM-25).
-`vehicleType`, `year`, `chassisNumber`, `odometerKm` opcionales — la card
+Desde CAM-157 también `vehicleType`, de un catálogo cerrado que define las
+cubiertas (ver CAM-157-tires-contract.md §1); los vehículos viejos sin tipo
+siguen andando y se completa al editarlos.
+`year`, `chassisNumber`, `odometerKm` opcionales — la card
 (CAM-25) los pide como parte de "cargar la información del vehículo", pero
 forzarlos hoy rompería los vehículos ya cargados sin esos datos. `year`, si
 viene, se valida en el rango 1980–(año actual + 1); fuera de ese rango es

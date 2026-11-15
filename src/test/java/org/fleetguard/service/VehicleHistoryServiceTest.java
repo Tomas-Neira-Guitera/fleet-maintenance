@@ -2,6 +2,7 @@ package org.fleetguard.service;
 
 import org.fleetguard.dto.InspectionHistoryItemDto;
 import org.fleetguard.dto.MaintenanceHistoryItemDto;
+import org.fleetguard.dto.TripKmAlertDto;
 import org.fleetguard.dto.VehicleHistoryDto;
 import org.fleetguard.entity.CheckOutcome;
 import org.fleetguard.entity.Defect;
@@ -14,6 +15,7 @@ import org.fleetguard.entity.MaintenanceCompletion;
 import org.fleetguard.entity.MaintenancePlan;
 import org.fleetguard.entity.Role;
 import org.fleetguard.entity.Trip;
+import org.fleetguard.entity.TripKmAlertReason;
 import org.fleetguard.entity.User;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleMaintenanceAssignment;
@@ -32,9 +34,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -49,13 +53,13 @@ class VehicleHistoryServiceTest {
     private final UserRepository userRepository = mock(UserRepository.class);
     private final VehicleHistoryService service = new VehicleHistoryService(vehicleRepository, inspectionRepository,
             defectRepository, completionRepository, new UserNameService(userRepository), new VehicleHistoryMapper(),
-            new DefectMapper());
+            new DefectMapper(), new TripDamageService(inspectionRepository));
 
     @Test
     void vehiculoSinHistorialDevuelveTresListasVacias() {
         UUID id = UUID.randomUUID();
         when(vehicleRepository.findById(id)).thenReturn(Optional.of(new Vehicle("AB123CD", "Ford", "Cargo")));
-        when(inspectionRepository.findByVehicleIdOrderByTimestampDesc(id)).thenReturn(List.of());
+        when(inspectionRepository.findByVehicleIdWithTripOrderByTimestampDesc(id)).thenReturn(List.of());
         when(defectRepository.findByVehicleIdWithInspection(id)).thenReturn(List.of());
         when(completionRepository.findByVehicleIdWithPlan(id)).thenReturn(List.of());
 
@@ -75,7 +79,7 @@ class VehicleHistoryServiceTest {
         Inspection inspection = new Inspection(new Trip(vehicle, Instant.now()), id, "driver-1", "Carlos Gómez",
                 InspectionType.POST_TRIP, Instant.parse("2026-10-03T18:00:00Z"), 50500.0, "Ruido en frenos", true);
         setId(inspection, UUID.randomUUID());
-        when(inspectionRepository.findByVehicleIdOrderByTimestampDesc(id)).thenReturn(List.of(inspection));
+        when(inspectionRepository.findByVehicleIdWithTripOrderByTimestampDesc(id)).thenReturn(List.of(inspection));
 
         MaintenancePlan plan = new MaintenancePlan("Cambio de aceite", "motor", IntervalType.KM, 10000, null);
         VehicleMaintenanceAssignment assignment = new VehicleMaintenanceAssignment(id, plan, 40000L, null);
@@ -97,6 +101,63 @@ class VehicleHistoryServiceTest {
         assertEquals("2026-09-01", done.completedAt());
         // CAM-60: el mantenimiento que registró una OT queda vinculado a ella.
         assertEquals("wo-1", done.workOrderId());
+        assertNull(item.kmAlert());
+    }
+
+    @Test
+    void elPostViajeDeUnViajeMarcadoMuestraLaMarcaDeKmYElPreViajeNo() throws Exception {
+        UUID id = UUID.randomUUID();
+        Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
+        when(vehicleRepository.findById(id)).thenReturn(Optional.of(vehicle));
+        Trip trip = new Trip(vehicle, Instant.parse("2026-10-03T08:00:00Z"));
+        trip.markKmAlert(TripKmAlertReason.ABOVE_AVERAGE, 900L, 300L, 50900, 50000);
+        Inspection pre = new Inspection(trip, id, "driver-1", "Carlos", InspectionType.PRE_TRIP,
+                Instant.parse("2026-10-03T08:00:00Z"), 50000.0, null, false);
+        Inspection post = new Inspection(trip, id, "driver-1", "Carlos", InspectionType.POST_TRIP,
+                Instant.parse("2026-10-03T18:00:00Z"), 50900.0, null, false);
+        setId(pre, UUID.randomUUID());
+        setId(post, UUID.randomUUID());
+        when(inspectionRepository.findByVehicleIdWithTripOrderByTimestampDesc(id)).thenReturn(List.of(post, pre));
+        when(defectRepository.findByVehicleIdWithInspection(id)).thenReturn(List.of());
+        when(completionRepository.findByVehicleIdWithPlan(id)).thenReturn(List.of());
+
+        VehicleHistoryDto result = service.getHistory(id.toString());
+
+        TripKmAlertDto alert = result.inspections().get(0).kmAlert();
+        assertEquals("above_average", alert.reason());
+        assertEquals(900L, alert.tripKm());
+        assertEquals(300L, alert.averageKm());
+        assertEquals(50900L, alert.declaredKm());
+        assertNull(result.inspections().get(1).kmAlert());
+    }
+
+    @Test
+    void unReporteEnViajeNoEsUnaInspeccionPeroSuDefectoSaleMarcado() throws Exception {
+        UUID id = UUID.randomUUID();
+        Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
+        when(vehicleRepository.findById(id)).thenReturn(Optional.of(vehicle));
+        Trip trip = new Trip(vehicle, Instant.parse("2026-10-03T08:00:00Z"));
+        Inspection pre = new Inspection(trip, id, "driver-1", "Carlos", InspectionType.PRE_TRIP,
+                Instant.parse("2026-10-03T08:00:00Z"), 50000.0, null, false);
+        Inspection onRoad = new Inspection(trip, id, "driver-1", "Carlos", InspectionType.ON_ROAD,
+                Instant.parse("2026-10-03T11:00:00Z"), null, null, false);
+        InspectionAnswer answer = new InspectionAnswer("ext-luces", "Luces", CheckOutcome.DEFECT, null);
+        Defect defect = new Defect(DefectSeverity.NON_BLOCKING, "Luz de giro", null, Instant.parse("2026-10-03T11:00:00Z"));
+        answer.attachDefect(defect);
+        onRoad.addAnswer(answer);
+        setId(pre, UUID.randomUUID());
+        setId(onRoad, UUID.randomUUID());
+        setId(defect, UUID.randomUUID());
+        when(inspectionRepository.findByVehicleIdWithTripOrderByTimestampDesc(id)).thenReturn(List.of(onRoad, pre));
+        when(defectRepository.findByVehicleIdWithInspection(id)).thenReturn(List.of(defect));
+        when(completionRepository.findByVehicleIdWithPlan(id)).thenReturn(List.of());
+
+        VehicleHistoryDto result = service.getHistory(id.toString());
+
+        assertEquals(1, result.inspections().size());
+        assertEquals("pre-trip", result.inspections().get(0).type());
+        assertEquals("on-road", result.defects().get(0).source());
+        assertEquals("Carlos", result.defects().get(0).reportedBy());
     }
 
     @Test
@@ -117,7 +178,7 @@ class VehicleHistoryServiceTest {
         Defect defect = new Defect(DefectSeverity.BLOCKING, "Sin luces", null, Instant.now());
         setId(defect, UUID.randomUUID());
         answer.attachDefect(defect);
-        when(inspectionRepository.findByVehicleIdOrderByTimestampDesc(id)).thenReturn(List.of(inspection));
+        when(inspectionRepository.findByVehicleIdWithTripOrderByTimestampDesc(id)).thenReturn(List.of(inspection));
         when(defectRepository.findByVehicleIdWithInspection(id)).thenReturn(List.of(defect));
         when(completionRepository.findByVehicleIdWithPlan(id)).thenReturn(List.of());
 
@@ -125,6 +186,39 @@ class VehicleHistoryServiceTest {
 
         assertEquals("Juan Pérez", result.inspections().get(0).driverName());
         assertEquals("Juan Pérez", result.defects().get(0).reportedBy());
+    }
+
+    @Test
+    void unDefectoDelPostViajeQueDioOkEnElPreViajeVieneMarcadoComoOcurridoEnElViaje() throws Exception {
+        UUID id = UUID.randomUUID();
+        Vehicle vehicle = new Vehicle("AB123CD", "Ford", "Cargo");
+        when(vehicleRepository.findById(id)).thenReturn(Optional.of(vehicle));
+        Trip trip = new Trip(vehicle, Instant.parse("2026-11-02T11:00:00Z"));
+        setId(trip, UUID.randomUUID());
+
+        Inspection preTrip = new Inspection(trip, id, "driver-1", "Carlos Gómez", InspectionType.PRE_TRIP,
+                Instant.parse("2026-11-02T11:00:00Z"), 50000.0, null, false);
+        setId(preTrip, UUID.randomUUID());
+        preTrip.addAnswer(new InspectionAnswer("ext-luces", CheckOutcome.OK, null));
+        Inspection postTrip = new Inspection(trip, id, "driver-1", "Carlos Gómez", InspectionType.POST_TRIP,
+                Instant.parse("2026-11-02T20:00:00Z"), 50300.0, null, false);
+        setId(postTrip, UUID.randomUUID());
+        InspectionAnswer answer = new InspectionAnswer("post-luces", CheckOutcome.DEFECT, null);
+        postTrip.addAnswer(answer);
+        Defect defect = new Defect(DefectSeverity.NON_BLOCKING, "Farol trasero roto", null,
+                Instant.parse("2026-11-02T20:00:00Z"));
+        setId(defect, UUID.randomUUID());
+        answer.attachDefect(defect);
+
+        when(inspectionRepository.findByVehicleIdWithTripOrderByTimestampDesc(id)).thenReturn(List.of(postTrip, preTrip));
+        when(inspectionRepository.findPreTripsWithAnswersByTripIds(Set.of(trip.getId()))).thenReturn(List.of(preTrip));
+        when(defectRepository.findByVehicleIdWithInspection(id)).thenReturn(List.of(defect));
+        when(completionRepository.findByVehicleIdWithPlan(id)).thenReturn(List.of());
+
+        VehicleHistoryDto result = service.getHistory(id.toString());
+
+        assertEquals(trip.getId().toString(), result.defects().get(0).occurredOnTrip().tripId());
+        assertEquals(preTrip.getId().toString(), result.defects().get(0).occurredOnTrip().preTripInspectionId());
     }
 
     private static void setId(Object entity, UUID id) throws Exception {

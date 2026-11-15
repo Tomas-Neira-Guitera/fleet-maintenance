@@ -54,13 +54,22 @@ info:
     docs/api/CAM-117-118-notification-settings-contract.md.
 
 
+    Y la documentación de cada vehículo con sus vencimientos (CAM-127): un
+    documento vencido deja al vehículo "No disponible", igual que un defecto
+    bloqueante, y avisa antes de vencer; y los avisos al chofer cuando su
+    vehículo deja de estar disponible o vuelve a estarlo (CAM-102, CAM-103).
+    Ver docs/api/CAM-127-vehicle-documents-contract.md.
+
+
     Autenticación: hoy validan el JWT (bearerAuth) /api/users y
     /api/expenses y /api/vehicles/{id}/costs (rol ADMIN) y POST /api/inspections/{vehicleId} (rol
     CHOFER, CAM-85), /api/notifications y /api/push (cualquier rol,
     CAM-96 y CAM-119), y /api/notification-settings y
-    /api/maintenance-plans/{id}/notifications (rol ADMIN, CAM-117 y CAM-118). El resto de los endpoints todavía no lo valida aunque
+    /api/maintenance-plans/{id}/notifications (rol ADMIN, CAM-117 y CAM-118), y
+    /api/vehicles/{id}/documents (rol ADMIN, CAM-127), y /api/work-orders/{id}/comments (roles ADMIN y
+    TECNICO, y el técnico solo en sus OTs, CAM-149). El resto de los endpoints todavía no lo valida aunque
     el esquema global lo declare (CAM-73).
-  version: "1.13"
+  version: "1.14"
 
 servers:
   - url: http://localhost:8080
@@ -155,6 +164,48 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
+  /api/vehicles/import:
+    post:
+      summary: Importar la flota desde un archivo (CAM-154)
+      description: >
+        Solo ADMIN. El navegador lee el CSV o Excel y manda las filas. Cada fila se
+        valida con las mismas reglas que el alta (CAM-25), más la patente repetida
+        dentro del archivo. Con dryRun=true es la vista previa y no guarda nada; sin
+        dryRun crea solo las filas válidas. Ver CAM-154-vehicle-import-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dryRun
+          in: query
+          schema: { type: boolean, default: false }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rows]
+              properties:
+                rows:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    $ref: "#/components/schemas/CreateVehicleRequest"
+      responses:
+        "200":
+          description: El resultado de cada fila.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleImportResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
   /api/vehicles/{id}/history:
     get:
       summary: Historial de un vehículo (CAM-22)
@@ -180,13 +231,534 @@ paths:
         "404":
           description: VEHICLE_NOT_FOUND
 
+  /api/fuel-loads:
+    post:
+      summary: Registrar una carga de combustible (CAM-156)
+      description: >
+        ADMIN o CHOFER. La carga anterior por fecha no puede tener más km (422 en odometerKm). Su km
+        mueve el odómetro del vehículo (CAM-90). Si es de tanque lleno y el tramo que cierra consume
+        más de 1,3 veces el promedio de los últimos tramos, se avisa. Ver CAM-156-fuel-contract.md.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FuelLoadRequest"
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FuelLoad"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "409":
+          description: VEHICLE_INACTIVE / VEHICLE_IS_TRAILER (los remolques no cargan combustible, CAM-157)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/fuel-loads/{fuelLoadId}:
+    parameters:
+      - name: fuelLoadId
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Corregir una carga de combustible (CAM-156)
+      description: Solo ADMIN. vehicleId se ignora. No mueve el odómetro ni vuelve a avisar.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FuelLoadRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FuelLoad"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: FUEL_LOAD_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Borrar una carga de combustible (CAM-156)
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Borrada
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: FUEL_LOAD_NOT_FOUND
+
+  /api/vehicles/{id}/fuel:
+    get:
+      summary: Consumo de combustible del vehículo (CAM-156)
+      description: >
+        Solo ADMIN. Los últimos `months` meses contando el actual: resumen, un elemento por mes y
+        las cargas del período, de la más reciente a la más antigua.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: months
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 24, default: 6 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleFuel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/tires:
+    get:
+      summary: Cubiertas (CAM-157)
+      description: Solo ADMIN. Ver CAM-157-tires-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [stock, mounted, retired] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Tire"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      summary: Cargar una cubierta (CAM-157)
+      description: Queda en stock.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TireRequest"
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tire"
+        "409":
+          description: DUPLICATE_TIRE_CODE
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/tires/brand-comparison:
+    get:
+      summary: Costo por km por marca de cubierta (CAM-157)
+      description: >
+        Solo ADMIN. Costo total sobre km totales de las cubiertas de cada marca con al menos minKm km,
+        del más barato por km al más caro.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  minKm: { type: integer }
+                  brands:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        brand: { type: string }
+                        tires: { type: integer }
+                        retired: { type: integer }
+                        totalKm: { type: integer }
+                        totalCost: { type: number }
+                        costPerKm: { type: number }
+                        averageKm: { type: integer }
+
+  /api/tires/{tireId}:
+    parameters:
+      - name: tireId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Una cubierta con dónde estuvo y sus mediciones (CAM-157)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tire: { $ref: "#/components/schemas/Tire" }
+                  mountings:
+                    type: array
+                    items: { $ref: "#/components/schemas/TireMounting" }
+                  reports:
+                    type: array
+                    description: Lo que reportaron los choferes de esta cubierta, del más nuevo al más viejo.
+                    items: { $ref: "#/components/schemas/TireConditionReport" }
+        "404":
+          description: TIRE_NOT_FOUND
+    put:
+      summary: Editar los datos de una cubierta (CAM-157)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TireRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tire"
+        "404":
+          description: TIRE_NOT_FOUND
+        "409":
+          description: DUPLICATE_TIRE_CODE
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Borrar una cubierta cargada por error (CAM-157)
+      description: Si ya estuvo montada, 409 TIRE_HAS_HISTORY (se da de baja).
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Borrada
+        "404":
+          description: TIRE_NOT_FOUND
+        "409":
+          description: TIRE_HAS_HISTORY
+
+  /api/tires/{tireId}/retire:
+    post:
+      summary: Dar de baja una cubierta del stock (CAM-157)
+      description: Una montada se da de baja al sacarla (409 TIRE_MOUNTED).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tireId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, nullable: true }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tire"
+        "409":
+          description: TIRE_MOUNTED / TIRE_RETIRED
+
+  /api/vehicles/{id}/tires:
+    get:
+      summary: Cubiertas del vehículo por posición, con su historial (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "404":
+          description: VEHICLE_NOT_FOUND
+
+  /api/vehicles/{id}/coupling:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Con qué está enganchado el vehículo (CAM-157)
+      description: >
+        Admin y chofer. En un remolque, towedBy; en un tractor o camión rígido, towing. Ver
+        CAM-157-tires-contract.md §6.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Coupling"
+        "404":
+          description: VEHICLE_NOT_FOUND
+    put:
+      summary: Enganchar el remolque {id} a un tractor o camión (CAM-157, solo admin)
+      description: >
+        Si el remolque ya estaba con otro, o el otro ya arrastraba uno, esos enganches se cierran.
+        Desde ahí, los km que suma el que arrastra se le suman también al remolque.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [towingId]
+              properties:
+                towingId: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Coupling"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "409":
+          description: >
+            NOT_A_TRAILER -- {id} no es un semirremolque ni un acoplado.
+            CANNOT_TOW -- el tractor arrastra semirremolques y el camión rígido acoplados.
+            VEHICLE_INACTIVE -- alguno de los dos está dado de baja.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Desenganchar el remolque {id} (CAM-157, solo admin)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK (sin enganche abierto no hace nada)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Coupling"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+
+  /api/vehicles/{id}/tires/mount:
+    post:
+      summary: Montar una cubierta del stock, o cambiar la que hay (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tireId, position]
+              properties:
+                tireId: { type: string }
+                position: { $ref: "#/components/schemas/TirePosition" }
+                replaced:
+                  type: string
+                  enum: [stock, retired]
+                  nullable: true
+                  description: Si la posición está ocupada, qué pasa con la cubierta que estaba. Sin esto, 409 POSITION_OCCUPIED.
+                retiredReason: { type: string, nullable: true }
+      responses:
+        "200":
+          description: El vehículo actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "409":
+          description: NO_VEHICLE_TYPE / TIRE_NOT_IN_STOCK / POSITION_OCCUPIED / VEHICLE_INACTIVE
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{id}/tires/unmount:
+    post:
+      summary: Sacar una cubierta al stock o darla de baja (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [position]
+              properties:
+                position: { $ref: "#/components/schemas/TirePosition" }
+                retire: { type: boolean, default: false }
+                reason: { type: string, nullable: true }
+      responses:
+        "200":
+          description: El vehículo actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "409":
+          description: POSITION_EMPTY / NO_VEHICLE_TYPE
+
+  /api/vehicles/{id}/tires/rotate:
+    post:
+      summary: Rotar una cubierta a otra posición; si está ocupada, se intercambian (CAM-157)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from: { $ref: "#/components/schemas/TirePosition" }
+                to: { $ref: "#/components/schemas/TirePosition" }
+      responses:
+        "200":
+          description: El vehículo actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleTires"
+        "409":
+          description: POSITION_EMPTY / NO_VEHICLE_TYPE / VEHICLE_INACTIVE
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/vehicles/{id}/tire-positions:
+    get:
+      summary: Posiciones del vehículo, para marcar cubiertas con problemas en el pre-viaje (CAM-157)
+      description: >
+        ADMIN o CHOFER. Todas las del tipo, auxilio incluido, con `mounted` en las que tienen cubierta (solo esas
+        se pueden reportar). Sin tipo o en un remolque, positions vacío.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vehicleType:
+                    allOf:
+                      - $ref: "#/components/schemas/VehicleType"
+                    nullable: true
+                  positions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        position: { $ref: "#/components/schemas/TirePosition" }
+                        label: { type: string }
+                        axle: { type: integer, description: 1 el de adelante, 0 el auxilio. }
+                        side: { type: string, enum: [izq, der], nullable: true }
+                        wheel: { type: string, enum: [simple, exterior, interior] }
+                        mounted: { type: boolean }
+
   /api/vehicles/{id}/costs:
     get:
-      summary: Costo de mantenimiento de un vehículo (CAM-105)
+      summary: Costo total de un vehículo (CAM-105, CAM-109)
       description: >
         Solo ADMIN, solo lectura. Suma los gastos cargados en todas las OTs del
-        vehículo (los mismos de GET /api/expenses), sin importar el estado de
-        la OT. Funciona también para un vehículo dado de baja. El costo por km
+        vehículo, sin importar el estado de la OT, y sus gastos operativos
+        (los mismos de GET /api/expenses). Funciona también para un vehículo
+        dado de baja. El costo por km
         divide el total histórico por los km recorridos desde el primer
         registro de odómetro conocido (el más antiguo de sus inspecciones y de
         sus mantenimientos hechos); si no hay registros, o el km actual no supera
@@ -213,6 +785,42 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           description: VEHICLE_NOT_FOUND
+
+  /api/vehicles/comparison:
+    get:
+      summary: Comparar los vehículos activos en un período (CAM-140)
+      description: >
+        Solo ADMIN, solo lectura. Una fila por vehículo activo con gastos de
+        mantenimiento y operativos del período (los mismos de GET /api/expenses
+        con ese from/to), km recorridos, costo por km, disponibilidad y paradas
+        (los mismos de GET /api/downtime) y controles con fallas recurrentes
+        (los de GET /api/defects/recurring, que miran su propia ventana de 30
+        días y no el período). Incluye el promedio de la flota de cada
+        indicador y la marca "Para revisar". Ver CAM-140-vehicle-comparison-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, description: "Fecha (2026-10-01) o instante ISO-8601, como en /api/downtime." }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, description: "Fecha o instante ISO-8601. Lo que todavía no pasó no cuenta." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleComparison"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: VALIDATION_ERROR -- from o to faltan, son inválidos, o to no es posterior a from.
 
   /api/vehicles/{vehicleId}/checklist:
     get:
@@ -300,6 +908,179 @@ paths:
                 $ref: "#/components/schemas/VehicleChecklistItem"
         "404":
           description: VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/checklist-templates:
+    get:
+      summary: Plantillas de checklist (CAM-150)
+      description: Solo ADMIN. Ordenadas por nombre. Ver CAM-31-vehicle-checklist-contract.md §7.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChecklistTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      summary: Crear una plantilla de checklist (CAM-150)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChecklistTemplateRequest"
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: DUPLICATE_TEMPLATE_NAME
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/checklist-templates/{templateId}:
+    parameters:
+      - name: templateId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Una plantilla de checklist (CAM-150)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND
+    put:
+      summary: Editar una plantilla (CAM-150)
+      description: Reemplaza el nombre y todos los controles. Los vehículos donde ya se aplicó no cambian.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChecklistTemplateRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND
+        "409":
+          description: DUPLICATE_TEMPLATE_NAME
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Borrar una plantilla (CAM-150)
+      description: Los controles ya copiados siguen en los vehículos.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Borrada
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND
+
+  /api/checklist-templates/{templateId}/apply:
+    post:
+      summary: Copiar los controles de una plantilla a varios vehículos (CAM-150)
+      description: >
+        Se saltea el control que el vehículo ya tiene con la misma etiqueta y sección
+        (sin importar mayúsculas ni acentos), así que aplicar dos veces no duplica.
+        Un vehículo dado de baja da 409 VEHICLE_INACTIVE y no se copia nada.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vehicleIds]
+              properties:
+                vehicleIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items: { type: string }
+      responses:
+        "200":
+          description: Lo agregado y lo salteado, por vehículo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplyChecklistTemplateResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND / VEHICLE_NOT_FOUND
+        "409":
+          description: VEHICLE_INACTIVE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
@@ -425,6 +1206,8 @@ paths:
             DUPLICATE_PLATE -- si se cambia la patente a una que ya existe.
             VEHICLE_INACTIVE -- si se edita cualquier campo de un vehículo
             dado de baja sin reactivarlo primero.
+            TIRES_ON_REMOVED_POSITIONS / VEHICLE_COUPLED -- cambio de tipo
+            con cubiertas en posiciones que el nuevo no tiene, o enganchado (CAM-157).
           content:
             application/json:
               schema:
@@ -460,6 +1243,154 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /api/vehicles/{vehicleId}/documents:
+    parameters:
+      - name: vehicleId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Documentación del vehículo (CAM-127)
+      description: >
+        Los documentos vigentes ordenados por vencimiento (los que no vencen
+        al final), los renovados (historial) y los obligatorios que faltan
+        (VTV y seguro; se marcan pero no bloquean). Solo ADMIN.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleDocuments"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+    post:
+      summary: Cargar un documento (CAM-127)
+      description: >
+        Nombre libre; el tipo sale del nombre. Si ya hay un vigente del mismo
+        tipo reconocido (o un "otro" con el mismo nombre) devuelve 409
+        DOCUMENT_ALREADY_LOADED: se renueva o se corrige. Si un plan de
+        mantenimiento del vehículo renueva este tipo de documento, registra
+        su mantenimiento hecho con la fecha de emisión (o hoy). Solo ADMIN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVehicleDocumentRequest"
+      responses:
+        "201":
+          description: Documento cargado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "409":
+          description: DOCUMENT_ALREADY_LOADED o VEHICLE_INACTIVE
+        "422":
+          description: Tipo inválido, nombre faltante en "otro", fechas inválidas o vencimiento anterior a la emisión.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  /api/vehicles/{vehicleId}/documents/{documentId}:
+    parameters:
+      - name: vehicleId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: documentId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      summary: Corregir un dato del documento vigente (CAM-127)
+      description: >
+        No cuenta como renovación. Ausente no cambia nada; "" borra número,
+        fechas o archivo. 409 DOCUMENT_REPLACED si ya se renovó. Solo ADMIN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVehicleDocumentRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleDocument"
+        "404":
+          description: DOCUMENT_NOT_FOUND
+        "409":
+          description: DOCUMENT_REPLACED
+        "422":
+          description: Datos inválidos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+    delete:
+      summary: Dar de baja un documento (CAM-127)
+      description: Baja lógica -- deja de contar y de bloquear. Solo ADMIN.
+      responses:
+        "204":
+          description: Dado de baja
+        "404":
+          description: DOCUMENT_NOT_FOUND
+
+  /api/vehicles/{vehicleId}/documents/{documentId}/renewals:
+    parameters:
+      - name: vehicleId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: documentId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      summary: Renovar el documento vigente (CAM-127)
+      description: >
+        Carga el documento nuevo; el anterior queda en el historial
+        (replacedById). Igual que al cargar, registra el mantenimiento del
+        plan vinculado. Solo ADMIN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenewVehicleDocumentRequest"
+      responses:
+        "201":
+          description: Documento renovado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VehicleDocument"
+        "404":
+          description: DOCUMENT_NOT_FOUND
+        "409":
+          description: DOCUMENT_REPLACED o VEHICLE_INACTIVE
+        "422":
+          description: Datos inválidos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
   /api/photos:
     post:
       summary: Subir la foto de un defecto (paso 1 de 2)
@@ -468,7 +1399,16 @@ paths:
         cuanto está lista, antes de enviar la inspección completa — así una
         conexión inestable no obliga a reintentar todo el formulario. La URL
         devuelta se referencia luego en el campo defect.photoUrl del envío
-        de la inspección.
+        de la inspección. Con purpose=document (CAM-127) es el comprobante de
+        un documento del vehículo y también acepta PDF.
+      parameters:
+        - name: purpose
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [document]
+          description: CAM-127 -- "document" acepta además application/pdf.
       requestBody:
         required: true
         content:
@@ -480,7 +1420,7 @@ paths:
                 file:
                   type: string
                   format: binary
-                  description: image/jpeg o image/png, máx. 8MB.
+                  description: image/jpeg o image/png (o application/pdf con purpose=document), máx. 8MB.
       responses:
         "201":
           description: Foto subida
@@ -515,6 +1455,10 @@ paths:
                 type: string
                 format: binary
             image/png:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
               schema:
                 type: string
                 format: binary
@@ -641,6 +1585,8 @@ paths:
             (ej. pre-trip sobre un vehículo que ya está "en viaje", o post-trip
             sobre uno sin viaje abierto), o es un pre-trip sobre un vehículo
             que no puede salir (bloqueado o dado de baja, CAM-89).
+            VEHICLE_IS_TRAILER -- los remolques no se inspeccionan desde la app
+            del chofer; NOT_A_TRAILER / CANNOT_TOW por el trailerId (CAM-157).
           content:
             application/json:
               schema:
@@ -656,6 +1602,68 @@ paths:
                   value: { error: "VEHICLE_INACTIVE", message: "El vehículo está dado de baja." }
         "422":
           description: Faltan respuestas obligatorias o un defecto no cumple sus reglas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+  /api/vehicles/{id}/road-defects:
+    post:
+      summary: Reportar un defecto durante el viaje, sin cerrarlo (CAM-139)
+      description: >
+        El chofer que tiene el viaje abierto reporta un problema en el momento en que aparece. El
+        viaje sigue abierto: no pide km ni mueve el km del vehículo, y se cierra después con el
+        post-trip, como siempre. El defecto queda con `source: on-road` y cuenta como cualquier otro
+        para la disponibilidad, los recurrentes, el tiempo fuera de servicio y las OTs.
+
+
+        `itemId` es un control de tipo sí/no del checklist pre-trip del vehículo (el de
+        GET /api/vehicles/{vehicleId}/checklist, sin el de km) o `road-otro` ("Otro problema", que no
+        cuenta para recurrentes). El defecto sigue las mismas reglas que en el checklist: gravedad,
+        título de hasta 30 caracteres, detalle opcional y foto obligatoria si es bloqueante. Un
+        bloqueante avisa al admin (CAM-97) y deja el vehículo no disponible (CAM-102).
+
+
+        Exige el JWT de un CHOFER. Ver CAM-139-road-defect-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoadDefectRequest"
+      responses:
+        "201":
+          description: Defecto registrado; el viaje sigue abierto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DefectSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Vehículo inexistente
+        "409":
+          description: El vehículo no tiene un viaje abierto, o el viaje es de otro chofer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+              examples:
+                noOpenTrip:
+                  value: { error: "NO_OPEN_TRIP", message: "El vehículo no tiene un viaje abierto: el problema se reporta en la inspección." }
+                notYourTrip:
+                  value: { error: "NOT_YOUR_TRIP", message: "Solo puede reportar el chofer que tiene el viaje abierto." }
+        "422":
+          description: El control no es del checklist del vehículo, o el defecto no cumple sus reglas
           content:
             application/json:
               schema:
@@ -676,6 +1684,124 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/DefectSummary"
+
+  /api/downtime:
+    get:
+      summary: Tiempo fuera de servicio y tiempo promedio de reparación (CAM-134)
+      description: >
+        Solo ADMIN, solo lectura. Para el período [from, to), cortado en el
+        momento actual: cuánto tiempo estuvo cada vehículo con al menos un
+        defecto bloqueante abierto (sin contar dos veces los solapados), cuántas
+        veces paró, su disponibilidad, y el promedio de horas entre la creación
+        y la finalización de las OTs finalizadas en el período. Sin vehicleId,
+        toda la flota activa; con vehicleId, ese vehículo (aunque esté dado de
+        baja). Ver CAM-134-downtime-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Inicio del período (incluido). Instante ISO o fecha sola (YYYY-MM-DD, UTC).
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: true
+          description: Fin del período (excluido). Instante ISO, o fecha sola que incluye ese día entero.
+          schema:
+            type: string
+        - name: vehicleId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Downtime"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND -- vehicleId no existe o no es un UUID
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/maintenance-compliance:
+    get:
+      summary: Indicadores de cumplimiento del mantenimiento (CAM-155)
+      description: >
+        Solo ADMIN, solo lectura. Para el período [from, to): cuántos
+        mantenimientos preventivos se hicieron a tiempo y cuántos después de
+        vencer, y las horas promedio entre que se reporta un defecto y se
+        resuelve. Las OTs abiertas por antigüedad son la foto de hoy y no
+        dependen del período. Ver CAM-155-maintenance-compliance-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Inicio del período (incluido). Instante ISO o fecha sola (YYYY-MM-DD, UTC).
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: true
+          description: Fin del período (excluido). Instante ISO, o fecha sola que incluye ese día entero.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceCompliance"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/defects/recurring:
+    get:
+      summary: Controles con fallos recurrentes en un mismo vehículo (CAM-135)
+      description: >
+        Solo ADMIN, solo lectura. Un control es recurrente cuando falló en el
+        mismo vehículo al menos `threshold` veces en los últimos `windowDays`
+        días, contados hasta ahora. Cuentan todos los defectos, bloqueantes o
+        no y resueltos o no. Ordenado por cantidad de fallas, más primero, y
+        después por la falla más reciente. Ver CAM-135-recurring-defects-contract.md.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: vehicleId
+          in: query
+          required: false
+          description: >
+            Solo los controles de ese vehículo (el detalle del vehículo). Un id
+            que no es un UUID devuelve la lista vacía, y uno vacío o en blanco,
+            toda la flota, igual que GET /api/defects.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecurringDefects"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/maintenance-plans:
     get:
@@ -1126,8 +2252,8 @@ paths:
         de origen assignment se cierra sola al registrar el completion de esa
         asignación (409 USE_COMPLETION_ENDPOINT si se intenta acá).
         status=cancelled cancela también las OTs abiertas de la programación
-        (CAM-77): las asignadas sin preguntar; si hay una en_proceso responde
-        409 WORK_ORDER_IN_PROGRESS salvo que venga cancelWorkOrder=true. Las
+        (CAM-77): las asignadas sin preguntar; si hay una en_proceso o en_espera
+        (CAM-148) responde 409 WORK_ORDER_IN_PROGRESS salvo que venga cancelWorkOrder=true. Las
         finalizadas no se tocan.
       parameters:
         - name: id
@@ -1210,7 +2336,7 @@ paths:
         cliente. Nace en status=asignada. Ver docs/api/CAM-60-technician-contract.md
         para las reglas de technicianId.
 
-        Una sola OT abierta por origen: si ya hay una asignada o en proceso para
+        Una sola OT abierta por origen: si ya hay una asignada, en proceso o en espera (CAM-148) para
         el mismo defecto (directo o vía una programación de origen defecto), la
         misma asignación de plan o la misma programación manual, no se crea otra
         y se devuelve la existente con 200 en vez de 201. Sus datos (técnico,
@@ -1273,6 +2399,9 @@ paths:
       description: >
         Campos parciales: lo que no viene no se toca. Transiciones válidas:
         asignada→en_proceso, en_proceso→finalizada, asignada|en_proceso→cancelada.
+        CAM-148: en_proceso→en_espera (con pauseReason), en_espera→en_proceso
+        (retomar) y en_espera→cancelada. en_espera→finalizada responde 409
+        INVALID_STATUS_TRANSITION: primero se retoma. Ver CAM-148-work-order-pause-contract.md.
         Finalizar exige closingDescription y al menos una foto, valida completedKm
         si viene (CAM-74), y cierra el origen (completion de la asignación, programación o defecto).
         Una OT finalizada o cancelada no se edita más (CAM-75): cualquier PATCH
@@ -1376,6 +2505,73 @@ paths:
           description: WORK_ORDER_NOT_FOUND
         "409":
           description: WORK_ORDER_CLOSED
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/work-orders/{id}/comments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Comentarios de una orden de trabajo, del más viejo al más nuevo (CAM-149)
+      description: >
+        Pueden el admin y el técnico asignado a la OT. Una OT finalizada o
+        cancelada los sigue mostrando.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Comentarios
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkOrderComment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: >
+            FORBIDDEN -- ni admin ni técnico, o un técnico que no tiene asignada
+            esta OT (hasta CAM-69 el resto de /work-orders no lo chequea).
+        "404":
+          description: WORK_ORDER_NOT_FOUND
+    post:
+      summary: Comentar en una orden de trabajo abierta (CAM-149)
+      description: >
+        El autor sale del JWT. Los comentarios no se editan ni se borran. Avisa
+        con `work_order_comment`: si comenta el técnico, a los destinatarios
+        configurados (por defecto, los admins); si comenta el admin, al técnico
+        asignado. Nadie recibe aviso por su propio comentario.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkOrderCommentRequest"
+      responses:
+        "201":
+          description: Comentario agregado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkOrderComment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: FORBIDDEN -- ver el GET.
+        "404":
+          description: WORK_ORDER_NOT_FOUND
+        "409":
+          description: WORK_ORDER_CLOSED -- la OT está finalizada o cancelada.
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
@@ -1557,14 +2753,17 @@ paths:
 
   /api/expenses:
     get:
-      summary: Gastos de mantenimiento de toda la flota (CAM-52)
+      summary: Gastos de toda la flota (CAM-52, CAM-109)
       description: >
-        Solo ADMIN, solo lectura. Lista los gastos que se cargan dentro de
-        cada orden de trabajo (POST /api/work-orders/{id}/expenses), de todas
-        las OTs sin importar su estado, del más reciente al más antiguo. La
-        fecha de un gasto es la de su carga. No trae totales: el cliente los
-        calcula sobre el listado ya filtrado. Un `vehicleId` o `category` que
-        no existe devuelve una lista vacía, no un error.
+        Solo ADMIN. Lista los dos tipos de gasto, del más reciente al más
+        antiguo: los que se cargan dentro de cada orden de trabajo (POST
+        /api/work-orders/{id}/expenses), de todas las OTs sin importar su
+        estado, y los gastos operativos del vehículo (CAM-109). La fecha de
+        un gasto de OT es la de su carga; la de un gasto operativo, la que
+        se le cargó. No trae totales: el cliente los calcula sobre el listado
+        ya filtrado. Un `vehicleId`, `category` u `origin` que no existe
+        devuelve una lista vacía, no un error. Ver
+        CAM-109-operating-expenses-contract.md.
       security:
         - bearerAuth: []
       parameters:
@@ -1574,7 +2773,15 @@ paths:
         - name: category
           in: query
           schema:
-            $ref: "#/components/schemas/WorkOrderExpenseCategory"
+            $ref: "#/components/schemas/ExpenseCategory"
+        - name: origin
+          in: query
+          description: >
+            Separa los gastos operativos (`operating`) y las cargas de combustible (`fuel`, CAM-156)
+            de los de OT (`plan`, `defect`, `manual`).
+          schema:
+            type: string
+            enum: [plan, defect, manual, operating, fuel]
         - $ref: "#/components/parameters/PeriodFrom"
         - $ref: "#/components/parameters/PeriodTo"
       responses:
@@ -1596,6 +2803,84 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
+    post:
+      summary: Cargar un gasto operativo (CAM-109)
+      description: >
+        Solo ADMIN. Un gasto del vehículo que no sale de una orden de trabajo:
+        combustible, seguro, patente, VTV, peajes u otro. Admite un vehículo
+        dado de baja y una fecha pasada, no una futura.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VehicleExpenseRequest"
+      responses:
+        "201":
+          description: Creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
+  /api/expenses/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Editar un gasto operativo (CAM-109)
+      description: >
+        Solo ADMIN. Reemplaza todos los campos. Un gasto de OT no se edita
+        acá: su id da 404, porque se maneja desde la orden de trabajo.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VehicleExpenseRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: EXPENSE_NOT_FOUND o VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+    delete:
+      summary: Borrar un gasto operativo (CAM-109)
+      description: Solo ADMIN. Un gasto de OT no se borra acá; su id da 404.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Borrado
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: EXPENSE_NOT_FOUND
 
   /api/notifications:
     get:
@@ -2078,7 +3363,11 @@ components:
         model: { type: string, example: "Sprinter" }
         status:
           $ref: "#/components/schemas/VehicleStatus"
-        vehicleType: { type: string, nullable: true, example: "furgon" }
+        vehicleType:
+          allOf:
+            - $ref: "#/components/schemas/VehicleType"
+          nullable: true
+          description: null en vehículos viejos con un tipo que no es del catálogo.
         year: { type: integer, nullable: true, example: 2022 }
         chassisNumber: { type: string, nullable: true }
         odometerKm: { type: integer }
@@ -2090,15 +3379,145 @@ components:
         blocked:
           type: boolean
           description: >
-            CAM-89 -- true si tiene al menos un defecto bloqueante sin
-            resolver. Un vehículo bloqueado no puede iniciar un viaje (409
-            VEHICLE_BLOCKED en el pre-trip); vuelve a false cuando la orden
-            de trabajo del defecto se finaliza.
+            CAM-89 / CAM-127 -- true si tiene al menos un defecto bloqueante
+            sin resolver o un documento vigente vencido. Un vehículo bloqueado
+            no puede iniciar un viaje (409 VEHICLE_BLOCKED en el pre-trip, con
+            los motivos en el mensaje); vuelve a false cuando se finaliza la
+            orden de trabajo del defecto o se renueva el documento.
+        blockReasons:
+          type: array
+          description: CAM-127 -- por qué está bloqueado; vacío si puede salir.
+          items:
+            $ref: "#/components/schemas/BlockReason"
         currentTrip:
           allOf:
             - $ref: "#/components/schemas/CurrentTrip"
           nullable: true
           description: CAM-87 -- el viaje abierto, si `status` es "on-trip"; null si está disponible.
+        scheduledToday:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            CAM-143 -- fecha y hora del turno de taller programado (status scheduled)
+            más temprano de hoy, en el día de Argentina (CAM-88): un turno a las 22:00
+            es de ese día. Aunque ya haya pasado la hora, mientras no se marque hecho
+            ni se cancele. null si no tiene turno hoy. No bloquea: el pre-trip se
+            acepta igual (el front advierte y deja seguir).
+        coupledWith:
+          allOf:
+            - $ref: "#/components/schemas/CouplingRef"
+          nullable: true
+          description: >
+            CAM-157, solo en GET /api/vehicles. En un remolque, quién lo arrastra; en un tractor o camión, qué
+            remolque lleva. null si no está enganchado.
+
+    BlockReason:
+      type: object
+      required: [type, message]
+      properties:
+        type:
+          type: string
+          enum: [blocking_defect, expired_document]
+        message:
+          type: string
+          example: "VTV / RTO: venció el 12/10/2026"
+
+    VehicleDocumentType:
+      type: string
+      description: >
+        CAM-127. Obligatorios (se marcan si faltan, no bloquean): vtv y seguro.
+        Se pueden vincular a un plan: vtv, seguro, cedula_azul, habilitacion_carga.
+      enum: [vtv, seguro, cedula_azul, habilitacion_carga, cedula_verde, titulo, otro]
+
+    VehicleDocument:
+      type: object
+      required: [id, vehicleId, type, typeLabel, displayName, status, current]
+      properties:
+        id: { type: string }
+        vehicleId: { type: string }
+        type:
+          $ref: "#/components/schemas/VehicleDocumentType"
+        typeLabel: { type: string, example: "VTV / RTO" }
+        name: { type: string, nullable: true, description: "El nombre que le puso el admin; null en filas viejas." }
+        displayName: { type: string }
+        number: { type: string, nullable: true, maxLength: 60 }
+        issuedAt: { type: string, format: date, nullable: true }
+        expiresAt: { type: string, format: date, nullable: true }
+        fileUrl: { type: string, nullable: true, description: "URL de POST /api/photos?purpose=document." }
+        status:
+          type: string
+          enum: [al_dia, por_vencer, vencido, sin_vencimiento]
+          description: >
+            vencido desde el día siguiente a expiresAt; por_vencer si faltan
+            hasta leadDays días (la anticipación de "Documento por vencer").
+        daysToExpiry: { type: integer, nullable: true, description: "Negativo si venció." }
+        current: { type: boolean, description: "false si ya se renovó (historial)." }
+        replacedById: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    VehicleDocuments:
+      type: object
+      required: [items, history, missingRequired, leadDays]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VehicleDocument"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/VehicleDocument"
+        missingRequired:
+          type: array
+          items:
+            $ref: "#/components/schemas/VehicleDocumentType"
+        leadDays: { type: integer, example: 15 }
+
+    CreateVehicleDocumentRequest:
+      type: object
+      required: [name]
+      description: >
+        El nombre es libre y el tipo sale de ahí ("Póliza La Segunda" es el
+        seguro). type es opcional y lo fuerza; con type, name puede faltar.
+      properties:
+        name: { type: string, maxLength: 60 }
+        type:
+          $ref: "#/components/schemas/VehicleDocumentType"
+        number: { type: string, maxLength: 60 }
+        issuedAt: { type: string, format: date }
+        expiresAt: { type: string, format: date, description: "Sin vencimiento no bloquea ni avisa." }
+        fileUrl: { type: string }
+
+    UpdateVehicleDocumentRequest:
+      type: object
+      description: Ausente no cambia nada; "" borra.
+      properties:
+        name: { type: string, maxLength: 60 }
+        number: { type: string, maxLength: 60 }
+        issuedAt: { type: string }
+        expiresAt: { type: string }
+        fileUrl: { type: string }
+
+    RenewVehicleDocumentRequest:
+      type: object
+      properties:
+        number: { type: string, maxLength: 60 }
+        issuedAt: { type: string, format: date }
+        expiresAt: { type: string, format: date }
+        fileUrl: { type: string }
+
+    DocumentInput:
+      type: object
+      required: [expiresAt]
+      description: >
+        CAM-127 -- el documento renovado que se carga junto con el
+        mantenimiento de un plan vinculado. Se emite en la fecha del
+        mantenimiento y su vencimiento pasa a ser el del plan.
+      properties:
+        number: { type: string, maxLength: 60 }
+        expiresAt: { type: string, format: date }
+        fileUrl: { type: string }
 
     UserRef:
       type: object
@@ -2119,17 +3538,112 @@ components:
           nullable: true
           description: Chofer que abrió el viaje. null en viajes anteriores a CAM-87, que no lo guardaban.
 
+    VehicleType:
+      type: string
+      description: >
+        CAM-157. Catálogo de tipos: define los ejes y cubiertas (CAM-157-tires-contract.md §1). Al crear o
+        editar también se aceptan el nombre ("Camión rígido 4x2") y alias (furgón, pickup, camioneta, semi...).
+      enum: [utilitario, camion_4x2, camion_6x4, tractor_4x2, tractor_6x4, semirremolque_2_ejes,
+             semirremolque_3_ejes, acoplado]
+
     CreateVehicleRequest:
       type: object
-      required: [plate, brand, model]
+      required: [plate, brand, model, vehicleType]
       properties:
         plate: { type: string }
         brand: { type: string }
         model: { type: string }
-        vehicleType: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
         year: { type: integer }
         chassisNumber: { type: string }
-        odometerKm: { type: integer, description: Kilometraje inicial, default 0. }
+        odometerKm: { type: integer, description: Kilometraje inicial, default 0. No puede ser negativo (CAM-154). }
+        checklistTemplateId:
+          type: string
+          nullable: true
+          description: >
+            CAM-150. Plantilla cuyos controles se copian al vehículo nuevo. Si no existe, 422
+            con field checklistTemplateId y el vehículo no se crea. La importación (CAM-154) lo ignora.
+
+    ChecklistTemplateRequest:
+      type: object
+      required: [name, items]
+      properties:
+        name: { type: string, maxLength: 60 }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: object
+            required: [label, section]
+            properties:
+              label: { type: string, maxLength: 60 }
+              type: { type: string, enum: [check, number], default: check }
+              section: { type: string, enum: [exterior, interior] }
+
+    ChecklistTemplate:
+      type: object
+      required: [id, name, items, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, label, type, section]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              type: { type: string, enum: [check, number] }
+              section: { type: string, enum: [exterior, interior] }
+        createdAt: { type: string, format: date-time }
+
+    ApplyChecklistTemplateResult:
+      type: object
+      required: [templateId, added, skipped, vehicles]
+      properties:
+        templateId: { type: string }
+        added: { type: integer, description: Controles agregados en total. }
+        skipped: { type: integer, description: Controles salteados en total porque el vehículo ya los tenía. }
+        vehicles:
+          type: array
+          items:
+            type: object
+            required: [vehicleId, plate, added, skipped, skippedLabels]
+            properties:
+              vehicleId: { type: string }
+              plate: { type: string }
+              added: { type: integer }
+              skipped: { type: integer }
+              skippedLabels:
+                type: array
+                items: { type: string }
+
+    VehicleImportResult:
+      type: object
+      required: [total, valid, created, rows]
+      properties:
+        total: { type: integer }
+        valid: { type: integer, description: Filas sin errores. }
+        created: { type: integer, description: Vehículos creados; 0 en la vista previa. }
+        rows:
+          type: array
+          items:
+            type: object
+            required: [row, valid, errors]
+            properties:
+              row: { type: integer, description: Posición en el pedido, desde 1. }
+              plate: { type: string, nullable: true, description: La patente como se guarda (sin espacios y en mayúsculas). }
+              valid: { type: boolean }
+              errors:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    field: { type: string }
+                    message: { type: string }
+              vehicleId: { type: string, nullable: true, description: El vehículo creado; null en la vista previa o con errores. }
 
     UpdateVehicleRequest:
       type: object
@@ -2138,7 +3652,10 @@ components:
         plate: { type: string }
         brand: { type: string }
         model: { type: string }
-        vehicleType: { type: string }
+        vehicleType:
+          allOf:
+            - $ref: "#/components/schemas/VehicleType"
+          description: No se puede cambiar si quedan cubiertas en posiciones que el nuevo no tiene o si está enganchado (409).
         year: { type: integer }
         chassisNumber: { type: string }
         active:
@@ -2249,6 +3766,44 @@ components:
         notes:
           type: string
           description: Campo general de novedades, opcional (típicamente post-trip).
+        performedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            CAM-153: cuándo la hizo el chofer. Una inspección hecha sin conexión llega más tarde y el viaje,
+            la inspección y sus defectos quedan con esta hora. Sin el campo, la hora del servidor. Más de 5
+            minutos en el futuro es un 422. Ver CAM-153-offline-inspections-contract.md.
+        clientSubmissionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            CAM-153: id que arma el celular. Si llega otra vez (reintento después de un corte), se devuelve la
+            inspección ya guardada sin crear otra. Con el id de otro chofer u otro vehículo, 409 DUPLICATE_SUBMISSION.
+        tireConditions:
+          type: array
+          nullable: true
+          description: >-
+            CAM-157: opcional, solo con "Neumáticos" (ext-neumaticos) en defecto. Qué cubiertas tienen problemas y
+            cuáles (GET /api/vehicles/{id}/tire-positions). Se suman al detalle del defecto y quedan en cada
+            cubierta. Sin el defecto, 422 con itemId tireConditions; una posición sin cubierta o repetida,
+            tireConditions[i].position; sin estados o uno desconocido, tireConditions[i].conditions.
+          items:
+            type: object
+            required: [position, conditions]
+            properties:
+              position: { $ref: "#/components/schemas/TirePosition" }
+              conditions:
+                type: array
+                minItems: 1
+                items: { $ref: "#/components/schemas/TireCondition" }
+        trailerId:
+          type: string
+          nullable: true
+          description: >-
+            CAM-157: solo en el pre-viaje de un tractor o camión rígido. El id de un remolque lo engancha,
+            "none" desengancha el que tenía, sin el campo no cambia nada. Errores como en PUT /coupling.
 
     Trip:
       type: object
@@ -2311,6 +3866,50 @@ components:
         status: { type: string, description: Reservado para la futura gestión de defectos; hoy siempre "open". }
         reportedBy: { type: string, nullable: true, description: "Nombre actual del chofer que reportó el defecto (CAM-85); en inspecciones anteriores, el nombre con el que se guardaron." }
         details: { type: string, nullable: true, description: "Descripción larga del defecto (CAM-32). description es el título corto." }
+        source:
+          type: string
+          enum: [pre-trip, post-trip, on-road]
+          description: >-
+            CAM-139. Dónde se reportó: en el checklist del pre-trip o del post-trip, o durante el
+            viaje (on-road, "Reportado en viaje"). Es distinto de occurredOnTrip de CAM-146, que se
+            calcula para los del post-trip.
+        occurredOnTrip:
+          nullable: true
+          description: >-
+            CAM-146: presente si el defecto es del post-viaje y ese control dio OK en el pre-viaje del mismo viaje
+            (Daños nuevos en la carrocería, siempre). Null en el resto. Ver CAM-146-occurred-on-trip-contract.md.
+          allOf:
+            - $ref: "#/components/schemas/OccurredOnTrip"
+        unattendedDays:
+          type: integer
+          format: int64
+          nullable: true
+          description: >-
+            CAM-142: días desde que se reportó, si el defecto está sin atender: abierto, con más de
+            fleetguard.unattended-defects.days (7) días de reportado y sin una OT abierta (asignada, en proceso o
+            en espera) ni un turno programado. Null en el resto. Ver CAM-142-unattended-defects-contract.md.
+
+    OccurredOnTrip:
+      type: object
+      required: [tripId]
+      properties:
+        tripId: { type: string, format: uuid }
+        tripStartedAt: { type: string, format: date-time, nullable: true }
+        tripEndedAt: { type: string, format: date-time, nullable: true }
+        preTripInspectionId: { type: string, format: uuid, nullable: true, description: El pre-viaje en que el control dio OK. }
+        preTripAt: { type: string, format: date-time, nullable: true }
+
+    RoadDefectRequest:
+      type: object
+      required: [itemId, defect]
+      description: CAM-139. Ver /api/vehicles/{id}/road-defects.
+      properties:
+        itemId:
+          type: string
+          description: Un control sí/no del checklist pre-trip del vehículo, o `road-otro`.
+          example: ext-luces
+        defect:
+          $ref: "#/components/schemas/DefectDetail"
 
     VehicleHistory:
       type: object
@@ -2340,6 +3939,28 @@ components:
         odometerKm: { type: number, nullable: true }
         notes: { type: string, nullable: true }
         hasBlockingDefect: { type: boolean }
+        kmAlert:
+          $ref: "#/components/schemas/TripKmAlert"
+
+    TripKmAlert:
+      type: object
+      nullable: true
+      description: >-
+        CAM-152. Solo en el post-viaje de un viaje que se cerró con un kilometraje fuera de lo
+        normal; null en el resto. Los números son los del momento del cierre. Ver
+        CAM-152-trip-km-alert-contract.md.
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [above_average, below_average, below_vehicle_km]
+          description: >-
+            above_average: recorrió más del doble del promedio. below_average: menos de la
+            mitad. below_vehicle_km: el km declarado es menor al que ya tenía el vehículo.
+        tripKm: { type: integer, format: int64, nullable: true, description: "Post-viaje menos pre-viaje. Null sin pre-viaje con km, o si CAM-90 descartó el km del pre-viaje." }
+        averageKm: { type: integer, format: int64, nullable: true, description: "Promedio de km por viaje del vehículo. Null si no había viajes suficientes (solo con below_vehicle_km)." }
+        declaredKm: { type: integer, format: int64, description: "El km del post-viaje." }
+        vehicleKm: { type: integer, format: int64, description: "El km que tenía el vehículo antes del post-viaje." }
 
     MaintenanceHistoryItem:
       type: object
@@ -2446,6 +4067,21 @@ components:
         dueKm: { type: integer, nullable: true }
         remainingDays: { type: integer, nullable: true, description: Negativo si está vencido. }
         remainingKm: { type: integer, nullable: true, description: Negativo si está vencido. }
+        estimatedDueDate:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-11-15"
+          description: >-
+            CAM-137. Fecha aproximada en que el plan vence por km: hoy + remainingKm / km por día
+            del vehículo, redondeado para arriba. Los km por día salen de las inspecciones y los
+            mantenimientos hechos de los últimos 60 días, sin las lecturas menores a una anterior
+            ni las mayores al km actual. Null si el plan no es por km, si ya venció por km
+            (remainingKm <= 0), o si no hay al menos dos lecturas válidas con 7 días o más entre la
+            primera y la última, algún km recorrido y no más de 1.500 km por día (una primera
+            lectura con más de 5.000 km hasta la siguiente se descarta). Solo informativa, status
+            no depende de ella.
+            Ver CAM-40-fleet-status-contract.md, "Fecha estimada".
 
     FleetStatusRow:
       type: object
@@ -2462,6 +4098,11 @@ components:
           $ref: "#/components/schemas/MaintenanceStatus"
         nextMaintenance:
           $ref: "#/components/schemas/NextMaintenanceSummary"
+        blocked: { type: boolean, description: "CAM-127 -- no puede salir." }
+        blockReasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/BlockReason"
 
     FleetStatusPage:
       type: object
@@ -2487,6 +4128,13 @@ components:
         intervalKm: { type: integer, nullable: true }
         intervalDays: { type: integer, nullable: true }
         active: { type: boolean }
+        documentType:
+          allOf:
+            - $ref: "#/components/schemas/VehicleDocumentType"
+          nullable: true
+          description: >
+            CAM-127 -- el documento que renueva este plan. Si el vehículo lo
+            tiene cargado, el plan vence cuando vence el documento.
 
     CreateMaintenancePlanRequest:
       type: object
@@ -2501,6 +4149,9 @@ components:
           $ref: "#/components/schemas/IntervalType"
         intervalKm: { type: integer }
         intervalDays: { type: integer }
+        documentType:
+          type: string
+          description: CAM-127 -- opcional; solo planes "time" y tipos vtv, seguro, cedula_azul o habilitacion_carga.
 
     UpdateMaintenancePlanRequest:
       type: object
@@ -2513,6 +4164,7 @@ components:
         intervalKm: { type: integer }
         intervalDays: { type: integer }
         active: { type: boolean }
+        documentType: { type: string, description: "CAM-127 -- \"\" quita el vínculo." }
 
     MaintenanceAssignment:
       type: object
@@ -2531,6 +4183,10 @@ components:
         status:
           $ref: "#/components/schemas/MaintenanceStatus"
         active: { type: boolean }
+        documentType: { type: string, nullable: true, description: "CAM-127 -- el del plan." }
+        dueDateFromDocument:
+          type: boolean
+          description: CAM-127 -- true si nextDueDate sale del documento cargado y no del intervalo.
 
     CreateAssignmentRequest:
       type: object
@@ -2574,6 +4230,8 @@ components:
         completedKm: { type: integer }
         workOrderId: { type: string }
         notes: { type: string }
+        document:
+          $ref: "#/components/schemas/DocumentInput"
 
     AssignmentSummary:
       type: object
@@ -2642,10 +4300,10 @@ components:
         workOrder:
           type: object
           nullable: true
-          description: OT abierta (asignada o en proceso) vinculada a la programación, si hay una.
+          description: OT abierta (asignada, en proceso o en espera) vinculada a la programación, si hay una.
           properties:
             id: { type: string }
-            status: { type: string, enum: [asignada, en_proceso] }
+            status: { type: string, enum: [asignada, en_proceso, en_espera] }
             responsible: { type: string, nullable: true, description: "Técnico, proveedor externo o contacto." }
 
     CreateScheduleRequest:
@@ -2697,15 +4355,41 @@ components:
 
     WorkOrderStatus:
       type: string
-      enum: [asignada, en_proceso, finalizada, cancelada]
+      description: "en_espera (CAM-148): pausada con un motivo. Cuenta como abierta, igual que asignada y en_proceso."
+      enum: [asignada, en_proceso, en_espera, finalizada, cancelada]
+
+    WorkOrderPauseReason:
+      type: string
+      enum: [esperando_repuesto, esperando_proveedor, esperando_vehiculo, otro]
 
     WorkOrderExpenseCategory:
       type: string
       enum: [repuesto, mano_de_obra, otro]
 
+    VehicleExpenseCategory:
+      type: string
+      enum: [combustible, seguro, patente, vtv, peajes, otro]
+
+    ExpenseCategory:
+      type: string
+      description: Las categorías de los dos tipos de gasto. `otro` es el mismo valor en los dos.
+      enum: [repuesto, mano_de_obra, combustible, seguro, patente, vtv, peajes, otro]
+
+    VehicleExpenseRequest:
+      type: object
+      description: Alta o edición de un gasto operativo (CAM-109).
+      required: [vehicleId, date, category, description, amount]
+      properties:
+        vehicleId: { type: string }
+        date: { type: string, format: date, description: Día del gasto. No puede ser futuro (hora argentina). }
+        category:
+          $ref: "#/components/schemas/VehicleExpenseCategory"
+        description: { type: string }
+        amount: { type: number, description: "Mayor a 0, con hasta 2 decimales y hasta 9.999.999.999,99." }
+
     WorkOrder:
       type: object
-      required: [id, vehicleId, sourceType, title, executionType, status, expenses, totalExpenses, photos, createdAt, updatedAt]
+      required: [id, vehicleId, sourceType, title, executionType, status, expenses, totalExpenses, photos, createdAt, updatedAt, pausedSeconds]
       properties:
         id: { type: string }
         vehicleId: { type: string }
@@ -2744,6 +4428,20 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         finalizedAt: { type: string, format: date-time, nullable: true }
+        pause:
+          type: object
+          nullable: true
+          description: "CAM-148: por qué está en espera y desde cuándo. Null si la OT no está en espera."
+          required: [reason, since]
+          properties:
+            reason:
+              $ref: "#/components/schemas/WorkOrderPauseReason"
+            comment: { type: string, nullable: true }
+            since: { type: string, format: date-time }
+        pausedSeconds:
+          type: integer
+          format: int64
+          description: "CAM-148: segundos que estuvo en espera en total, contando la pausa actual hasta ahora. 0 si nunca se pausó."
 
     CreateWorkOrderRequest:
       type: object
@@ -2773,7 +4471,14 @@ components:
       properties:
         status:
           type: string
-          enum: [en_proceso, finalizada, cancelada]
+          enum: [en_proceso, en_espera, finalizada, cancelada]
+        pauseReason:
+          $ref: "#/components/schemas/WorkOrderPauseReason"
+        pauseComment:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: "Solo con status=en_espera (CAM-148). Obligatorio si pauseReason es otro; si no, opcional."
         closingDescription: { type: string, description: Obligatoria para finalizar. }
         completedKm:
           type: integer
@@ -2798,6 +4503,12 @@ components:
           $ref: "#/components/schemas/WorkOrderExecutionType"
         externalProvider: { type: string }
         description: { type: string }
+        document:
+          allOf:
+            - $ref: "#/components/schemas/DocumentInput"
+          description: >
+            CAM-127 -- al finalizar una OT de un plan que renueva un documento;
+            422 en "document" si la OT no viene de un plan.
 
     WorkOrderExpense:
       type: object
@@ -2820,31 +4531,46 @@ components:
 
     Expense:
       type: object
-      description: Un gasto de GET /api/expenses (CAM-52), con el vehículo y la OT de la que sale.
+      description: >
+        Un gasto de GET /api/expenses (CAM-52, CAM-109), con su vehículo y, si
+        sale de una orden de trabajo, con esa OT. En un gasto operativo
+        (`origin: operating`) los campos de la OT, `executionType` y el
+        comprobante vienen en null.
       required: [id, date, vehicleId, category, description, amount, workOrderId, workOrderTitle, workOrderStatus, origin, executionType, receiptNumber, receiptPhotoUrl]
       properties:
         id: { type: string }
-        date: { type: string, format: date-time, description: Cuándo se cargó el gasto. }
+        date:
+          type: string
+          format: date-time
+          description: >
+            En un gasto de OT, cuándo se cargó. En uno operativo, la medianoche
+            argentina de su día: es un instante como el otro, y se lee como ese día.
         vehicleId: { type: string }
         plate: { type: string, nullable: true }
         category:
-          $ref: "#/components/schemas/WorkOrderExpenseCategory"
+          $ref: "#/components/schemas/ExpenseCategory"
         description: { type: string }
         amount: { type: number }
-        workOrderId: { type: string }
-        workOrderTitle: { type: string }
+        workOrderId: { type: string, nullable: true }
+        workOrderTitle: { type: string, nullable: true }
         workOrderStatus:
-          $ref: "#/components/schemas/WorkOrderStatus"
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkOrderStatus"
         origin:
           type: string
-          enum: [plan, defect, manual]
+          enum: [plan, defect, manual, operating, fuel]
           description: >
-            De dónde nació la OT: de un plan de mantenimiento (gasto
-            preventivo), de un defecto (correctivo) o suelta. No es
+            De dónde nació el gasto: `operating` es un gasto operativo, sin OT; `fuel`, una carga de
+            combustible (CAM-156), que se edita desde /api/fuel-loads.
+            Los otros dicen de dónde nació su OT: de un plan de mantenimiento
+            (gasto preventivo), de un defecto (correctivo) o suelta. No es
             `sourceType`: una OT creada desde el calendario conserva el plan
             o el defecto que la originó.
         executionType:
-          $ref: "#/components/schemas/WorkOrderExecutionType"
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkOrderExecutionType"
         receiptNumber:
           type: string
           nullable: true
@@ -2856,12 +4582,12 @@ components:
 
     VehicleCosts:
       type: object
-      description: Costo de mantenimiento de un vehículo, de GET /api/vehicles/{id}/costs (CAM-105).
+      description: Costo total de un vehículo, mantenimiento y operativo, de GET /api/vehicles/{id}/costs (CAM-105, CAM-109).
       required: [totalAmount, last12MonthsAmount, expenseCount, currentKm, firstKnownKm, kmDriven, costPerKm]
       properties:
         totalAmount: { type: number, description: Total histórico de gastos del vehículo. }
-        last12MonthsAmount: { type: number, description: "Gastos cargados desde la medianoche (hora argentina) del mismo día de hace un año." }
-        expenseCount: { type: integer, description: Cantidad de gastos cargados en total. }
+        last12MonthsAmount: { type: number, description: "Gastos con fecha desde la medianoche (hora argentina) del mismo día de hace un año." }
+        expenseCount: { type: integer, description: Cantidad de gastos en total. }
         currentKm: { type: integer, description: Km actual del vehículo. }
         firstKnownKm:
           type: integer
@@ -2875,6 +4601,198 @@ components:
           type: number
           nullable: true
           description: totalAmount / kmDriven, redondeado a 2 decimales; null cuando kmDriven es null.
+
+    VehicleComparison:
+      type: object
+      description: Comparación de los vehículos activos de GET /api/vehicles/comparison (CAM-140).
+      required: [from, to, vehicles, fleet]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time, description: Fin efectivo del período, recortado a ahora. }
+        vehicles:
+          type: array
+          description: Ordenados por patente.
+          items:
+            type: object
+            required: [vehicleId, plate, maintenanceCost, operatingCost, totalCost, downtimeHours, stops, recurringControls, review]
+            properties:
+              vehicleId: { type: string }
+              plate: { type: string }
+              brand: { type: string, nullable: true }
+              model: { type: string, nullable: true }
+              vehicleType: { type: string, nullable: true }
+              year: { type: integer, nullable: true }
+              maintenanceCost: { type: number, description: "Gastos de OTs del período (preventivo, correctivo y manual)." }
+              operatingCost: { type: number, description: Gastos operativos del período (CAM-109). }
+              totalCost: { type: number }
+              kmDriven:
+                type: integer
+                nullable: true
+                description: >-
+                  Del km al empezar el período (la última lectura válida hasta el comienzo, o la primera
+                  dentro) al km al terminarlo. Null sin dos lecturas válidas. Ver el contrato, decisión 2.
+              maintenanceCostPerKm: { type: number, nullable: true, description: "Gasto de mantenimiento desde que cuentan los km, sobre kmDriven, a 2 decimales; null sin km o con 0 km." }
+              totalCostPerKm: { type: number, nullable: true, description: "Ídem, con el gasto total." }
+              availabilityPct: { type: number, nullable: true }
+              downtimeHours: { type: number }
+              stops: { type: integer }
+              recurringControls: { type: integer, description: Controles del checklist con fallas recurrentes hoy (CAM-135). }
+              review:
+                type: object
+                required: [flagged, reasons]
+                properties:
+                  flagged: { type: boolean, description: "Para revisar: peor que el promedio en al menos dos indicadores." }
+                  reasons:
+                    type: array
+                    description: Vacío si flagged es false.
+                    items:
+                      type: string
+                      enum: [maintenance_cost_per_km, availability, recurring_defects]
+        fleet:
+          type: object
+          description: El promedio de cada indicador sobre los vehículos que lo tienen; null si ninguno lo tiene.
+          properties:
+            maintenanceCost: { type: number, nullable: true }
+            operatingCost: { type: number, nullable: true }
+            totalCost: { type: number, nullable: true }
+            kmDriven: { type: number, nullable: true }
+            maintenanceCostPerKm: { type: number, nullable: true, description: "El de la flota: gasto de los vehículos con km sobre sus km, no el promedio de los cocientes." }
+            totalCostPerKm: { type: number, nullable: true, description: "Ídem, con el gasto total." }
+            availabilityPct: { type: number, nullable: true }
+            downtimeHours: { type: number, nullable: true }
+            stops: { type: number, nullable: true }
+            recurringControls: { type: number, nullable: true }
+
+    MaintenanceCompliance:
+      type: object
+      description: GET /api/maintenance-compliance (CAM-155).
+      required: [from, to, preventive, defects, openWorkOrders]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        preventive:
+          type: object
+          description: >-
+            Mantenimientos hechos en el período. Cada uno se compara con el anterior del mismo plan en el mismo
+            vehículo más el intervalo del plan; el primero de cada plan no cuenta.
+          required: [onTime, late]
+          properties:
+            onTime: { type: integer }
+            late: { type: integer }
+            onTimePct: { type: number, nullable: true, description: Null si no hay ninguno. }
+        defects:
+          type: object
+          required: [resolved]
+          properties:
+            resolved: { type: integer, description: Defectos resueltos en el período. }
+            avgHours: { type: number, nullable: true, description: Horas promedio entre el reporte y la resolución. }
+        openWorkOrders:
+          type: object
+          description: OTs asignadas o en proceso hoy, por días desde que se crearon.
+          required: [total, under7Days, from7To30Days, over30Days]
+          properties:
+            total: { type: integer }
+            under7Days: { type: integer }
+            from7To30Days: { type: integer }
+            over30Days: { type: integer }
+
+    Downtime:
+      type: object
+      description: Disponibilidad y reparaciones de GET /api/downtime (CAM-134).
+      required: [from, to, fleet, vehicles]
+      properties:
+        from: { type: string, format: date-time }
+        to:
+          type: string
+          format: date-time
+          description: Fin efectivo del período, cortado en el momento actual.
+        fleet:
+          type: object
+          description: Totales de los vehículos de `vehicles` (con vehicleId, de ese solo).
+          required: [availabilityPct, downtimeHours, stops, repairs]
+          properties:
+            availabilityPct:
+              type: number
+              nullable: true
+              description: Porcentaje del tiempo disponible, con un decimal; null si el período todavía no empezó.
+            downtimeHours: { type: number, description: Horas fuera de servicio sumadas, con un decimal. }
+            stops: { type: integer, description: Paradas sumadas. }
+            repairs:
+              $ref: "#/components/schemas/RepairTimes"
+        vehicles:
+          type: array
+          description: De más horas fuera de servicio a menos; a igual tiempo, por patente.
+          items:
+            type: object
+            required: [vehicleId, plate, availabilityPct, downtimeHours, stops, repairs]
+            properties:
+              vehicleId: { type: string, format: uuid }
+              plate: { type: string }
+              availabilityPct: { type: number, nullable: true }
+              downtimeHours: { type: number }
+              stops: { type: integer, description: Veces que estuvo fuera de servicio dentro del período. }
+              repairs:
+                $ref: "#/components/schemas/RepairTimes"
+
+    RepairTimes:
+      type: object
+      description: Promedio de horas entre la creación y la finalización de las OTs finalizadas en el período.
+      required: [avgHours, count, internal, external]
+      properties:
+        avgHours: { type: number, nullable: true, description: Con un decimal; null si no hay OTs finalizadas. }
+        count: { type: integer }
+        internal:
+          type: object
+          required: [avgHours, count]
+          properties:
+            avgHours: { type: number, nullable: true }
+            count: { type: integer }
+        external:
+          type: object
+          required: [avgHours, count]
+          properties:
+            avgHours: { type: number, nullable: true }
+            count: { type: integer }
+
+    RecurringDefects:
+      type: object
+      description: Controles recurrentes, de GET /api/defects/recurring (CAM-135).
+      required: [threshold, windowDays, items]
+      properties:
+        threshold: { type: integer, description: Fallas a partir de las cuales un control es recurrente (por defecto 3). }
+        windowDays: { type: integer, description: Días hacia atrás que se miran (por defecto 30). }
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecurringDefect"
+
+    RecurringDefect:
+      type: object
+      description: Un control de un vehículo que falló al menos `threshold` veces en la ventana.
+      required: [vehicleId, plate, itemId, itemLabel, count, lastReportedAt, occurrences]
+      properties:
+        vehicleId: { type: string, format: uuid }
+        plate: { type: string }
+        itemId:
+          type: string
+          description: >-
+            Id del control del checklist. CAM-144: Luces y Fugas del post-viaje cuentan con las del pre-viaje,
+            bajo el id del pre-viaje (ext-luces, ext-fugas).
+        itemLabel: { type: string, description: Nombre del control en la falla más reciente (o el id, si no se guardó). }
+        count: { type: integer, description: Fallas en la ventana. }
+        lastReportedAt: { type: string, format: date-time }
+        occurrences:
+          type: array
+          description: Cada falla de la ventana, más reciente primero.
+          items:
+            type: object
+            required: [defectId, reportedAt, severity, status, description]
+            properties:
+              defectId: { type: string, format: uuid }
+              reportedAt: { type: string, format: date-time }
+              severity: { type: string, enum: [blocking, non-blocking] }
+              status: { type: string, description: "open o resuelto, igual que en DefectSummary." }
+              description: { type: string, description: Título del defecto. }
 
     CreateWorkOrderExpenseRequest:
       type: object
@@ -2911,6 +4829,35 @@ components:
         id: { type: string }
         photoUrl: { type: string }
         createdAt: { type: string, format: date-time }
+
+    WorkOrderComment:
+      type: object
+      required: [id, author, authorRole, text, createdAt]
+      properties:
+        id: { type: string }
+        author:
+          allOf:
+            - $ref: "#/components/schemas/UserRef"
+          description: >
+            Quién comentó. `name` es su nombre actual, o el que tenía al comentar
+            si el usuario ya no existe.
+        authorRole:
+          type: string
+          enum: [ADMIN, TECNICO]
+          description: Con qué rol comentó.
+        text: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    CreateWorkOrderCommentRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          maxLength: 1000
+          description: >
+            Obligatorio; se recortan los espacios de los bordes. Vacío o de más de
+            1000 caracteres da 422 en `text`.
 
     CreateWorkOrderPhotoRequest:
       type: object
@@ -3018,7 +4965,7 @@ components:
         active: { type: boolean }
         openWorkOrders:
           type: integer
-          description: OTs a su cargo asignadas o en proceso hoy. Es la foto actual, no depende del período.
+          description: OTs a su cargo asignadas, en proceso o en espera (CAM-148) hoy. Es la foto actual, no depende del período.
         finalizedWorkOrders: { type: integer, description: OTs a su cargo finalizadas en el período. }
         avgResolutionHours:
           type: number
@@ -3026,13 +4973,250 @@ components:
           description: Promedio de horas entre que se creó y se finalizó cada una de esas OTs. null si no finalizó ninguna.
         expensesTotal: { type: number, description: Suma de los gastos cargados en el período en las OTs a su cargo. }
 
+    TireCondition:
+      type: string
+      description: CAM-157. Lo que el chofer ve a simple vista, del más grave al más leve.
+      enum: [se-ve-la-tela, bulto, corte-flanco, pinchada, baja-presion, desgaste-irregular, poco-dibujo]
+
+    TireConditionReport:
+      type: object
+      properties:
+        vehicleId: { type: string }
+        plate: { type: string }
+        position: { $ref: "#/components/schemas/TirePosition" }
+        positionLabel: { type: string }
+        conditions:
+          type: array
+          items: { $ref: "#/components/schemas/TireCondition" }
+        conditionLabels: { type: array, items: { type: string } }
+        severity: { type: string, enum: [blocking, non-blocking], nullable: true, description: La del defecto. }
+        reportedAt: { type: string, format: date-time }
+        reportedBy: { type: string, nullable: true }
+        defectId: { type: string, nullable: true }
+        active: { type: boolean, description: El defecto sigue abierto y la cubierta montada. }
+
+    TirePosition:
+      type: string
+      description: CAM-157. Eje + lado (+ exterior/interior en rueda doble). Las de cada tipo, en CAM-157-tires-contract.md §1.
+      enum: [e1-izq, e1-der, e1-izq-ext, e1-izq-int, e1-der-int, e1-der-ext,
+             e2-izq, e2-der, e2-izq-ext, e2-izq-int, e2-der-int, e2-der-ext,
+             e3-izq, e3-der, e3-izq-ext, e3-izq-int, e3-der-int, e3-der-ext, auxilio]
+
+    Coupling:
+      type: object
+      properties:
+        vehicleId: { type: string }
+        towedBy:
+          nullable: true
+          description: En un remolque, quién lo arrastra.
+          allOf:
+            - $ref: "#/components/schemas/CouplingRef"
+        towing:
+          nullable: true
+          description: En un tractor o camión, qué remolque lleva.
+          allOf:
+            - $ref: "#/components/schemas/CouplingRef"
+        canTow:
+          type: array
+          items: { $ref: "#/components/schemas/VehicleType" }
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              trailerId: { type: string }
+              trailerPlate: { type: string }
+              towingId: { type: string }
+              towingPlate: { type: string }
+              coupledAt: { type: string, format: date-time }
+              uncoupledAt: { type: string, format: date-time, nullable: true }
+              coupledBy: { type: string, nullable: true }
+
+    CouplingRef:
+      type: object
+      properties:
+        id: { type: string }
+        plate: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        coupledAt: { type: string, format: date-time }
+
+    TireRequest:
+      type: object
+      required: [brand, size, purchaseDate, cost]
+      properties:
+        code: { type: string, maxLength: 40, nullable: true, description: Número de serie o el del taller. Único. }
+        brand: { type: string, maxLength: 60 }
+        model: { type: string, maxLength: 60, nullable: true }
+        size: { type: string, maxLength: 30, example: 295/80 R22.5 }
+        purchaseDate: { type: string, format: date }
+        cost: { type: number, exclusiveMinimum: 0 }
+
+    Tire:
+      type: object
+      properties:
+        id: { type: string }
+        code: { type: string, nullable: true }
+        brand: { type: string }
+        model: { type: string, nullable: true }
+        size: { type: string }
+        purchaseDate: { type: string, format: date }
+        cost: { type: number }
+        status: { type: string, enum: [stock, mounted, retired] }
+        retiredAt: { type: string, format: date-time, nullable: true }
+        retiredReason: { type: string, nullable: true }
+        km: { type: integer, description: Lo que rodó en todos sus montajes; el auxilio no suma. }
+        costPerKm: { type: number, nullable: true }
+        current:
+          type: object
+          nullable: true
+          description: Dónde está montada; null si no.
+          properties:
+            vehicleId: { type: string }
+            plate: { type: string }
+            position: { $ref: "#/components/schemas/TirePosition" }
+            positionLabel: { type: string }
+            mountedAt: { type: string, format: date-time }
+            mountedKm: { type: integer }
+        condition:
+          nullable: true
+          description: El último problema reportado que sigue abierto (active); null si no tiene.
+          allOf:
+            - $ref: "#/components/schemas/TireConditionReport"
+
+    TireMounting:
+      type: object
+      properties:
+        tireId: { type: string }
+        tireLabel: { type: string }
+        vehicleId: { type: string }
+        plate: { type: string }
+        position: { $ref: "#/components/schemas/TirePosition" }
+        positionLabel: { type: string }
+        mountedAt: { type: string, format: date-time }
+        mountedKm: { type: integer }
+        removedAt: { type: string, format: date-time, nullable: true }
+        removedKm: { type: integer, nullable: true }
+        km: { type: integer }
+
+    VehicleTires:
+      type: object
+      properties:
+        vehicleId: { type: string }
+        plate: { type: string }
+        vehicleType:
+          allOf:
+            - $ref: "#/components/schemas/VehicleType"
+          nullable: true
+          description: Sin tipo, positions vacío y montar da 409 NO_VEHICLE_TYPE.
+        odometerKm: { type: integer }
+        positions:
+          type: array
+          items:
+            type: object
+            properties:
+              position: { $ref: "#/components/schemas/TirePosition" }
+              label: { type: string }
+              axle: { type: integer, description: 1 el delantero, 0 el auxilio. }
+              side: { type: string, enum: [izq, der], nullable: true }
+              wheel: { type: string, enum: [simple, exterior, interior] }
+              tire:
+                nullable: true
+                allOf:
+                  - $ref: "#/components/schemas/Tire"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/TireMounting"
+
+    FuelLoadRequest:
+      type: object
+      required: [vehicleId, liters, amount, odometerKm]
+      properties:
+        vehicleId: { type: string, description: Solo en el alta. }
+        loadedAt: { type: string, format: date-time, description: Sin valor, ahora. }
+        liters: { type: number, exclusiveMinimum: 0, maximum: 2000 }
+        amount: { type: number, exclusiveMinimum: 0 }
+        odometerKm: { type: integer, minimum: 0 }
+        fullTank: { type: boolean, default: true }
+
+    FuelLoad:
+      type: object
+      required: [id, vehicleId, plate, loadedAt, liters, amount, odometerKm, fullTank, createdBy, consumption, alert]
+      properties:
+        id: { type: string }
+        vehicleId: { type: string }
+        plate: { type: string }
+        loadedAt: { type: string, format: date-time }
+        liters: { type: number }
+        amount: { type: number }
+        odometerKm: { type: integer }
+        fullTank: { type: boolean }
+        createdBy:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/UserRef"
+        consumption:
+          type: object
+          nullable: true
+          description: El tramo que cierra esta carga (de tanque lleno a tanque lleno); null si no cierra ninguno.
+          properties:
+            km: { type: integer }
+            liters: { type: number }
+            litersPer100Km: { type: number }
+            costPerKm: { type: number }
+        alert:
+          type: object
+          nullable: true
+          description: Si al cargarla se avisó de un consumo anormal.
+          properties:
+            litersPer100Km: { type: number }
+            averageLitersPer100Km: { type: number }
+
+    VehicleFuel:
+      type: object
+      required: [vehicleId, plate, months, summary, monthly, loads]
+      properties:
+        vehicleId: { type: string }
+        plate: { type: string }
+        months: { type: integer }
+        summary:
+          $ref: "#/components/schemas/FuelPeriod"
+        monthly:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/FuelPeriod"
+              - type: object
+                properties:
+                  month: { type: string, example: "2026-06" }
+        loads:
+          type: array
+          items:
+            $ref: "#/components/schemas/FuelLoad"
+
+    FuelPeriod:
+      type: object
+      description: >
+        Litros y monto de las cargas del período; km medidos, L/100 km y costo por km de los
+        tramos que cierran en el período (null si no cierra ninguno).
+      properties:
+        loadCount: { type: integer, description: Solo en summary. }
+        liters: { type: number }
+        amount: { type: number }
+        measuredKm: { type: integer }
+        litersPer100Km: { type: number, nullable: true }
+        costPerKm: { type: number, nullable: true }
+
     NotificationType:
       type: string
       description: >
         Qué pasó. Cada card de aviso suma el suyo (CAM-97 a CAM-103); el
         front no depende del tipo para mostrar el aviso, solo del texto.
       enum: [work_order_assigned, work_order_unassigned, work_order_cancelled, trip_open_reminder,
-             blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue]
+             blocking_defect_reported, work_order_finalized, maintenance_due_soon, maintenance_overdue,
+             recurring_defect, document_due_soon, document_expired, vehicle_unavailable, vehicle_available,
+             trip_km_anomaly, fuel_consumption_anomaly, tire_problem_reported, defect_resolved, defect_unattended,
+             scheduled_maintenance_upcoming, trip_started_with_maintenance, work_order_comment]
 
     NotificationChannel:
       type: string
@@ -3068,7 +5252,8 @@ components:
         recipientUserIds:
           type: array
           items: { type: string }
-        supportsLead: { type: boolean, description: Solo maintenance_due_soon. }
+        supportsLead: { type: boolean, description: "maintenance_due_soon y document_due_soon." }
+        supportsLeadKm: { type: boolean, description: "CAM-127 -- solo maintenance_due_soon; los documentos se anticipan en días." }
         leadDays: { type: integer, nullable: true }
         leadKm: { type: integer, nullable: true }
         customized: { type: boolean, description: false si rige el default. }

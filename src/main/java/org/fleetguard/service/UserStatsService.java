@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
 @Service
 public class UserStatsService {
 
-    private static final List<WorkOrderStatus> OPEN_STATUSES = List.of(WorkOrderStatus.ASIGNADA, WorkOrderStatus.EN_PROCESO);
+    private static final List<WorkOrderStatus> OPEN_STATUSES = WorkOrderStatus.OPEN;
 
     private final UserRepository userRepository;
     private final TripRepository tripRepository;

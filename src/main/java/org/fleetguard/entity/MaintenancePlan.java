@@ -43,6 +43,12 @@ public class MaintenancePlan {
     @Column(nullable = false)
     private boolean active = true;
 
+    // CAM-127: el plan renueva este documento (VTV, seguro…). Si el vehículo lo tiene cargado, el
+    // próximo vencimiento del plan es el del documento. Solo planes por tiempo.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "document_type", length = 30)
+    private VehicleDocumentType documentType;
+
     protected MaintenancePlan() {
         // JPA
     }
@@ -105,5 +111,13 @@ public class MaintenancePlan {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public VehicleDocumentType getDocumentType() {
+        return documentType;
+    }
+
+    public void setDocumentType(VehicleDocumentType documentType) {
+        this.documentType = documentType;
     }
 }

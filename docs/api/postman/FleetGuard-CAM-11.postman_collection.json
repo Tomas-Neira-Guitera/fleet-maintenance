@@ -1515,6 +1515,1566 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Documentación del vehículo (CAM-127)",
+      "description": "Documentos de un vehículo con su vencimiento. Solo ADMIN (adminToken). Usa vehicleId del environment. Ver docs/api/CAM-127-vehicle-documents-contract.md.",
+      "item": [
+        {
+          "name": "Subir comprobante (PDF)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/photos?purpose=document",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "photos"
+              ],
+              "query": [
+                {
+                  "key": "purpose",
+                  "value": "document"
+                }
+              ]
+            },
+            "description": "POST /api/photos?purpose=document — acepta JPG, PNG o PDF. Guarda la URL en documentFileUrl.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('documentFileUrl', pm.response.json().photoUrl);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cargar VTV",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "documents"
+              ]
+            },
+            "description": "POST — nombre libre; \"VTV\" se reconoce como la VTV. Si el vehículo tiene un plan vinculado a la VTV, registra su mantenimiento. Guarda documentId.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"VTV\",\n  \"number\": \"RTO-000123\",\n  \"issuedAt\": \"2026-10-20\",\n  \"expiresAt\": \"2027-10-20\",\n  \"fileUrl\": \"{{documentFileUrl}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('documentId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar documentación",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "documents"
+              ]
+            },
+            "description": "GET — vigentes por vencimiento, historial y obligatorios que faltan."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('trae missingRequired', () => pm.expect(pm.response.json()).to.have.property('missingRequired'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Corregir vencimiento",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/documents/{{documentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "documents",
+                "{{documentId}}"
+              ]
+            },
+            "description": "PATCH — corrige un dato del vigente sin renovarlo. \"\" borra.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expiresAt\": \"2027-10-21\",\n  \"number\": \"\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Renovar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/documents/{{documentId}}/renewals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "documents",
+                "{{documentId}}",
+                "renewals"
+              ]
+            },
+            "description": "POST — el documento nuevo; el anterior pasa al historial.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"number\": \"RTO-000456\",\n  \"issuedAt\": \"2027-10-15\",\n  \"expiresAt\": \"2028-10-15\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('documentId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cargar dos veces el mismo tipo (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "documents"
+              ]
+            },
+            "description": "POST — \"Oblea RTO\" también es la VTV, que ya está vigente: 409 DOCUMENT_ALREADY_LOADED.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Oblea RTO\",\n  \"expiresAt\": \"2027-01-01\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));",
+                  "pm.test('DOCUMENT_ALREADY_LOADED', () => pm.expect(pm.response.json().error).to.eql('DOCUMENT_ALREADY_LOADED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dar de baja",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/documents/{{documentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "documents",
+                "{{documentId}}"
+              ]
+            },
+            "description": "DELETE — baja lógica; deja de bloquear."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sprint 9 (CAM-146, CAM-153, CAM-154, CAM-155)",
+      "item": [
+        {
+          "name": "Pre-trip hecho sin señal (CAM-153)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"performedAt\": \"{{offlinePerformedAt}}\",\n  \"clientSubmissionId\": \"{{offlineSubmissionId}}\",\n  \"answers\": [\n    { \"itemId\": \"ext-luces\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-neumaticos\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-carroceria\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-km\", \"numberValue\": 82430 },\n    { \"itemId\": \"int-documentacion\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-testigos\", \"outcome\": \"ok\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
+            },
+            "description": "La inspección llega más tarde con la hora en que se hizo (performedAt) y un id del celular (clientSubmissionId). El viaje queda con esa hora. Requiere 'Login — chofer' y 'Listar vehículos', con el vehículo sin viaje abierto. Ver docs/api/CAM-153-offline-inspections-contract.md."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Una hora atrás, como si se hubiera hecho sin señal; y un id nuevo para este envío.",
+                  "pm.environment.set('offlinePerformedAt', new Date(Date.now() - 3600 * 1000).toISOString());",
+                  "pm.environment.set('offlineSubmissionId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('el viaje arranca a la hora en que se hizo', () => pm.expect(new Date(body.trip.startedAt).getTime()).to.eql(new Date(pm.environment.get('offlinePerformedAt')).getTime()));",
+                  "pm.environment.set('offlineInspectionId', body.inspection.id);",
+                  "if (body.trip) pm.environment.set('tripId', body.trip.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reintento del mismo envío no duplica (CAM-153)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"performedAt\": \"{{offlinePerformedAt}}\",\n  \"clientSubmissionId\": \"{{offlineSubmissionId}}\",\n  \"answers\": [\n    { \"itemId\": \"ext-luces\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-neumaticos\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-carroceria\", \"outcome\": \"ok\" },\n    { \"itemId\": \"ext-fugas\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-km\", \"numberValue\": 82430 },\n    { \"itemId\": \"int-documentacion\", \"outcome\": \"ok\" },\n    { \"itemId\": \"int-testigos\", \"outcome\": \"ok\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
+            },
+            "description": "El celular vuelve a mandar la misma inspección (mismo clientSubmissionId) porque no recibió la respuesta. Devuelve la ya guardada, aunque el vehículo ahora esté en viaje. Correr después del anterior."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('es la misma inspección', () => pm.expect(pm.response.json().inspection.id).to.eql(pm.environment.get('offlineInspectionId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Defectos ocurridos en el viaje (CAM-146)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/defects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "defects"
+              ]
+            },
+            "description": "Los defectos del post-viaje cuyo control dio OK en el pre-viaje del mismo viaje traen occurredOnTrip. Ver docs/api/CAM-146-occurred-on-trip-contract.md."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const onTrip = pm.response.json().filter((d) => d.occurredOnTrip);",
+                  "pm.test('cada marcado trae su viaje', () => onTrip.every((d) => d.occurredOnTrip.tripId));",
+                  "console.log(onTrip.length + ' defectos ocurridos en el viaje');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Importar flota — vista previa (CAM-154)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rows\": [\n    { \"plate\": \"ZZ901AA\", \"brand\": \"Ford\", \"model\": \"Cargo 1723\", \"year\": 2020, \"odometerKm\": 98000 },\n    { \"plate\": \"ZZ902AA\", \"brand\": \"\", \"model\": \"Daily\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/import?dryRun=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "import"
+              ],
+              "query": [
+                {
+                  "key": "dryRun",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "dryRun=true: valida cada fila como el alta manual sin guardar nada. La segunda fila no tiene marca. Ver docs/api/CAM-154-vehicle-import-contract.md."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('no crea nada', () => pm.expect(body.created).to.eql(0));",
+                  "pm.test('marca la fila sin marca', () => pm.expect(body.rows[1].valid).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Importar flota (CAM-154)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rows\": [\n    { \"plate\": \"ZZ901AA\", \"brand\": \"Ford\", \"model\": \"Cargo 1723\", \"year\": 2020, \"odometerKm\": 98000 },\n    { \"plate\": \"ZZ902AA\", \"brand\": \"\", \"model\": \"Daily\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/import",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "import"
+              ]
+            },
+            "description": "Sin dryRun crea solo las filas válidas. Volver a correrlo da error de patente existente en la primera fila."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('crea solo la válida', () => pm.expect(body.created).to.be.at.most(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cumplimiento del mantenimiento (CAM-155)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/maintenance-compliance?from=2026-01-01&to=2026-12-31",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "maintenance-compliance"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-01-01"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-12-31"
+                }
+              ]
+            },
+            "description": "Mantenimientos a tiempo, tiempo de resolución de defectos y OTs abiertas por antigüedad. Solo ADMIN. Ver docs/api/CAM-155-maintenance-compliance-contract.md."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('trae los tres indicadores', () => body.preventive && body.defects && body.openWorkOrders);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Plantillas de checklist (CAM-150)",
+      "item": [
+        {
+          "name": "Crear plantilla",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checklist-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checklist-templates"
+              ]
+            },
+            "description": "Requiere 'Login — admin'. Ver docs/api/CAM-31-vehicle-checklist-contract.md §7.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Frigorífico\",\n  \"items\": [\n    {\n      \"label\": \"Temperatura de la cámara\",\n      \"type\": \"number\",\n      \"section\": \"interior\"\n    },\n    {\n      \"label\": \"Equipo de frío\",\n      \"section\": \"exterior\"\n    },\n    {\n      \"label\": \"Burletes de la puerta\",\n      \"section\": \"exterior\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('templateId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar plantillas",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checklist-templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checklist-templates"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aplicar plantilla a un vehículo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checklist-templates/{{templateId}}/apply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checklist-templates",
+                "{{templateId}}",
+                "apply"
+              ]
+            },
+            "description": "Correrlo dos veces: la segunda no agrega nada y lo dice en skipped.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleIds\": [\n    \"{{vehicleId}}\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('dice lo agregado y lo salteado', () => pm.expect(pm.response.json().added + pm.response.json().skipped).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Editar plantilla",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checklist-templates/{{templateId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checklist-templates",
+                "{{templateId}}"
+              ]
+            },
+            "description": "Los vehículos donde ya se aplicó no cambian.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Frigorífico\",\n  \"items\": [\n    {\n      \"label\": \"Temperatura de la cámara\",\n      \"type\": \"number\",\n      \"section\": \"interior\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aplicar plantilla siendo chofer (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checklist-templates/{{templateId}}/apply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checklist-templates",
+                "{{templateId}}",
+                "apply"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleIds\": [\n    \"{{vehicleId}}\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Borrar plantilla",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checklist-templates/{{templateId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checklist-templates",
+                "{{templateId}}"
+              ]
+            },
+            "description": "Los controles ya copiados siguen en los vehículos."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Combustible (CAM-156)",
+      "item": [
+        {
+          "name": "Cargar combustible (chofer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fuel-loads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fuel-loads"
+              ]
+            },
+            "description": "Requiere 'Login — chofer'. Sin loadedAt es ahora. Ver docs/api/CAM-156-fuel-contract.md.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"liters\": 120.5,\n  \"amount\": 145000,\n  \"odometerKm\": 152300,\n  \"fullTank\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('fuelLoadId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Carga con menos km que la anterior (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fuel-loads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fuel-loads"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"liters\": 50,\n  \"amount\": 60000,\n  \"odometerKm\": 1000\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422', () => pm.response.to.have.status(422));",
+                  "pm.test('marca odometerKm', () => pm.expect(pm.response.json().details[0].field).to.eql('odometerKm'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consumo del vehículo",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/fuel?months=6",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "fuel"
+              ],
+              "query": [
+                {
+                  "key": "months",
+                  "value": "6"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Corregir carga",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fuel-loads/{{fuelLoadId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fuel-loads",
+                "{{fuelLoadId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"liters\": 118,\n  \"amount\": 142000,\n  \"odometerKm\": 152300,\n  \"fullTank\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Gastos: solo combustible",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/expenses?category=combustible",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "expenses"
+              ],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "combustible"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Corregir carga siendo chofer (403)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fuel-loads/{{fuelLoadId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fuel-loads",
+                "{{fuelLoadId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"liters\": 118,\n  \"amount\": 142000,\n  \"odometerKm\": 152300\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Borrar carga",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fuel-loads/{{fuelLoadId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fuel-loads",
+                "{{fuelLoadId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Neumáticos (CAM-157)",
+      "item": [
+        {
+          "name": "Enganche: ver (remolque o tractor)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{trailerId}}/coupling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{trailerId}}",
+                "coupling"
+              ]
+            },
+            "description": "CAM-157. Admin o chofer."
+          }
+        },
+        {
+          "name": "Enganche: enganchar remolque",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{trailerId}}/coupling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{trailerId}}",
+                "coupling"
+              ]
+            },
+            "description": "CAM-157. Tractor → semirremolque; camión rígido → acoplado. 409 NOT_A_TRAILER / CANNOT_TOW.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"towingId\": \"{{vehicleId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Enganche: desenganchar",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{trailerId}}/coupling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{trailerId}}",
+                "coupling"
+              ]
+            },
+            "description": "CAM-157."
+          }
+        },
+        {
+          "name": "Cargar cubierta",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tires",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tires"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{$randomInt}}\",\n  \"brand\": \"Michelin\",\n  \"model\": \"X Multi\",\n  \"size\": \"295/80 R22.5\",\n  \"purchaseDate\": \"2026-10-01\",\n  \"cost\": 450000\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('tireId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Montar en delantera izquierda",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/tires/mount",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "tires",
+                "mount"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tireId\": \"{{tireId}}\",\n  \"position\": \"e1-izq\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rotar a trasera derecha exterior",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/tires/rotate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "tires",
+                "rotate"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"e1-izq\",\n  \"to\": \"e2-der-ext\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Posiciones del vehículo (chofer)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/tire-positions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "tire-positions"
+              ]
+            },
+            "description": "CAM-157: todas las posiciones del tipo, con mounted en las que tienen cubierta. Para marcar cubiertas con problemas en el pre-viaje."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pre-trip con una cubierta con problemas (avisa)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{choferToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pre-trip\",\n  \"answers\": [\n    {\n      \"itemId\": \"ext-luces\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-neumaticos\",\n      \"outcome\": \"defect\",\n      \"defect\": {\n        \"severity\": \"non-blocking\",\n        \"description\": \"Cubierta trasera gastada\",\n        \"details\": \"Se ve gastada del lado de afuera\"\n      }\n    },\n    {\n      \"itemId\": \"ext-carroceria\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"ext-fugas\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"int-km\",\n      \"numberValue\": 82430\n    },\n    {\n      \"itemId\": \"int-documentacion\",\n      \"outcome\": \"ok\"\n    },\n    {\n      \"itemId\": \"int-testigos\",\n      \"outcome\": \"ok\"\n    }\n  ],\n  \"tireConditions\": [\n    {\n      \"position\": \"e2-der-ext\",\n      \"conditions\": [\n        \"poco-dibujo\",\n        \"desgaste-irregular\"\n      ]\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/inspections/{{vehicleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inspections",
+                "{{vehicleId}}"
+              ]
+            },
+            "description": "CAM-157: con Neumáticos en defecto, qué cubiertas tienen problemas. El resumen se suma al detalle del defecto, la cubierta queda 'a revisar' y avisa (tire_problem_reported). Requiere una cubierta montada en e2-der-ext y el vehículo sin viaje abierto."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.json().trip) pm.environment.set('tripId', pm.response.json().trip.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cubiertas del vehículo",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/tires",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "tires"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Costo por km por marca",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tires/brand-comparison",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tires",
+                "brand-comparison"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sacar y dar de baja",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vehicles/{{vehicleId}}/tires/unmount",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vehicles",
+                "{{vehicleId}}",
+                "tires",
+                "unmount"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"position\": \"e2-der-ext\",\n  \"retire\": true,\n  \"reason\": \"Gastada\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

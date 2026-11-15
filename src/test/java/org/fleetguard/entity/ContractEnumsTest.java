@@ -36,8 +36,15 @@ class ContractEnumsTest {
 
     @Test
     void inspeccionesYDefectos() {
-        assertContract(InspectionType.class, InspectionType::toJson, InspectionType::fromJson,
-                Map.of(InspectionType.PRE_TRIP, "pre-trip", InspectionType.POST_TRIP, "post-trip"));
+        // CAM-139: on-road solo sale (source de un defecto); fromJson lee el type de POST /inspections,
+        // que no lo acepta. Por eso no pasa por assertContract, que exige ida y vuelta.
+        assertEquals(Map.of(InspectionType.PRE_TRIP, "pre-trip", InspectionType.POST_TRIP, "post-trip",
+                        InspectionType.ON_ROAD, "on-road"),
+                Arrays.stream(InspectionType.values()).collect(java.util.stream.Collectors.toMap(v -> v, InspectionType::toJson)));
+        assertEquals(InspectionType.PRE_TRIP, InspectionType.fromJson("pre-trip"));
+        assertEquals(InspectionType.POST_TRIP, InspectionType.fromJson("post-trip"));
+        assertNull(InspectionType.fromJson("on-road"));
+        assertNull(InspectionType.fromJson(null));
         assertContract(CheckOutcome.class, CheckOutcome::toJson, CheckOutcome::fromJson,
                 Map.of(CheckOutcome.OK, "ok", CheckOutcome.DEFECT, "defect"));
         assertContract(DefectSeverity.class, DefectSeverity::toJson, DefectSeverity::fromJson,
@@ -69,7 +76,13 @@ class ContractEnumsTest {
     void ordenesDeTrabajo() {
         assertContract(WorkOrderStatus.class, WorkOrderStatus::toJson, WorkOrderStatus::fromJson,
                 Map.of(WorkOrderStatus.ASIGNADA, "asignada", WorkOrderStatus.EN_PROCESO, "en_proceso",
+                        WorkOrderStatus.EN_ESPERA, "en_espera",
                         WorkOrderStatus.FINALIZADA, "finalizada", WorkOrderStatus.CANCELADA, "cancelada"));
+        assertContract(WorkOrderPauseReason.class, WorkOrderPauseReason::toJson, WorkOrderPauseReason::fromJson,
+                Map.of(WorkOrderPauseReason.ESPERANDO_REPUESTO, "esperando_repuesto",
+                        WorkOrderPauseReason.ESPERANDO_PROVEEDOR, "esperando_proveedor",
+                        WorkOrderPauseReason.ESPERANDO_VEHICULO, "esperando_vehiculo",
+                        WorkOrderPauseReason.OTRO, "otro"));
         assertContract(WorkOrderSourceType.class, WorkOrderSourceType::toJson, WorkOrderSourceType::fromJson,
                 Map.of(WorkOrderSourceType.SCHEDULED_MAINTENANCE, "scheduled_maintenance",
                         WorkOrderSourceType.DEFECT, "defect", WorkOrderSourceType.MANUAL, "manual"));
@@ -83,14 +96,37 @@ class ContractEnumsTest {
     @Test
     void avisos() {
         assertContract(NotificationType.class, NotificationType::toJson, NotificationType::fromJson,
-                Map.of(NotificationType.WORK_ORDER_ASSIGNED, "work_order_assigned",
-                        NotificationType.WORK_ORDER_UNASSIGNED, "work_order_unassigned",
-                        NotificationType.WORK_ORDER_CANCELLED, "work_order_cancelled",
-                        NotificationType.TRIP_OPEN_REMINDER, "trip_open_reminder",
-                        NotificationType.BLOCKING_DEFECT_REPORTED, "blocking_defect_reported",
-                        NotificationType.WORK_ORDER_FINALIZED, "work_order_finalized",
-                        NotificationType.MAINTENANCE_DUE_SOON, "maintenance_due_soon",
-                        NotificationType.MAINTENANCE_OVERDUE, "maintenance_overdue"));
+                Map.ofEntries(Map.entry(NotificationType.WORK_ORDER_ASSIGNED, "work_order_assigned"),
+                        Map.entry(NotificationType.WORK_ORDER_UNASSIGNED, "work_order_unassigned"),
+                        Map.entry(NotificationType.WORK_ORDER_CANCELLED, "work_order_cancelled"),
+                        Map.entry(NotificationType.TRIP_OPEN_REMINDER, "trip_open_reminder"),
+                        Map.entry(NotificationType.BLOCKING_DEFECT_REPORTED, "blocking_defect_reported"),
+                        Map.entry(NotificationType.WORK_ORDER_FINALIZED, "work_order_finalized"),
+                        Map.entry(NotificationType.MAINTENANCE_DUE_SOON, "maintenance_due_soon"),
+                        Map.entry(NotificationType.MAINTENANCE_OVERDUE, "maintenance_overdue"),
+                        Map.entry(NotificationType.RECURRING_DEFECT, "recurring_defect"),
+                        Map.entry(NotificationType.DOCUMENT_DUE_SOON, "document_due_soon"),
+                        Map.entry(NotificationType.DOCUMENT_EXPIRED, "document_expired"),
+                        Map.entry(NotificationType.VEHICLE_UNAVAILABLE, "vehicle_unavailable"),
+                        Map.entry(NotificationType.VEHICLE_AVAILABLE, "vehicle_available"),
+                        Map.entry(NotificationType.TRIP_KM_ANOMALY, "trip_km_anomaly"),
+                        Map.entry(NotificationType.FUEL_CONSUMPTION_ANOMALY, "fuel_consumption_anomaly"),
+                        Map.entry(NotificationType.TIRE_PROBLEM_REPORTED, "tire_problem_reported"),
+                        Map.entry(NotificationType.DEFECT_RESOLVED, "defect_resolved"),
+                        Map.entry(NotificationType.DEFECT_UNATTENDED, "defect_unattended"),
+                        Map.entry(NotificationType.SCHEDULED_MAINTENANCE_UPCOMING, "scheduled_maintenance_upcoming"),
+                        Map.entry(NotificationType.TRIP_STARTED_WITH_MAINTENANCE, "trip_started_with_maintenance"),
+                        Map.entry(NotificationType.WORK_ORDER_COMMENT, "work_order_comment")));
+    }
+
+    @Test
+    void motivosDeKmFueraDeLoNormal() {
+        Map<TripKmAlertReason, String> expected = Map.of(TripKmAlertReason.ABOVE_AVERAGE, "above_average",
+                TripKmAlertReason.BELOW_AVERAGE, "below_average",
+                TripKmAlertReason.BELOW_VEHICLE_KM, "below_vehicle_km");
+        for (TripKmAlertReason reason : TripKmAlertReason.values()) {
+            assertEquals(expected.get(reason), reason.toJson());
+        }
     }
 
     @Test

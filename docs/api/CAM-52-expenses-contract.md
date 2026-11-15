@@ -3,6 +3,10 @@
 Acompaña a `openapi.yaml` (mismo directorio) con las decisiones que el spec no
 expresa por sí solo.
 
+> Desde CAM-109, `GET /api/expenses` también trae los gastos operativos del vehículo, y los
+> campos de la OT pueden venir en null. Lo que sigue describe los gastos de OT; ver
+> `CAM-109-operating-expenses-contract.md`.
+
 ## Motivación
 
 Desde CAM-63 los gastos se cargan dentro de cada orden de trabajo (`WorkOrderExpense`,

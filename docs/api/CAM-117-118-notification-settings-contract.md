@@ -16,7 +16,8 @@ en el catálogo.
 
 ### 2. Sin configuración guardada rige el default
 Activo, campanita + push, a los admins (lo que hacía la base de CAM-96/CAM-119), y
-anticipación de 7 días / 1000 km para vencimientos. Una fila en
+anticipación de 7 días / 1000 km para vencimientos de planes y de 15 días para
+documentos (CAM-127, solo en días: `supportsLeadKm` es false y un `leadKm` es 422). Una fila en
 `notification_settings` lo pisa; `DELETE` la borra y vuelve al default.
 
 ### 3. Dos clases de aviso

@@ -12,6 +12,9 @@ public record AssignmentDto(
         Long nextDueKm,
         String nextDueDate,
         String status,
-        boolean active
+        boolean active,
+        // CAM-127: el documento que renueva el plan, y si el vencimiento sale de ese documento cargado.
+        String documentType,
+        boolean dueDateFromDocument
 ) {
 }

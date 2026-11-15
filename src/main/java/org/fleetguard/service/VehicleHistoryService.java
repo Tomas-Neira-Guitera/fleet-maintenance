@@ -1,8 +1,11 @@
 package org.fleetguard.service;
 
 import org.fleetguard.dto.DefectDto;
+import org.fleetguard.dto.OccurredOnTripDto;
 import org.fleetguard.dto.VehicleHistoryDto;
+import org.fleetguard.entity.Defect;
 import org.fleetguard.entity.Inspection;
+import org.fleetguard.entity.InspectionType;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.mapper.DefectMapper;
@@ -29,11 +32,12 @@ public class VehicleHistoryService {
     private final UserNameService userNameService;
     private final VehicleHistoryMapper historyMapper;
     private final DefectMapper defectMapper;
+    private final TripDamageService tripDamageService;
 
     public VehicleHistoryService(VehicleRepository vehicleRepository, InspectionRepository inspectionRepository,
                                   DefectRepository defectRepository, MaintenanceCompletionRepository completionRepository,
                                   UserNameService userNameService, VehicleHistoryMapper historyMapper,
-                                  DefectMapper defectMapper) {
+                                  DefectMapper defectMapper, TripDamageService tripDamageService) {
         this.vehicleRepository = vehicleRepository;
         this.inspectionRepository = inspectionRepository;
         this.defectRepository = defectRepository;
@@ -41,6 +45,7 @@ public class VehicleHistoryService {
         this.userNameService = userNameService;
         this.historyMapper = historyMapper;
         this.defectMapper = defectMapper;
+        this.tripDamageService = tripDamageService;
     }
 
     @Transactional(readOnly = true)
@@ -51,16 +56,22 @@ public class VehicleHistoryService {
 
         // Todo defecto sale de una inspección del mismo vehículo: con los choferes de las
         // inspecciones alcanza para resolver también quién reportó cada defecto.
-        List<Inspection> inspections = inspectionRepository.findByVehicleIdOrderByTimestampDesc(vehicleId);
+        // Con el viaje ya cargado: el post-viaje muestra la marca de km de su viaje (CAM-152).
+        List<Inspection> inspections = inspectionRepository.findByVehicleIdWithTripOrderByTimestampDesc(vehicleId);
         Map<String, String> driverNames = userNameService.currentNames(
                 inspections.stream().map(Inspection::getDriverId).toList());
 
-        List<DefectDto> defects = defectRepository.findByVehicleIdWithInspection(vehicleId).stream()
-                .map(defect -> defectMapper.toDto(defect, vehicleId.toString(), vehicle.getPlate(), driverNames))
+        List<Defect> vehicleDefects = defectRepository.findByVehicleIdWithInspection(vehicleId);
+        Map<UUID, OccurredOnTripDto> occurredOnTrip = tripDamageService.occurredOnTrip(vehicleDefects);
+        List<DefectDto> defects = vehicleDefects.stream()
+                .map(defect -> defectMapper.toDto(defect, vehicleId.toString(), vehicle.getPlate(), driverNames,
+                        occurredOnTrip.get(defect.getId())))
                 .toList();
 
         return new VehicleHistoryDto(
+                // CAM-139: el reporte en viaje no es una inspección; su defecto sí está en defects.
                 inspections.stream()
+                        .filter(inspection -> inspection.getType() != InspectionType.ON_ROAD)
                         .map(inspection -> historyMapper.toInspectionItem(inspection, driverNames))
                         .toList(),
                 defects,

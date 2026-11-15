@@ -34,18 +34,40 @@ public class WebConfig implements WebMvcConfigurer {
     }
 
     // Rutas que ya exigen JWT, cada una con su rol: usuarios (CAM-23), gastos (CAM-52) y costos de
-    // un vehículo (CAM-105) son del admin; las inspecciones (CAM-85), del chofer; las push al
-    // navegador (CAM-119) y la campanita (CAM-96), de cualquiera que esté logueado. CAM-73 suma el resto.
+    // un vehículo (CAM-105), los defectos recurrentes (CAM-135), el tiempo fuera de servicio (CAM-134) y la
+    // comparación de vehículos (CAM-140) son del admin; las inspecciones (CAM-85), del chofer; las push al navegador (CAM-119) y la campanita (CAM-96),
+    // de cualquiera que esté logueado. CAM-73 suma el resto.
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(requiring(Role.ADMIN))
-                .addPathPatterns("/users", "/users/**", "/expenses", "/vehicles/*/costs");
-        registry.addInterceptor(requiring(Role.CHOFER)).addPathPatterns("/inspections/**");
+                .addPathPatterns("/users", "/users/**", "/expenses", "/expenses/**", "/vehicles/*/costs", "/defects/recurring",
+                        "/downtime", "/vehicles/comparison", "/maintenance-compliance");
+        // CAM-139: el defecto reportado en viaje también es del chofer.
+        registry.addInterceptor(requiring(Role.CHOFER)).addPathPatterns("/inspections/**", "/vehicles/*/road-defects");
         registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER, Role.TECNICO))
                 .addPathPatterns("/push/**", "/notifications", "/notifications/**");
         // CAM-117/CAM-118: configuración de avisos, solo el admin.
         registry.addInterceptor(requiring(Role.ADMIN))
                 .addPathPatterns("/notification-settings", "/notification-settings/**", "/maintenance-plans/*/notifications");
+        // CAM-127: documentación de los vehículos, solo el admin.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/vehicles/*/documents", "/vehicles/*/documents/**");
+        // CAM-149: los comentarios de una OT, el admin y el técnico (que sea el asignado lo chequea el servicio,
+        // hasta que CAM-69 proteja el resto de /work-orders).
+        registry.addInterceptor(requiring(Role.ADMIN, Role.TECNICO)).addPathPatterns("/work-orders/*/comments");
+        // CAM-154: importar la flota desde un archivo, solo el admin.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/vehicles/import");
+        // CAM-150: plantillas de checklist, solo el admin.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/checklist-templates", "/checklist-templates/**");
+        // CAM-156: el chofer y el admin cargan combustible; editar, borrar y ver el consumo es del admin.
+        registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER)).addPathPatterns("/fuel-loads");
+        // "/fuel-loads/*" y no "/**": ese también matchea "/fuel-loads" y dejaría al chofer sin cargar.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/fuel-loads/*", "/vehicles/*/fuel");
+        // CAM-157: neumáticos, del admin; las posiciones también las lee el chofer para el pre-viaje.
+        registry.addInterceptor(requiring(Role.ADMIN)).addPathPatterns("/tires", "/tires/**", "/vehicles/*/tires",
+                "/vehicles/*/tires/**");
+        registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER)).addPathPatterns("/vehicles/*/tire-positions");
+        // El enganche lo lee también el chofer (pre-viaje); cambiarlo es del admin, y eso lo chequea CouplingController.
+        registry.addInterceptor(requiring(Role.ADMIN, Role.CHOFER)).addPathPatterns("/vehicles/*/coupling");
     }
 
     private JwtAuthInterceptor requiring(Role... roles) {

@@ -1,10 +1,12 @@
 package org.fleetguard.service;
 
 import org.fleetguard.auth.AuthenticatedUser;
+import org.fleetguard.dto.BlockReasonDto;
 import org.fleetguard.dto.ChecklistAnswerDto;
 import org.fleetguard.dto.DefectDetailDto;
 import org.fleetguard.dto.InspectionResultDto;
 import org.fleetguard.dto.InspectionSubmissionDto;
+import org.fleetguard.dto.TireConditionInput;
 import org.fleetguard.entity.CheckOutcome;
 import org.fleetguard.entity.Defect;
 import org.fleetguard.entity.DefectSeverity;
@@ -22,22 +24,25 @@ import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.mapper.InspectionMapper;
 import org.fleetguard.mapper.TripMapper;
-import org.fleetguard.repository.DefectRepository;
 import org.fleetguard.repository.InspectionRepository;
 import org.fleetguard.repository.TripRepository;
 import org.fleetguard.repository.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.fleetguard.event.BlockingDefectReportedEvent;
+import org.fleetguard.event.DefectsReportedEvent;
+import org.fleetguard.event.TripStartedEvent;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.ArgumentCaptor;
 
 import java.lang.reflect.Field;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,6 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -63,11 +69,14 @@ class InspectionServiceTest {
     private final VehicleRepository vehicleRepository = mock(VehicleRepository.class);
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final InspectionRepository inspectionRepository = mock(InspectionRepository.class);
-    private final DefectRepository defectRepository = mock(DefectRepository.class);
+    private final VehicleAvailabilityService availabilityService = mock(VehicleAvailabilityService.class);
     private final VehicleChecklistService checklistService = mock(VehicleChecklistService.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final TripKmAlertService tripKmAlertService = mock(TripKmAlertService.class);
+    private final TireService tireService = mock(TireService.class);
     private final InspectionService service = new InspectionService(vehicleRepository, tripRepository,
-            inspectionRepository, defectRepository, new InspectionMapper(), new TripMapper(), checklistService, new OdometerReadings(5000), eventPublisher);
+            inspectionRepository, new InspectionMapper(), new TripMapper(), checklistService, new OdometerReadings(5000),
+            availabilityService, tripKmAlertService, eventPublisher, tireService, mock(CouplingService.class));
 
     private final AuthenticatedUser driver = new AuthenticatedUser(UUID.randomUUID(), "chofer1", Role.CHOFER);
     private final AuthenticatedUser otherDriver = new AuthenticatedUser(UUID.randomUUID(), "chofer2", Role.CHOFER);
@@ -163,6 +172,95 @@ class InspectionServiceTest {
         assertFalse(saved.isHasBlockingDefect());
     }
 
+    // --- CAM-153: inspección hecha sin conexión ---
+
+    @Test
+    void unaInspeccionHechaSinConexionQuedaConLaHoraEnQueSeHizo() {
+        noOpenTrip();
+        Instant performedAt = Instant.now().minus(Duration.ofHours(3));
+        List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-luces", "defect",
+                null, new DefectDetailDto("non-blocking", "Farol roto", null, null)));
+
+        InspectionResultDto result = service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip",
+                answers, null, performedAt.toString(), UUID.randomUUID().toString()), driver);
+
+        Inspection saved = savedInspection();
+        assertEquals(performedAt, saved.getTimestamp());
+        assertEquals(performedAt.toString(), result.trip().startedAt());
+        Defect defect = saved.getAnswers().stream().map(InspectionAnswer::getDefect).filter(d -> d != null)
+                .findFirst().orElseThrow();
+        assertEquals(performedAt, defect.getCreatedAt());
+    }
+
+    @Test
+    void unPostViajeAnteriorAlInicioDelViajeQuedaEnElInicio() throws Exception {
+        Trip trip = openTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("post-trip", postTripAllOk(), null,
+                trip.getStartedAt().minus(Duration.ofMinutes(10)).toString(), null), driver);
+
+        assertEquals(trip.getStartedAt(), savedInspection().getTimestamp());
+        assertEquals(trip.getStartedAt(), trip.getEndedAt());
+    }
+
+    @Test
+    void unaFechaFuturaOInvalidaSeRechaza() {
+        noOpenTrip();
+        String future = Instant.now().plus(Duration.ofHours(1)).toString();
+
+        assertThrows(InspectionValidationException.class, () -> service.submit(vehicle.getId().toString(),
+                new InspectionSubmissionDto("pre-trip", preTripAllOk(), null, future, null), driver));
+        assertThrows(InspectionValidationException.class, () -> service.submit(vehicle.getId().toString(),
+                new InspectionSubmissionDto("pre-trip", preTripAllOk(), null, "ayer", null), driver));
+        verify(inspectionRepository, never()).save(any());
+    }
+
+    @Test
+    void elMismoEnvioRepetidoDevuelveLaInspeccionGuardadaSinCrearOtra() throws Exception {
+        String submissionId = UUID.randomUUID().toString();
+        Trip trip = new Trip(vehicle, Instant.now().minusSeconds(600), driver.id(), driver.username());
+        setId(trip, UUID.randomUUID());
+        Inspection existing = new Inspection(trip, vehicle.getId(), driver.id().toString(), "chofer1",
+                InspectionType.PRE_TRIP, trip.getStartedAt(), 12345.0, null, false);
+        setId(existing, UUID.randomUUID());
+        existing.setClientSubmissionId(submissionId);
+        when(inspectionRepository.findByClientSubmissionId(submissionId)).thenReturn(Optional.of(existing));
+        // El viaje ya está abierto por esa misma inspección: un pre-viaje nuevo daría 409.
+        when(tripRepository.findFirstByVehicle_IdAndStatus(vehicle.getId(), TripStatus.OPEN)).thenReturn(Optional.of(trip));
+
+        InspectionResultDto result = service.submit(vehicle.getId().toString(),
+                new InspectionSubmissionDto("pre-trip", preTripAllOk(), null, null, submissionId), driver);
+
+        assertEquals(existing.getId().toString(), result.inspection().id());
+        verify(inspectionRepository, never()).save(any());
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    void elIdDeEnvioDeOtroChoferEsUnConflicto() throws Exception {
+        String submissionId = UUID.randomUUID().toString();
+        Trip trip = new Trip(vehicle, Instant.now(), otherDriver.id(), otherDriver.username());
+        Inspection existing = new Inspection(trip, vehicle.getId(), otherDriver.id().toString(), "chofer2",
+                InspectionType.PRE_TRIP, Instant.now(), 12345.0, null, false);
+        when(inspectionRepository.findByClientSubmissionId(submissionId)).thenReturn(Optional.of(existing));
+
+        VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class,
+                () -> service.submit(vehicle.getId().toString(),
+                        new InspectionSubmissionDto("pre-trip", preTripAllOk(), null, null, submissionId), driver));
+        assertEquals("DUPLICATE_SUBMISSION", ex.getErrorCode());
+    }
+
+    @Test
+    void elIdDeEnvioSeGuardaConLaInspeccion() {
+        noOpenTrip();
+        String submissionId = UUID.randomUUID().toString();
+
+        service.submit(vehicle.getId().toString(),
+                new InspectionSubmissionDto("pre-trip", preTripAllOk(), null, null, submissionId), driver);
+
+        assertEquals(submissionId, savedInspection().getClientSubmissionId());
+    }
+
     @Test
     void unPreTripConElViajeYaAbiertoSeRechazaSinGuardarNada() throws Exception {
         openTrip();
@@ -232,13 +330,18 @@ class InspectionServiceTest {
     @Test
     void unPreTripSobreUnVehiculoBloqueadoSeRechazaSinAbrirViaje() {
         noOpenTrip();
-        when(defectRepository.existsOpenBlockingByVehicleId(vehicle.getId())).thenReturn(true);
+        when(availabilityService.reasons(vehicle.getId())).thenReturn(List.of(
+                new BlockReasonDto(BlockReasonDto.BLOCKING_DEFECT, "Defecto bloqueante: Sin frenos"),
+                new BlockReasonDto(BlockReasonDto.EXPIRED_DOCUMENT, "VTV / RTO: venció el 12/10/2026")));
 
         VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class,
                 () -> service.submit(vehicle.getId().toString(),
                         new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver));
 
         assertEquals("VEHICLE_BLOCKED", ex.getErrorCode());
+        // CAM-127: el motivo viaja en el mensaje, para mostrárselo al chofer tal cual.
+        assertEquals(vehicle.getPlate() + " no puede salir: Defecto bloqueante: Sin frenos; VTV / RTO: venció el 12/10/2026.",
+                ex.getMessage());
         verify(tripRepository, never()).save(any());
         verify(inspectionRepository, never()).save(any());
     }
@@ -259,7 +362,8 @@ class InspectionServiceTest {
     @Test
     void unPostTripSeAceptaAunqueElVehiculoEsteBloqueado() throws Exception {
         Trip trip = openTrip();
-        when(defectRepository.existsOpenBlockingByVehicleId(vehicle.getId())).thenReturn(true);
+        when(availabilityService.reasons(vehicle.getId())).thenReturn(List.of(
+                new BlockReasonDto(BlockReasonDto.EXPIRED_DOCUMENT, "VTV / RTO: venció el 12/10/2026")));
 
         service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("post-trip", postTripAllOk(), null), driver);
 
@@ -301,6 +405,26 @@ class InspectionServiceTest {
     }
 
     @Test
+    void lasCubiertasConProblemasVanAlDetalleDelDefectoYQuedanEnCadaCubierta() {
+        noOpenTrip();
+        List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-neumaticos", "defect", null,
+                new DefectDetailDto("non-blocking", "Cubierta pinchada", null, "Pierde de a poco")));
+        List<TireConditionInput> conditions = List.of(new TireConditionInput("e1-izq", List.of("pinchada")));
+        List<TireService.ConditionReport> reports = List.of(new TireService.ConditionReport(null, Set.of()));
+        when(tireService.validateInspectionConditions(vehicle, conditions, true)).thenReturn(reports);
+        when(tireService.summary(vehicle, reports)).thenReturn("Cubiertas: Delantera izquierda: pinchada.");
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", answers, null, null, null,
+                conditions, null), driver);
+
+        // CAM-157: el resumen se suma a lo que escribió el chofer, y cada cubierta queda con el defecto.
+        Defect defect = savedInspection().getAnswers().stream().filter(a -> a.getItemId().equals("ext-neumaticos"))
+                .findFirst().orElseThrow().getDefect();
+        assertEquals("Pierde de a poco\n\nCubiertas: Delantera izquierda: pinchada.", defect.getDetails());
+        verify(tireService).recordInspectionConditions(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void unDefectoNoBloqueanteNoPublicaElEvento() {
         noOpenTrip();
         List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-neumaticos", "defect", null,
@@ -309,6 +433,67 @@ class InspectionServiceTest {
         service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", answers, null), driver);
 
         verify(eventPublisher, never()).publishEvent(any(BlockingDefectReportedEvent.class));
+    }
+
+    @Test
+    void cualquierDefectoPublicaLosControlesQueFallaronParaVerSiSonRecurrentes() {
+        noOpenTrip();
+        List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-neumaticos", "defect", null,
+                new DefectDetailDto("blocking", "Neumático cortado", "http://localhost/foto.jpg")));
+        answers = withAnswer(answers, new ChecklistAnswerDto("ext-luces", "defect", null,
+                new DefectDetailDto("non-blocking", "Foco trasero tenue", null)));
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", answers, null), driver);
+
+        // CAM-135: bloqueantes y no bloqueantes, en un solo evento por inspección.
+        ArgumentCaptor<DefectsReportedEvent> event = ArgumentCaptor.forClass(DefectsReportedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertEquals(vehicle.getId(), event.getValue().vehicleId());
+        assertEquals(vehicle.getPlate(), event.getValue().plate());
+        assertEquals(Set.of("ext-neumaticos", "ext-luces"), Set.copyOf(event.getValue().itemIds()));
+    }
+
+    @Test
+    void unPreTripQueSalePublicaLaSalidaParaVerSiTieneTurnoDeTaller() {
+        noOpenTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver);
+
+        // CAM-143: el listener mira si ese día hay turno y le avisa al admin.
+        ArgumentCaptor<TripStartedEvent> event = ArgumentCaptor.forClass(TripStartedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertEquals(vehicle.getId(), event.getValue().vehicleId());
+        assertEquals(vehicle.getPlate(), event.getValue().plate());
+        assertEquals("chofer1", event.getValue().driverName());
+    }
+
+    @Test
+    void unPreTripConBloqueanteNoSaleYNoPublicaLaSalida() {
+        noOpenTrip();
+        List<ChecklistAnswerDto> answers = withAnswer(preTripAllOk(), new ChecklistAnswerDto("ext-neumaticos", "defect", null,
+                new DefectDetailDto("blocking", "Neumático cortado", "http://localhost/foto.jpg")));
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", answers, null), driver);
+
+        verify(eventPublisher, never()).publishEvent(any(TripStartedEvent.class));
+    }
+
+    @Test
+    void unPostTripNoPublicaLaSalida() throws Exception {
+        openTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("post-trip", postTripAllOk(), null), driver);
+
+        verify(eventPublisher, never()).publishEvent(any(TripStartedEvent.class));
+    }
+
+    @Test
+    void sinDefectosNoPublicaElEventoDeRecurrentes() {
+        noOpenTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver);
+
+        verify(eventPublisher, never()).publishEvent(any(DefectsReportedEvent.class));
     }
 
     @Test
@@ -435,6 +620,30 @@ class InspectionServiceTest {
         // El estado de cada plan se calcula contra este km: uno que vencía a los 120.300 pasa a vencido.
         assertEquals(MaintenanceStatus.VENCIDO,
                 MaintenanceStatusCalculator.computeStatus(120300L, null, vehicle.getOdometerKm(), LocalDate.now()));
+    }
+
+    // --- CAM-152: el km del post-viaje se compara antes de mover el del vehículo ---
+
+    @Test
+    void elPostTripRevisaElKmDelViajeConElKmQueTeniaElVehiculo() throws Exception {
+        vehicle.setOdometerKm(120000);
+        Trip trip = openTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("post-trip",
+                withAnswer(postTripAllOk(), new ChecklistAnswerDto("post-km", null, 120350.7, null)), null), driver);
+
+        // El km del vehículo de antes del post-viaje, no el que deja el post-viaje.
+        verify(tripKmAlertService).check(trip, 120350, 120000, "chofer1");
+        assertEquals(120350, vehicle.getOdometerKm());
+    }
+
+    @Test
+    void elPreTripNoRevisaElKmDelViaje() {
+        noOpenTrip();
+
+        service.submit(vehicle.getId().toString(), new InspectionSubmissionDto("pre-trip", preTripAllOk(), null), driver);
+
+        verify(tripKmAlertService, never()).check(any(), anyLong(), anyLong(), any());
     }
 
     @Test

@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -49,9 +50,10 @@ class MaintenanceAlertServiceTest {
     private final PlanNotificationSettingsService planSettings = mock(PlanNotificationSettingsService.class);
     private final NotificationSettingsService settings = mock(NotificationSettingsService.class);
     private final NotificationService notificationService = mock(NotificationService.class);
+    private final LinkedDocumentDueDates linkedDueDates = mock(LinkedDocumentDueDates.class);
     private final MaintenanceAlertService service = new MaintenanceAlertService(assignmentRepository, vehicleRepository,
             logRepository, planSettings, settings, notificationService,
-            new NotificationDispatcher(mock(PlatformTransactionManager.class)), Clock.fixed(NOW, ZoneOffset.UTC));
+            new NotificationDispatcher(mock(PlatformTransactionManager.class)), linkedDueDates, Clock.fixed(NOW, ZoneOffset.UTC));
 
     private Vehicle vehicle;
     private MaintenancePlan timePlan;
@@ -195,5 +197,16 @@ class MaintenanceAlertServiceTest {
                 .notifyConfiguredRecipients(any(), any(), any(), any(), any());
 
         assertEquals(0, service.checkAll());
+    }
+
+    @Test
+    void unPlanQueVenceConUnDocumentoCargadoNoAvisaPorSuCuenta() throws Exception {
+        VehicleMaintenanceAssignment a = assignment(timePlan, null, TODAY.minusDays(2));
+        when(assignmentRepository.findByActiveTrue()).thenReturn(List.of(a));
+        when(linkedDueDates.documentDueDate(a)).thenReturn(Optional.of(TODAY.minusDays(2)));
+
+        // CAM-127: el aviso sale por el documento (DocumentAlertService), no dos veces.
+        assertEquals(0, service.checkAll());
+        verify(notificationService, never()).notifyConfiguredRecipients(any(), any(), any(), any(), any());
     }
 }

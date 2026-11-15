@@ -1,5 +1,7 @@
 package org.fleetguard.service;
 
+import org.fleetguard.dto.BlockReasonDto;
+import org.fleetguard.dto.CouplingDto;
 import org.fleetguard.dto.CreateVehicleRequest;
 import org.fleetguard.event.OdometerChangedEvent;
 import org.springframework.context.ApplicationEventPublisher;
@@ -17,12 +19,15 @@ import org.fleetguard.entity.Trip;
 import org.fleetguard.entity.TripStatus;
 import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleMaintenanceAssignment;
+import org.fleetguard.entity.TrailerCoupling;
+import org.fleetguard.entity.VehicleType;
 import org.fleetguard.exception.MaintenanceConflictException;
 import org.fleetguard.exception.VehicleNotFoundException;
 import org.fleetguard.exception.VehicleStateConflictException;
 import org.fleetguard.exception.VehicleValidationException;
 import org.fleetguard.mapper.VehicleMapper;
-import org.fleetguard.repository.DefectRepository;
+import org.fleetguard.repository.TireMountingRepository;
+import org.fleetguard.repository.TrailerCouplingRepository;
 import org.fleetguard.repository.TripRepository;
 import org.fleetguard.repository.VehicleMaintenanceAssignmentRepository;
 import org.fleetguard.repository.VehicleRepository;
@@ -34,10 +39,10 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -48,25 +53,38 @@ public class VehicleService {
     private final VehicleRepository vehicleRepository;
     private final TripRepository tripRepository;
     private final VehicleMaintenanceAssignmentRepository assignmentRepository;
-    private final DefectRepository defectRepository;
+    private final VehicleAvailabilityService availabilityService;
     private final UserNameService userNameService;
     private final VehicleMapper vehicleMapper;
+    private final KmPerDayEstimator kmPerDayEstimator;
+    private final ScheduledToday scheduledToday;
 
     private static final int MIN_YEAR = 1980;
 
     private final ApplicationEventPublisher eventPublisher;
+    private final ChecklistTemplateService checklistTemplateService;
+    private final TireMountingRepository tireMountingRepository;
+    private final TrailerCouplingRepository couplingRepository;
 
     public VehicleService(VehicleRepository vehicleRepository, TripRepository tripRepository,
                            VehicleMaintenanceAssignmentRepository assignmentRepository,
-                           DefectRepository defectRepository, UserNameService userNameService,
-                           VehicleMapper vehicleMapper, ApplicationEventPublisher eventPublisher) {
+                           VehicleAvailabilityService availabilityService, UserNameService userNameService,
+                           VehicleMapper vehicleMapper, KmPerDayEstimator kmPerDayEstimator,
+                           ApplicationEventPublisher eventPublisher, ScheduledToday scheduledToday,
+                           ChecklistTemplateService checklistTemplateService,
+                           TireMountingRepository tireMountingRepository, TrailerCouplingRepository couplingRepository) {
+        this.checklistTemplateService = checklistTemplateService;
+        this.tireMountingRepository = tireMountingRepository;
+        this.couplingRepository = couplingRepository;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.assignmentRepository = assignmentRepository;
-        this.defectRepository = defectRepository;
+        this.availabilityService = availabilityService;
         this.userNameService = userNameService;
         this.vehicleMapper = vehicleMapper;
+        this.kmPerDayEstimator = kmPerDayEstimator;
         this.eventPublisher = eventPublisher;
+        this.scheduledToday = scheduledToday;
     }
 
     /** CAM-15: orden alfabético por patente, no el orden de inserción en la base. */
@@ -74,15 +92,31 @@ public class VehicleService {
         // Viajes abiertos, bloqueos y nombres se traen de una vez, no con una consulta por vehículo.
         Map<UUID, Trip> openTripByVehicle = tripRepository.findByStatusWithVehicle(TripStatus.OPEN).stream()
                 .collect(Collectors.toMap(trip -> trip.getVehicle().getId(), trip -> trip, (first, second) -> first));
-        Set<UUID> blockedIds = Set.copyOf(defectRepository.findVehicleIdsWithOpenBlockingDefect());
         Map<String, String> names = userNameService.currentNames(openTripByVehicle.values().stream()
                 .map(Trip::getOpenedById).filter(Objects::nonNull).map(UUID::toString).toList());
+        List<Vehicle> vehicles = vehicleRepository.findByActive(active);
+        Map<UUID, List<BlockReasonDto>> reasons = availabilityService.reasonsFor(vehicles.stream().map(Vehicle::getId).toList());
+        Map<UUID, Instant> scheduled = scheduledToday.forAll();
+        // CAM-157: con quién está enganchado cada uno, para separar y mostrar remolques sin un pedido por fila.
+        Map<UUID, CouplingDto.VehicleRef> coupledWith = new HashMap<>();
+        for (TrailerCoupling coupling : couplingRepository.findOpenWithVehicles()) {
+            String since = coupling.getCoupledAt().toString();
+            coupledWith.put(coupling.getTrailer().getId(), ref(coupling.getTowing(), since));
+            coupledWith.put(coupling.getTowing().getId(), ref(coupling.getTrailer(), since));
+        }
 
-        return vehicleRepository.findByActive(active).stream()
+        return vehicles.stream()
                 .sorted(Comparator.comparing(Vehicle::getPlate, String.CASE_INSENSITIVE_ORDER))
                 .map(vehicle -> vehicleMapper.toSummary(vehicle,
-                        currentTrip(openTripByVehicle.get(vehicle.getId()), names), blockedIds.contains(vehicle.getId())))
+                        currentTrip(openTripByVehicle.get(vehicle.getId()), names),
+                        reasons.getOrDefault(vehicle.getId(), List.of()),
+                        scheduled.get(vehicle.getId()), coupledWith.get(vehicle.getId())))
                 .toList();
+    }
+
+    private static CouplingDto.VehicleRef ref(Vehicle vehicle, String since) {
+        return new CouplingDto.VehicleRef(vehicle.getId().toString(), vehicle.getPlate(),
+                VehicleType.toJson(vehicle.getVehicleType()), since);
     }
 
     /** GET /api/vehicles/{id} -- CAM-22. Incluye vehículos dados de baja. */
@@ -102,8 +136,8 @@ public class VehicleService {
         Trip openTrip = tripRepository.findFirstByVehicle_IdAndStatus(vehicle.getId(), TripStatus.OPEN).orElse(null);
         Map<String, String> names = openTrip == null || openTrip.getOpenedById() == null ? Map.of()
                 : userNameService.currentNames(List.of(openTrip.getOpenedById().toString()));
-        return vehicleMapper.toSummary(vehicle, currentTrip(openTrip, names),
-                defectRepository.existsOpenBlockingByVehicleId(vehicle.getId()));
+        return vehicleMapper.toSummary(vehicle, currentTrip(openTrip, names), availabilityService.reasons(vehicle.getId()),
+                scheduledToday.forVehicle(vehicle.getId()), null);
     }
 
     /** CAM-87: quién tiene el vehículo y desde cuándo. openedBy es null en viajes sin chofer cargado. */
@@ -132,11 +166,20 @@ public class VehicleService {
                 .filter(VehicleMaintenanceAssignment::isActive)
                 .collect(Collectors.groupingBy(VehicleMaintenanceAssignment::getVehicleId));
 
+        Map<UUID, List<BlockReasonDto>> reasons = availabilityService.reasonsFor(vehicles.stream().map(Vehicle::getId).toList());
+
         LocalDate today = LocalDate.now();
+        // CAM-137: solo hace falta el ritmo de los vehículos con algún plan por km.
+        List<Vehicle> withKmPlans = vehicles.stream()
+                .filter(vehicle -> byVehicle.getOrDefault(vehicle.getId(), List.of()).stream()
+                        .anyMatch(assignment -> assignment.getNextDueKm() != null))
+                .toList();
+        Map<UUID, Double> kmPerDay = kmPerDayEstimator.kmPerDay(withKmPlans, Instant.now());
         List<FleetStatusRowDto> rows = new ArrayList<>();
         for (Vehicle vehicle : vehicles) {
             List<VehicleMaintenanceAssignment> assignments = byVehicle.getOrDefault(vehicle.getId(), List.of());
-            rows.add(buildRow(vehicle, assignments, today));
+            rows.add(buildRow(vehicle, assignments, today, reasons.getOrDefault(vehicle.getId(), List.of()),
+                    kmPerDay.get(vehicle.getId())));
         }
 
         if (statusFilter != null) {
@@ -156,7 +199,8 @@ public class VehicleService {
         return new PagedResponse<>(page, pageSize, total, rows.subList(fromIndex, toIndex));
     }
 
-    private FleetStatusRowDto buildRow(Vehicle vehicle, List<VehicleMaintenanceAssignment> assignments, LocalDate today) {
+    private FleetStatusRowDto buildRow(Vehicle vehicle, List<VehicleMaintenanceAssignment> assignments, LocalDate today,
+                                       List<BlockReasonDto> blockReasons, Double kmPerDay) {
         long currentKm = vehicle.getOdometerKm();
 
         List<MaintenanceStatus> statuses = assignments.stream()
@@ -168,22 +212,25 @@ public class VehicleService {
                 .max(Comparator.comparingInt(MaintenanceStatus::severity))
                 .orElse(MaintenanceStatus.AL_DIA);
 
-        NextMaintenanceDto nextMaintenance = pickMostUrgent(assignments, currentKm, today);
+        NextMaintenanceDto nextMaintenance = pickMostUrgent(assignments, currentKm, today, kmPerDay);
 
         return new FleetStatusRowDto(
                 vehicle.getId().toString(),
                 vehicle.getPlate(),
                 vehicle.getBrand(),
                 vehicle.getModel(),
-                vehicle.getVehicleType(),
+                VehicleType.toJson(vehicle.getVehicleType()),
                 currentKm,
                 healthScore,
                 vehicleStatus.toJson(),
-                nextMaintenance
+                nextMaintenance,
+                !blockReasons.isEmpty(),
+                blockReasons
         );
     }
 
-    private NextMaintenanceDto pickMostUrgent(List<VehicleMaintenanceAssignment> assignments, long currentKm, LocalDate today) {
+    private NextMaintenanceDto pickMostUrgent(List<VehicleMaintenanceAssignment> assignments, long currentKm, LocalDate today,
+                                              Double kmPerDay) {
         VehicleMaintenanceAssignment best = null;
         MaintenanceStatus bestStatus = null;
         double bestUrgency = -1;
@@ -208,6 +255,8 @@ public class VehicleService {
         Long remainingDays = best.getNextDueDate() != null
                 ? ChronoUnit.DAYS.between(today, best.getNextDueDate())
                 : null;
+        // CAM-137: solo informativa, el estado de arriba ya salió de los km reales.
+        LocalDate estimatedDueDate = KmPerDayEstimator.estimatedDueDate(remainingKm, kmPerDay, today);
 
         return new NextMaintenanceDto(
                 best.getId().toString(),
@@ -216,7 +265,8 @@ public class VehicleService {
                 best.getNextDueDate() == null ? null : best.getNextDueDate().toString(),
                 best.getNextDueKm(),
                 remainingDays,
-                remainingKm
+                remainingKm,
+                estimatedDueDate == null ? null : estimatedDueDate.toString()
         );
     }
 
@@ -250,6 +300,31 @@ public class VehicleService {
     /** POST /api/vehicles -- CAM-25. */
     @Transactional
     public VehicleSummaryDto create(CreateVehicleRequest request) {
+        List<FieldValidationErrorDetail> details = validateNew(request);
+        if (!details.isEmpty()) {
+            throw new VehicleValidationException("Datos inválidos para crear el vehículo", details);
+        }
+
+        String templateId = request.checklistTemplateId() == null || request.checklistTemplateId().isBlank()
+                ? null : request.checklistTemplateId().trim();
+        if (templateId != null) {
+            checklistTemplateService.requireExists(templateId, "checklistTemplateId");
+        }
+
+        if (vehicleRepository.existsByPlateIgnoreCase(request.plate())) {
+            throw new VehicleStateConflictException("DUPLICATE_PLATE",
+                    "Ya existe un vehículo con la patente " + request.plate());
+        }
+
+        Vehicle vehicle = vehicleRepository.save(newVehicle(request));
+        if (templateId != null) {
+            checklistTemplateService.applyToNewVehicle(templateId, vehicle.getId());
+        }
+        return vehicleMapper.toSummary(vehicle, null, List.of());
+    }
+
+    /** Reglas de un alta (CAM-25); CAM-154 las usa también para cada fila importada. */
+    static List<FieldValidationErrorDetail> validateNew(CreateVehicleRequest request) {
         List<FieldValidationErrorDetail> details = new ArrayList<>();
         if (request.plate() == null || request.plate().isBlank()) {
             details.add(new FieldValidationErrorDetail("plate", "La patente es obligatoria"));
@@ -260,25 +335,27 @@ public class VehicleService {
         if (request.model() == null || request.model().isBlank()) {
             details.add(new FieldValidationErrorDetail("model", "El modelo es obligatorio"));
         }
+        if (request.vehicleType() == null || request.vehicleType().isBlank()) {
+            details.add(new FieldValidationErrorDetail("vehicleType", "El tipo es obligatorio: define sus cubiertas"));
+        } else if (VehicleType.fromText(request.vehicleType()) == null) {
+            details.add(new FieldValidationErrorDetail("vehicleType", "No es un tipo del catálogo"));
+        }
         validateYear(request.year(), details);
-        if (!details.isEmpty()) {
-            throw new VehicleValidationException("Datos inválidos para crear el vehículo", details);
+        if (request.odometerKm() != null && request.odometerKm() < 0) {
+            details.add(new FieldValidationErrorDetail("odometerKm", "Los kilómetros no pueden ser negativos"));
         }
+        return details;
+    }
 
-        if (vehicleRepository.existsByPlateIgnoreCase(request.plate())) {
-            throw new VehicleStateConflictException("DUPLICATE_PLATE",
-                    "Ya existe un vehículo con la patente " + request.plate());
-        }
-
+    static Vehicle newVehicle(CreateVehicleRequest request) {
         Vehicle vehicle = new Vehicle(request.plate(), request.brand(), request.model());
-        vehicle.setVehicleType(request.vehicleType());
+        vehicle.setVehicleType(VehicleType.fromText(request.vehicleType()));
         vehicle.setYear(request.year());
         vehicle.setChassisNumber(request.chassisNumber());
         if (request.odometerKm() != null) {
             vehicle.setOdometerKm(request.odometerKm());
         }
-        vehicle = vehicleRepository.save(vehicle);
-        return vehicleMapper.toSummary(vehicle, null, false);
+        return vehicle;
     }
 
     /** PATCH /api/vehicles/{id} -- CAM-25. Campos ausentes no se modifican. */
@@ -309,9 +386,19 @@ public class VehicleService {
         if (request.model() != null && request.model().isBlank()) {
             details.add(new FieldValidationErrorDetail("model", "El modelo no puede quedar vacío"));
         }
+        VehicleType newType = null;
+        if (request.vehicleType() != null) {
+            newType = VehicleType.fromText(request.vehicleType());
+            if (newType == null) {
+                details.add(new FieldValidationErrorDetail("vehicleType", "No es un tipo del catálogo"));
+            }
+        }
         validateYear(request.year(), details);
         if (!details.isEmpty()) {
             throw new VehicleValidationException("Datos inválidos para editar el vehículo", details);
+        }
+        if (newType != null && newType != vehicle.getVehicleType()) {
+            requireTypeChangeAllowed(vehicle, newType);
         }
 
         if (request.brand() != null) {
@@ -320,8 +407,8 @@ public class VehicleService {
         if (request.model() != null) {
             vehicle.setModel(request.model());
         }
-        if (request.vehicleType() != null) {
-            vehicle.setVehicleType(request.vehicleType());
+        if (newType != null) {
+            vehicle.setVehicleType(newType);
         }
         if (request.year() != null) {
             vehicle.setYear(request.year());
@@ -354,7 +441,29 @@ public class VehicleService {
                 .orElseThrow(() -> new VehicleNotFoundException(id));
     }
 
-    private void validateYear(Integer year, List<FieldValidationErrorDetail> details) {
+    /**
+     * CAM-157: el tipo define las cubiertas y si es remolque. No se cambia si deja cubiertas en posiciones que el
+     * tipo nuevo no tiene, ni mientras está enganchado (o arrastrando un remolque).
+     */
+    private void requireTypeChangeAllowed(Vehicle vehicle, VehicleType newType) {
+        List<String> orphan = tireMountingRepository.findByVehicle_IdAndRemovedAtIsNull(vehicle.getId()).stream()
+                .filter(m -> !newType.has(m.getPosition()))
+                .map(m -> vehicle.getVehicleType() == null ? m.getPosition().toJson()
+                        : vehicle.getVehicleType().labelOf(m.getPosition()))
+                .toList();
+        if (!orphan.isEmpty()) {
+            throw new VehicleStateConflictException("TIRES_ON_REMOVED_POSITIONS",
+                    "Sacá primero las cubiertas de " + String.join(", ", orphan) + ": un " + newType.label()
+                            + " no tiene esas posiciones");
+        }
+        if (couplingRepository.findFirstByTrailer_IdAndUncoupledAtIsNull(vehicle.getId()).isPresent()
+                || couplingRepository.findFirstByTowing_IdAndUncoupledAtIsNull(vehicle.getId()).isPresent()) {
+            throw new VehicleStateConflictException("VEHICLE_COUPLED",
+                    "Desenganchá primero el remolque para cambiar el tipo");
+        }
+    }
+
+    private static void validateYear(Integer year, List<FieldValidationErrorDetail> details) {
         if (year == null) {
             return;
         }
