@@ -10,7 +10,7 @@ import java.util.UUID;
 
 public interface TireMountingRepository extends JpaRepository<TireMounting, UUID> {
 
-    /** Todos los montajes con su cubierta y su vehículo, para sumar km (CAM-157). */
+    /** Todos los montajes con su neumático y su vehículo, para sumar km (CAM-157). */
     @Query("select m from TireMounting m join fetch m.tire join fetch m.vehicle order by m.mountedAt asc")
     List<TireMounting> findAllWithTireAndVehicle();
 

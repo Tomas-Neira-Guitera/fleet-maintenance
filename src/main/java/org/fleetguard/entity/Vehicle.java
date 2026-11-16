@@ -27,7 +27,7 @@ public class Vehicle {
     @Column(nullable = false)
     private String model;
 
-    // Del catálogo; define las cubiertas (CAM-157). Null: sin definir (datos de cuando era texto libre).
+    // Del catálogo; define los neumáticos (CAM-157). Null: sin definir (datos de cuando era texto libre).
     @Convert(converter = VehicleTypeConverter.class)
     @Column(name = "vehicle_type")
     private VehicleType vehicleType;

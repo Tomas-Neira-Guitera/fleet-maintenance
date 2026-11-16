@@ -2,6 +2,7 @@ package org.fleetguard.controller;
 
 import org.fleetguard.dto.ApplyChecklistTemplateResultDto;
 import org.fleetguard.dto.ChecklistTemplateDto;
+import org.fleetguard.dto.UnapplyChecklistTemplateResultDto;
 import org.fleetguard.entity.Role;
 import org.fleetguard.exception.ChecklistTemplateNotFoundException;
 import org.fleetguard.service.ChecklistTemplateService;
@@ -36,7 +37,7 @@ class ChecklistTemplateControllerTest extends WebMvcTestBase {
 
     private static final ChecklistTemplateDto TEMPLATE = new ChecklistTemplateDto("t-1", "Frigorífico",
             List.of(new ChecklistTemplateDto.Item("i-1", "Temperatura de la cámara", "number", "interior")),
-            "2026-11-10T03:00:00Z");
+            "2026-11-10T03:00:00Z", List.of("v-1"));
 
     @MockBean
     private ChecklistTemplateService service;
@@ -87,6 +88,19 @@ class ChecklistTemplateControllerTest extends WebMvcTestBase {
     }
 
     @Test
+    void quitarDevuelveLoBorradoPorVehiculo() throws Exception {
+        when(service.unapply(eq("t-1"), any())).thenReturn(new UnapplyChecklistTemplateResultDto("t-1", 1, List.of(
+                new UnapplyChecklistTemplateResultDto.VehicleResult("v-1", "AA111AA", 1, List.of("Temperatura de la cámara")))));
+
+        mvc.perform(post("/checklist-templates/t-1/unapply").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"vehicleIds\": [\"v-1\"]}")
+                        .header(HttpHeaders.AUTHORIZATION, loginAs("admin", Role.ADMIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.removed").value(1))
+                .andExpect(jsonPath("$.vehicles[0].removedLabels[0]").value("Temperatura de la cámara"));
+    }
+
+    @Test
     void unaPlantillaInexistenteDa404() throws Exception {
         doThrow(new ChecklistTemplateNotFoundException("t-9")).when(service).delete("t-9");
 
@@ -103,6 +117,10 @@ class ChecklistTemplateControllerTest extends WebMvcTestBase {
         mvc.perform(post("/checklist-templates/t-1/apply").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"vehicleIds\": [\"v-1\"]}")
                         .header(HttpHeaders.AUTHORIZATION, loginAs("tecnico1", Role.TECNICO)))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/checklist-templates/t-1/unapply").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"vehicleIds\": [\"v-1\"]}")
+                        .header(HttpHeaders.AUTHORIZATION, loginAs("chofer1", Role.CHOFER)))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(service);
     }

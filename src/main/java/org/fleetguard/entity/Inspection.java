@@ -59,6 +59,10 @@ public class Inspection {
     @Column(name = "client_submission_id", unique = true)
     private String clientSubmissionId;
 
+    // CAM-159: en la de un remolque, la del vehículo que lo arrastraba en ese pre-viaje (mismo viaje). Null en las demás.
+    @Column(name = "towing_inspection_id")
+    private UUID towingInspectionId;
+
     @OneToMany(mappedBy = "inspection", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<InspectionAnswer> answers = new ArrayList<>();
 
@@ -134,5 +138,13 @@ public class Inspection {
 
     public void setClientSubmissionId(String clientSubmissionId) {
         this.clientSubmissionId = clientSubmissionId;
+    }
+
+    public UUID getTowingInspectionId() {
+        return towingInspectionId;
+    }
+
+    public void setTowingInspectionId(UUID towingInspectionId) {
+        this.towingInspectionId = towingInspectionId;
     }
 }

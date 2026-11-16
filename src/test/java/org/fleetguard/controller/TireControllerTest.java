@@ -52,7 +52,7 @@ class TireControllerTest extends WebMvcTestBase {
     }
 
     @Test
-    void laComparacionPorMarcaNoSeConfundeConElIdDeUnaCubierta() throws Exception {
+    void laComparacionPorMarcaNoSeConfundeConElIdDeUnNeumatico() throws Exception {
         when(service.brandComparison()).thenReturn(new TireBrandComparisonDto(1000, List.of(
                 new TireBrandComparisonDto.Brand("Fate", 1, 0, 10500, new BigDecimal("200000"), new BigDecimal("19.05"), 10500))));
 
@@ -62,7 +62,7 @@ class TireControllerTest extends WebMvcTestBase {
     }
 
     @Test
-    void unaCubiertaInexistenteDa404() throws Exception {
+    void unNeumaticoInexistenteDa404() throws Exception {
         when(service.get("t-9")).thenThrow(new TireNotFoundException("t-9"));
 
         mvc.perform(get("/tires/t-9").header(HttpHeaders.AUTHORIZATION, loginAs("admin", Role.ADMIN)))
@@ -89,7 +89,7 @@ class TireControllerTest extends WebMvcTestBase {
     }
 
     @Test
-    void elChoferNoMontaCubiertas() throws Exception {
+    void elChoferNoMontaNeumaticos() throws Exception {
         mvc.perform(post("/vehicles/v-1/tires/mount").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"tireId\": \"t-1\", \"position\": \"del-izq\"}")
                         .header(HttpHeaders.AUTHORIZATION, loginAs("chofer1", Role.CHOFER)))

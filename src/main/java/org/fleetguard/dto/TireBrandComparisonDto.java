@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * GET /api/tires/brand-comparison (CAM-157): costo por km por marca, de las cubiertas con al menos minKm
+ * GET /api/tires/brand-comparison (CAM-157): costo por km por marca, de los neumáticos con al menos minKm
  * km. costPerKm = costo total / km totales. Ordenado del más barato por km al más caro.
  */
 public record TireBrandComparisonDto(long minKm, List<Brand> brands) {

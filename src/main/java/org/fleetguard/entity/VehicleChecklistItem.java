@@ -42,6 +42,10 @@ public class VehicleChecklistItem {
     @Column(nullable = false)
     private boolean active = true;
 
+    // CAM-159: la plantilla de la que se copió (null si lo cargó el admin). Con esto se puede quitar la plantilla.
+    @Column(name = "template_id")
+    private UUID templateId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -55,7 +59,13 @@ public class VehicleChecklistItem {
 
     public VehicleChecklistItem(UUID vehicleId, String label, ChecklistItemType type, ChecklistSection section,
                                 boolean active) {
+        this(vehicleId, label, type, section, active, null);
+    }
+
+    public VehicleChecklistItem(UUID vehicleId, String label, ChecklistItemType type, ChecklistSection section,
+                                boolean active, UUID templateId) {
         this.active = active;
+        this.templateId = templateId;
         this.vehicleId = vehicleId;
         this.label = label;
         this.type = type;
@@ -98,5 +108,13 @@ public class VehicleChecklistItem {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public UUID getTemplateId() {
+        return templateId;
+    }
+
+    public void setTemplateId(UUID templateId) {
+        this.templateId = templateId;
     }
 }

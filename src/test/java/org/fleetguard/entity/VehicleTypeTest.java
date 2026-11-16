@@ -9,11 +9,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// CAM-157: el catálogo de tipos define las cubiertas de cada vehículo y qué remolque arrastra.
+// CAM-157: el catálogo de tipos define los neumáticos de cada vehículo y qué remolque arrastra.
 class VehicleTypeTest {
 
     @Test
-    void cadaTipoTieneSusCubiertasMasElAuxilio() {
+    void cadaTipoTieneSusNeumaticosMasElAuxilio() {
         assertEquals(5, VehicleType.UTILITARIO.positions().size());
         assertEquals(7, VehicleType.CAMION_4X2.positions().size());
         assertEquals(11, VehicleType.CAMION_6X4.positions().size());

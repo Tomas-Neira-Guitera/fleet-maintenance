@@ -21,8 +21,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * CAM-157: lo que el chofer vio en una cubierta en una inspección. Vale mientras su defecto esté abierto y la
- * cubierta siga montada; resolver el defecto (o sacar la cubierta) la deja de nuevo sin problemas.
+ * CAM-157: lo que el chofer vio en un neumático en una inspección. Vale mientras su defecto esté abierto y la
+ * neumático siga montado; resolver el defecto (o sacar el neumático) lo deja de nuevo sin problemas.
  */
 @Entity
 @Table(name = "tire_condition_reports")
@@ -81,7 +81,7 @@ public class TireConditionReport {
         this.defect = defect;
     }
 
-    /** Sigue valiendo: el defecto no se resolvió y la cubierta está montada. */
+    /** Sigue valiendo: el defecto no se resolvió y el neumático está montado. */
     public boolean isActive() {
         return tire.getStatus() == TireStatus.MOUNTED && (defect == null || !"resuelto".equals(defect.getStatus()));
     }

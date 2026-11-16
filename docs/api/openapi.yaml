@@ -348,7 +348,7 @@ paths:
 
   /api/tires:
     get:
-      summary: Cubiertas (CAM-157)
+      summary: Neumáticos (CAM-157)
       description: Solo ADMIN. Ver CAM-157-tires-contract.md.
       security:
         - bearerAuth: []
@@ -373,7 +373,7 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
     post:
-      summary: Cargar una cubierta (CAM-157)
+      summary: Cargar un neumático (CAM-157)
       description: Queda en stock.
       security:
         - bearerAuth: []
@@ -397,9 +397,9 @@ paths:
 
   /api/tires/brand-comparison:
     get:
-      summary: Costo por km por marca de cubierta (CAM-157)
+      summary: Costo por km por marca de neumático (CAM-157)
       description: >
-        Solo ADMIN. Costo total sobre km totales de las cubiertas de cada marca con al menos minKm km,
+        Solo ADMIN. Costo total sobre km totales de los neumáticos de cada marca con al menos minKm km,
         del más barato por km al más caro.
       security:
         - bearerAuth: []
@@ -432,7 +432,7 @@ paths:
         required: true
         schema: { type: string }
     get:
-      summary: Una cubierta con dónde estuvo y sus mediciones (CAM-157)
+      summary: Un neumático con dónde estuvo y sus mediciones (CAM-157)
       security:
         - bearerAuth: []
       responses:
@@ -449,12 +449,12 @@ paths:
                     items: { $ref: "#/components/schemas/TireMounting" }
                   reports:
                     type: array
-                    description: Lo que reportaron los choferes de esta cubierta, del más nuevo al más viejo.
+                    description: Lo que reportaron los choferes de este neumático, del más nuevo al más viejo.
                     items: { $ref: "#/components/schemas/TireConditionReport" }
         "404":
           description: TIRE_NOT_FOUND
     put:
-      summary: Editar los datos de una cubierta (CAM-157)
+      summary: Editar los datos de un neumático (CAM-157)
       security:
         - bearerAuth: []
       requestBody:
@@ -477,8 +477,8 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
     delete:
-      summary: Borrar una cubierta cargada por error (CAM-157)
-      description: Si ya estuvo montada, 409 TIRE_HAS_HISTORY (se da de baja).
+      summary: Borrar un neumático cargado por error (CAM-157)
+      description: Si ya estuvo montado, 409 TIRE_HAS_HISTORY (se da de baja).
       security:
         - bearerAuth: []
       responses:
@@ -491,8 +491,8 @@ paths:
 
   /api/tires/{tireId}/retire:
     post:
-      summary: Dar de baja una cubierta del stock (CAM-157)
-      description: Una montada se da de baja al sacarla (409 TIRE_MOUNTED).
+      summary: Dar de baja un neumático del stock (CAM-157)
+      description: Uno montado se da de baja al sacarlo (409 TIRE_MOUNTED).
       security:
         - bearerAuth: []
       parameters:
@@ -519,7 +519,7 @@ paths:
 
   /api/vehicles/{id}/tires:
     get:
-      summary: Cubiertas del vehículo por posición, con su historial (CAM-157)
+      summary: Neumáticos del vehículo por posición, con su historial (CAM-157)
       security:
         - bearerAuth: []
       parameters:
@@ -615,7 +615,7 @@ paths:
 
   /api/vehicles/{id}/tires/mount:
     post:
-      summary: Montar una cubierta del stock, o cambiar la que hay (CAM-157)
+      summary: Montar un neumático del stock, o cambiar el que hay (CAM-157)
       security:
         - bearerAuth: []
       parameters:
@@ -637,7 +637,7 @@ paths:
                   type: string
                   enum: [stock, retired]
                   nullable: true
-                  description: Si la posición está ocupada, qué pasa con la cubierta que estaba. Sin esto, 409 POSITION_OCCUPIED.
+                  description: Si la posición está ocupada, qué pasa con el neumático que estaba. Sin esto, 409 POSITION_OCCUPIED.
                 retiredReason: { type: string, nullable: true }
       responses:
         "200":
@@ -653,7 +653,7 @@ paths:
 
   /api/vehicles/{id}/tires/unmount:
     post:
-      summary: Sacar una cubierta al stock o darla de baja (CAM-157)
+      summary: Sacar un neumático al stock o darlo de baja (CAM-157)
       security:
         - bearerAuth: []
       parameters:
@@ -684,7 +684,7 @@ paths:
 
   /api/vehicles/{id}/tires/rotate:
     post:
-      summary: Rotar una cubierta a otra posición; si está ocupada, se intercambian (CAM-157)
+      summary: Rotar un neumático a otra posición; si está ocupada, se intercambian (CAM-157)
       security:
         - bearerAuth: []
       parameters:
@@ -716,10 +716,10 @@ paths:
 
   /api/vehicles/{id}/tire-positions:
     get:
-      summary: Posiciones del vehículo, para marcar cubiertas con problemas en el pre-viaje (CAM-157)
+      summary: Posiciones del vehículo, para marcar neumáticos con problemas en el pre y el post-viaje (CAM-157)
       description: >
-        ADMIN o CHOFER. Todas las del tipo, auxilio incluido, con `mounted` en las que tienen cubierta (solo esas
-        se pueden reportar). Sin tipo o en un remolque, positions vacío.
+        ADMIN o CHOFER. Todas las del tipo, auxilio incluido, con `mounted` en las que tienen neumático (solo esas
+        se pueden reportar). Sin tipo, positions vacío. CAM-159: un remolque también las tiene.
       security:
         - bearerAuth: []
       parameters:
@@ -864,7 +864,8 @@ paths:
       summary: Configuración del checklist pre-trip de un vehículo (admin, CAM-31)
       description: >
         Todos los ítems del catálogo base (con enabled según el vehículo) más los
-        ítems extra vigentes. locked=true son obligatorios y no se pueden quitar.
+        ítems extra vigentes. locked=true no se pueden quitar: los obligatorios (km) y, desde CAM-159,
+        Neumáticos en el pre-viaje y en el post-viaje (no obligatorio: arranca en OK).
       parameters:
         - name: vehicleId
           in: path
@@ -1084,6 +1085,50 @@ paths:
         "422":
           $ref: "#/components/responses/FieldValidationErrorResponse"
 
+  /api/checklist-templates/{templateId}/unapply:
+    post:
+      summary: Quitar una plantilla de varios vehículos (CAM-159)
+      description: >
+        Borra de cada vehículo los controles que se copiaron de esta plantilla, como eliminar un extra
+        (las inspecciones viejas conservan el nombre). Lo que el vehículo ya tenía no se toca. Vale
+        también en un vehículo dado de baja.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vehicleIds]
+              properties:
+                vehicleIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items: { type: string }
+      responses:
+        "200":
+          description: Lo borrado, por vehículo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnapplyChecklistTemplateResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CHECKLIST_TEMPLATE_NOT_FOUND / VEHICLE_NOT_FOUND
+        "422":
+          $ref: "#/components/responses/FieldValidationErrorResponse"
+
   /api/vehicles/{vehicleId}/checklist-items/{itemId}:
     patch:
       summary: Quitar del checklist o volver a incluir un ítem del vehículo (CAM-31)
@@ -1207,7 +1252,7 @@ paths:
             VEHICLE_INACTIVE -- si se edita cualquier campo de un vehículo
             dado de baja sin reactivarlo primero.
             TIRES_ON_REMOVED_POSITIONS / VEHICLE_COUPLED -- cambio de tipo
-            con cubiertas en posiciones que el nuevo no tiene, o enganchado (CAM-157).
+            con neumáticos en posiciones que el nuevo no tiene, o enganchado (CAM-157).
           content:
             application/json:
               schema:
@@ -1552,6 +1597,19 @@ paths:
         propio pre-trip reporta un defecto bloqueante (CAM-86), la inspección
         y el defecto se guardan pero el vehículo no queda en viaje: `trip`
         vuelve ya cerrado, con `startedAt` igual a `endedAt`.
+
+
+        CAM-159: en el pre-trip de un tractor o camión rígido que sale con un
+        remolque (el de `trailerId` o, sin el campo, el que ya tenía
+        enganchado), `trailerAnswers` es obligatorio: el checklist del
+        remolque (GET /api/vehicles/{trailerId}/checklist, ids `rem-*`), con
+        las mismas reglas. Se guarda como otra inspección, a nombre del
+        remolque y en el mismo viaje (`trailerInspection`). Un bloqueante en
+        el remolque deja el viaje cerrado igual que uno del vehículo, y un
+        remolque que no puede salir da 409 TRAILER_BLOCKED. En el post-trip,
+        `trailerAnswers` es opcional (el viaje siempre se tiene que poder
+        cerrar): con el campo, se guarda el post-trip del remolque que lleva
+        (ids `rem-post-*`).
       security:
         - bearerAuth: []
       parameters:
@@ -1585,8 +1643,10 @@ paths:
             (ej. pre-trip sobre un vehículo que ya está "en viaje", o post-trip
             sobre uno sin viaje abierto), o es un pre-trip sobre un vehículo
             que no puede salir (bloqueado o dado de baja, CAM-89).
-            VEHICLE_IS_TRAILER -- los remolques no se inspeccionan desde la app
-            del chofer; NOT_A_TRAILER / CANNOT_TOW por el trailerId (CAM-157).
+            VEHICLE_IS_TRAILER -- un remolque no se inspecciona solo: va en el
+            pre-trip de lo que lo arrastra (CAM-159); NOT_A_TRAILER / CANNOT_TOW
+            por el trailerId (CAM-157); TRAILER_BLOCKED si el remolque que lleva
+            tiene un bloqueante abierto o un documento vencido (CAM-159).
           content:
             application/json:
               schema:
@@ -3541,7 +3601,7 @@ components:
     VehicleType:
       type: string
       description: >
-        CAM-157. Catálogo de tipos: define los ejes y cubiertas (CAM-157-tires-contract.md §1). Al crear o
+        CAM-157. Catálogo de tipos: define los ejes y neumáticos (CAM-157-tires-contract.md §1). Al crear o
         editar también se aceptan el nombre ("Camión rígido 4x2") y alias (furgón, pickup, camioneta, semi...).
       enum: [utilitario, camion_4x2, camion_6x4, tractor_4x2, tractor_6x4, semirremolque_2_ejes,
              semirremolque_3_ejes, acoplado]
@@ -3579,11 +3639,11 @@ components:
             properties:
               label: { type: string, maxLength: 60 }
               type: { type: string, enum: [check, number], default: check }
-              section: { type: string, enum: [exterior, interior] }
+              section: { type: string, enum: [exterior, interior, posttrip], description: "posttrip: del post-viaje (CAM-159)." }
 
     ChecklistTemplate:
       type: object
-      required: [id, name, items, createdAt]
+      required: [id, name, items, createdAt, appliedVehicleIds]
       properties:
         id: { type: string }
         name: { type: string }
@@ -3596,8 +3656,12 @@ components:
               id: { type: string }
               label: { type: string }
               type: { type: string, enum: [check, number] }
-              section: { type: string, enum: [exterior, interior] }
+              section: { type: string, enum: [exterior, interior, posttrip], description: "posttrip: del post-viaje (CAM-159)." }
         createdAt: { type: string, format: date-time }
+        appliedVehicleIds:
+          type: array
+          description: Vehículos con al menos un control copiado de esta plantilla (CAM-159).
+          items: { type: string }
 
     ApplyChecklistTemplateResult:
       type: object
@@ -3617,6 +3681,25 @@ components:
               added: { type: integer }
               skipped: { type: integer }
               skippedLabels:
+                type: array
+                items: { type: string }
+
+    UnapplyChecklistTemplateResult:
+      type: object
+      required: [templateId, removed, vehicles]
+      properties:
+        templateId: { type: string }
+        removed: { type: integer, description: Controles borrados en total. }
+        vehicles:
+          type: array
+          items:
+            type: object
+            required: [vehicleId, plate, removed, removedLabels]
+            properties:
+              vehicleId: { type: string }
+              plate: { type: string }
+              removed: { type: integer }
+              removedLabels:
                 type: array
                 items: { type: string }
 
@@ -3655,7 +3738,7 @@ components:
         vehicleType:
           allOf:
             - $ref: "#/components/schemas/VehicleType"
-          description: No se puede cambiar si quedan cubiertas en posiciones que el nuevo no tiene o si está enganchado (409).
+          description: No se puede cambiar si quedan neumáticos en posiciones que el nuevo no tiene o si está enganchado (409).
         year: { type: integer }
         chassisNumber: { type: string }
         active:
@@ -3722,7 +3805,7 @@ components:
       properties:
         label: { type: string, minLength: 1, maxLength: 60 }
         type: { type: string, enum: [check, number], default: check, description: "Opcional. El panel de admin siempre crea ítems check." }
-        section: { type: string, enum: [exterior, interior] }
+        section: { type: string, enum: [exterior, interior, posttrip], description: "posttrip: del post-viaje (CAM-159)." }
         enabled: { type: boolean, default: true, description: "false = el ítem queda cargado en el vehículo pero no entra en el checklist del chofer." }
 
     UpdateVehicleChecklistItemRequest:
@@ -3785,9 +3868,10 @@ components:
           type: array
           nullable: true
           description: >-
-            CAM-157: opcional, solo con "Neumáticos" (ext-neumaticos) en defecto. Qué cubiertas tienen problemas y
+            CAM-157: opcional, solo con "Neumáticos" (ext-neumaticos; post-neumaticos en el post-viaje, CAM-159) en
+            defecto. Qué neumáticos tienen problemas y
             cuáles (GET /api/vehicles/{id}/tire-positions). Se suman al detalle del defecto y quedan en cada
-            cubierta. Sin el defecto, 422 con itemId tireConditions; una posición sin cubierta o repetida,
+            neumático. Sin el defecto, 422 con itemId tireConditions; una posición sin neumático o repetida,
             tireConditions[i].position; sin estados o uno desconocido, tireConditions[i].conditions.
           items:
             type: object
@@ -3804,6 +3888,30 @@ components:
           description: >-
             CAM-157: solo en el pre-viaje de un tractor o camión rígido. El id de un remolque lo engancha,
             "none" desengancha el que tenía, sin el campo no cambia nada. Errores como en PUT /coupling.
+        trailerAnswers:
+          type: array
+          nullable: true
+          description: >-
+            CAM-159: el checklist del remolque. En el pre-viaje, el del que sale, obligatorio si lleva uno (422
+            con itemId trailerAnswers si falta). En el post-viaje, el del que lleva, opcional. Mismas reglas
+            que answers; los errores van con el itemId del control (rem-*). Se ignora si no lleva remolque.
+          items:
+            $ref: "#/components/schemas/ChecklistAnswer"
+        trailerTireConditions:
+          type: array
+          nullable: true
+          description: >-
+            CAM-159: como tireConditions, para el remolque, con su "Neumáticos" en defecto (rem-neumaticos en el
+            pre-viaje, rem-post-neumaticos en el post-viaje). Errores en trailerTireConditions[i].
+          items:
+            type: object
+            required: [position, conditions]
+            properties:
+              position: { $ref: "#/components/schemas/TirePosition" }
+              conditions:
+                type: array
+                minItems: 1
+                items: { $ref: "#/components/schemas/TireCondition" }
 
     Trip:
       type: object
@@ -3850,6 +3958,11 @@ components:
           $ref: "#/components/schemas/Inspection"
         trip:
           $ref: "#/components/schemas/Trip"
+        trailerInspection:
+          allOf:
+            - $ref: "#/components/schemas/Inspection"
+          nullable: true
+          description: CAM-159 -- la del remolque revisado en el mismo envío; null si no llevaba o no se mandó.
 
     DefectSummary:
       type: object
@@ -4993,7 +5106,7 @@ components:
         reportedAt: { type: string, format: date-time }
         reportedBy: { type: string, nullable: true }
         defectId: { type: string, nullable: true }
-        active: { type: boolean, description: El defecto sigue abierto y la cubierta montada. }
+        active: { type: boolean, description: El defecto sigue abierto y el neumático montado. }
 
     TirePosition:
       type: string
@@ -5069,7 +5182,7 @@ components:
         current:
           type: object
           nullable: true
-          description: Dónde está montada; null si no.
+          description: Dónde está montado; null si no.
           properties:
             vehicleId: { type: string }
             plate: { type: string }

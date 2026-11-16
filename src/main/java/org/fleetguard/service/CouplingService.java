@@ -75,6 +75,11 @@ public class CouplingService {
     }
 
     @Transactional
+    /** CAM-159: el remolque que el vehículo lleva enganchado ahora, si lleva uno. */
+    public Optional<Vehicle> currentTrailer(Vehicle towing) {
+        return couplingRepository.findFirstByTowing_IdAndUncoupledAtIsNull(towing.getId()).map(TrailerCoupling::getTrailer);
+    }
+
     public void applyInspectionTrailer(Vehicle towing, String trailerIdRaw, Optional<Vehicle> trailer, String byName) {
         if (trailerIdRaw == null || trailerIdRaw.isBlank()) {
             return;

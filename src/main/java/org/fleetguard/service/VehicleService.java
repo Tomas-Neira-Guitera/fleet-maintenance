@@ -336,7 +336,7 @@ public class VehicleService {
             details.add(new FieldValidationErrorDetail("model", "El modelo es obligatorio"));
         }
         if (request.vehicleType() == null || request.vehicleType().isBlank()) {
-            details.add(new FieldValidationErrorDetail("vehicleType", "El tipo es obligatorio: define sus cubiertas"));
+            details.add(new FieldValidationErrorDetail("vehicleType", "El tipo es obligatorio: define sus neumáticos"));
         } else if (VehicleType.fromText(request.vehicleType()) == null) {
             details.add(new FieldValidationErrorDetail("vehicleType", "No es un tipo del catálogo"));
         }
@@ -442,7 +442,7 @@ public class VehicleService {
     }
 
     /**
-     * CAM-157: el tipo define las cubiertas y si es remolque. No se cambia si deja cubiertas en posiciones que el
+     * CAM-157: el tipo define los neumáticos y si es remolque. No se cambia si deja neumáticos en posiciones que el
      * tipo nuevo no tiene, ni mientras está enganchado (o arrastrando un remolque).
      */
     private void requireTypeChangeAllowed(Vehicle vehicle, VehicleType newType) {
@@ -453,7 +453,7 @@ public class VehicleService {
                 .toList();
         if (!orphan.isEmpty()) {
             throw new VehicleStateConflictException("TIRES_ON_REMOVED_POSITIONS",
-                    "Sacá primero las cubiertas de " + String.join(", ", orphan) + ": un " + newType.label()
+                    "Sacá primero los neumáticos de " + String.join(", ", orphan) + ": un " + newType.label()
                             + " no tiene esas posiciones");
         }
         if (couplingRepository.findFirstByTrailer_IdAndUncoupledAtIsNull(vehicle.getId()).isPresent()

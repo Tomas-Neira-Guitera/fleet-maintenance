@@ -3,8 +3,8 @@ package org.fleetguard.dto;
 import java.math.BigDecimal;
 
 /**
- * Una cubierta (CAM-157). km: lo que rodó en todos sus montajes (el auxilio no suma). costPerKm: null
- * sin km. current: dónde está montada, null si no. condition: el último problema reportado que sigue
+ * Un neumático (CAM-157). km: lo que rodó en todos sus montajes (el auxilio no suma). costPerKm: null
+ * sin km. current: dónde está montado, null si no. condition: el último problema reportado que sigue
  * abierto; null si no tiene.
  */
 public record TireDto(String id, String code, String brand, String model, String size, String purchaseDate,

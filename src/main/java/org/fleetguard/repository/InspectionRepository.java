@@ -23,14 +23,17 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
     /** CAM-153: la inspección que ya se guardó con ese id del celular, si llegó antes. */
     Optional<Inspection> findByClientSubmissionId(String clientSubmissionId);
 
-    /** CAM-146: los pre-viajes de esos viajes, con el viaje y sus respuestas en la misma consulta. */
+    /** CAM-146: los pre-viajes de esos viajes, con el viaje y sus respuestas. Con el remolque, también el suyo. */
     @Query("select distinct i from Inspection i join fetch i.trip t left join fetch i.answers "
             + "where t.id in :tripIds and i.type = org.fleetguard.entity.InspectionType.PRE_TRIP")
     List<Inspection> findPreTripsWithAnswersByTripIds(@Param("tripIds") Collection<UUID> tripIds);
 
-    /** Inspecciones hechas en [from, to), por chofer -- CAM-91. Un defecto reportado en viaje no es una (CAM-139). */
+    /**
+     * Inspecciones hechas en [from, to), por chofer -- CAM-91. Un defecto reportado en viaje no es una (CAM-139), y
+     * el remolque revisado en el pre-viaje es parte de esa misma (CAM-159).
+     */
     @Query("select new org.fleetguard.repository.DriverCount(i.driverId, count(i)) from Inspection i "
-            + "where i.timestamp >= :from and i.timestamp < :to "
+            + "where i.timestamp >= :from and i.timestamp < :to and i.towingInspectionId is null "
             + "and i.type <> org.fleetguard.entity.InspectionType.ON_ROAD group by i.driverId")
     List<DriverCount> countByDriver(@Param("from") Instant from, @Param("to") Instant to);
 
@@ -52,6 +55,10 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
     List<TripInspectionKmRow> findClosedTripKm(@Param("vehicleId") UUID vehicleId,
                                                @Param("exceptTripId") UUID exceptTripId);
 
-    /** El pre-viaje de un viaje -- CAM-152. */
-    Optional<Inspection> findFirstByTrip_IdAndType(UUID tripId, InspectionType type);
+    /** El pre-viaje de un viaje -- CAM-152. El del vehículo, no el de su remolque (CAM-159). */
+    @Query("select i from Inspection i where i.trip.id = :tripId and i.type = :type and i.towingInspectionId is null")
+    Optional<Inspection> findFirstByTrip_IdAndType(@Param("tripId") UUID tripId, @Param("type") InspectionType type);
+
+    /** CAM-159: la del remolque que se revisó junto con esa inspección. */
+    Optional<Inspection> findFirstByTowingInspectionId(UUID towingInspectionId);
 }

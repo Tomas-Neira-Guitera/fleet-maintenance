@@ -6,7 +6,9 @@ import org.fleetguard.dto.FieldValidationErrorDetail;
 import org.fleetguard.dto.UpdateVehicleChecklistItemRequest;
 import org.fleetguard.dto.VehicleChecklistItemDto;
 import org.fleetguard.entity.InspectionType;
+import org.fleetguard.entity.Vehicle;
 import org.fleetguard.entity.VehicleChecklistItem;
+import org.fleetguard.entity.VehicleType;
 import org.fleetguard.entity.VehicleDisabledChecklistItem;
 import org.fleetguard.entity.checklist.ChecklistCatalog;
 import org.fleetguard.entity.checklist.ChecklistItemDef;
@@ -34,7 +36,8 @@ import java.util.stream.Collectors;
 
 /**
  * CAM-31: checklist pre-trip por vehículo = catálogo base − ítems desactivados + ítems extra incluidos.
- * El post-trip sigue siendo la lista fija acotada. Los ítems obligatorios (km) no se pueden quitar.
+ * CAM-159: el post-trip se configura igual. Los ítems obligatorios (km) no se pueden quitar. Un remolque tiene su
+ * propio catálogo base.
  */
 @Service
 public class VehicleChecklistService {
@@ -53,19 +56,33 @@ public class VehicleChecklistService {
         this.disabledRepository = disabledRepository;
     }
 
-    /** Checklist efectivo de un vehículo, en el orden en que lo ve el chofer. */
+    /**
+     * Checklist efectivo de un vehículo, en el orden en que lo ve el chofer. CAM-159: el post-viaje también se
+     * configura; sus extras van antes de los km finales, que siguen al final.
+     */
     public List<ChecklistItemDef> resolve(UUID vehicleId, InspectionType type) {
-        if (type != InspectionType.PRE_TRIP) {
-            return ChecklistCatalog.postTripItems();
-        }
         Set<String> disabled = disabledBaseIds(vehicleId);
         List<VehicleChecklistItem> extras = extraRepository.findByVehicleIdAndActiveTrueOrderByCreatedAtAsc(vehicleId);
+        if (type != InspectionType.PRE_TRIP) {
+            List<ChecklistItemDef> base = ChecklistCatalog.postTripItems(typeOf(vehicleId));
+            List<ChecklistItemDef> items = new ArrayList<>();
+            base.stream()
+                    .filter(i -> !i.required() && (ChecklistCatalog.isLocked(i) || !disabled.contains(i.id())))
+                    .forEach(items::add);
+            extras.stream()
+                    .filter(e -> e.getSection() == ChecklistSection.POSTTRIP)
+                    .map(VehicleChecklistService::toDef)
+                    .forEach(items::add);
+            base.stream().filter(ChecklistItemDef::required).forEach(items::add);
+            return items;
+        }
+        List<ChecklistItemDef> base = baseFor(vehicleId);
 
         List<ChecklistItemDef> items = new ArrayList<>();
         for (ChecklistSection section : List.of(ChecklistSection.EXTERIOR, ChecklistSection.INTERIOR)) {
-            ChecklistCatalog.preTripItems().stream()
+            base.stream()
                     .filter(i -> i.section() == section)
-                    .filter(i -> i.required() || !disabled.contains(i.id()))
+                    .filter(i -> ChecklistCatalog.isLocked(i) || !disabled.contains(i.id()))
                     .forEach(items::add);
             extras.stream()
                     .filter(e -> e.getSection() == section)
@@ -92,10 +109,11 @@ public class VehicleChecklistService {
         UUID vehicleId = requireVehicle(vehicleIdRaw);
         Set<String> disabled = disabledBaseIds(vehicleId);
         List<VehicleChecklistItemDto> result = new ArrayList<>();
-        for (ChecklistItemDef base : ChecklistCatalog.preTripItems()) {
-            boolean enabled = base.required() || !disabled.contains(base.id());
+        for (ChecklistItemDef base : allBaseFor(vehicleId)) {
+            boolean locked = ChecklistCatalog.isLocked(base);
+            boolean enabled = locked || !disabled.contains(base.id());
             result.add(new VehicleChecklistItemDto(base.id(), base.label(), base.type().toJson(),
-                    base.section().toJson(), base.required(), "base", enabled, base.required()));
+                    base.section().toJson(), base.required(), "base", enabled, locked));
         }
         for (VehicleChecklistItem extra : extraRepository.findByVehicleIdOrderByCreatedAtAsc(vehicleId)) {
             result.add(toExtraDto(extra));
@@ -141,21 +159,23 @@ public class VehicleChecklistService {
         if (type == null) {
             details.add(new FieldValidationErrorDetail(fieldPrefix + "type", "Debe ser 'check' o 'number'"));
         }
+        // CAM-159: también 'posttrip', para un control propio del post-viaje.
         ChecklistSection section = ChecklistSection.fromJson(rawSection);
-        if (section != ChecklistSection.EXTERIOR && section != ChecklistSection.INTERIOR) {
-            details.add(new FieldValidationErrorDetail(fieldPrefix + "section", "Debe ser 'exterior' o 'interior'"));
+        if (section == null) {
+            details.add(new FieldValidationErrorDetail(fieldPrefix + "section", "Debe ser 'exterior', 'interior' o 'posttrip'"));
         }
         return details.size() == before ? new ItemSpec(label, type, section) : null;
     }
 
     /**
      * CAM-150: copia controles al vehículo como controles propios. Se saltea el que ya tiene (base o propio,
-     * activo o no) con la misma etiqueta y sección, sin importar mayúsculas ni acentos.
+     * activo o no) con la misma etiqueta y sección, sin importar mayúsculas ni acentos. CAM-159: cada copia
+     * guarda la plantilla, para poder quitarla después.
      */
     @Transactional
-    public CopyResult copyItems(UUID vehicleId, List<ItemSpec> items) {
+    public CopyResult copyItems(UUID vehicleId, List<ItemSpec> items, UUID templateId) {
         Set<String> existing = new HashSet<>();
-        ChecklistCatalog.preTripItems().forEach(base -> existing.add(sameControlKey(base.label(), base.section())));
+        allBaseFor(vehicleId).forEach(base -> existing.add(sameControlKey(base.label(), base.section())));
         extraRepository.findByVehicleIdOrderByCreatedAtAsc(vehicleId)
                 .forEach(extra -> existing.add(sameControlKey(extra.getLabel(), extra.getSection())));
 
@@ -166,10 +186,38 @@ public class VehicleChecklistService {
                 skipped.add(item.label());
                 continue;
             }
-            extraRepository.save(new VehicleChecklistItem(vehicleId, item.label(), item.type(), item.section()));
+            extraRepository.save(new VehicleChecklistItem(vehicleId, item.label(), item.type(), item.section(), true,
+                    templateId));
             added++;
         }
         return new CopyResult(added, skipped);
+    }
+
+    /**
+     * CAM-159: borra del vehículo los controles que se copiaron de esa plantilla, como deleteExtra. Los que ya tenía
+     * antes de aplicarla no vinieron de ahí y se quedan. Devuelve las etiquetas borradas.
+     */
+    @Transactional
+    public List<String> removeTemplateItems(UUID vehicleId, UUID templateId) {
+        List<VehicleChecklistItem> copied = extraRepository.findByVehicleIdAndTemplateId(vehicleId, templateId);
+        extraRepository.deleteAll(copied);
+        return copied.stream().map(VehicleChecklistItem::getLabel).toList();
+    }
+
+    /** CAM-159: los vehículos que tienen al menos un control copiado de la plantilla. */
+    public List<UUID> vehiclesWithTemplate(UUID templateId) {
+        return extraRepository.findByTemplateId(templateId).stream()
+                .map(VehicleChecklistItem::getVehicleId)
+                .distinct()
+                .toList();
+    }
+
+    /** CAM-159: al borrar una plantilla, sus controles quedan en los vehículos como cargados a mano. */
+    @Transactional
+    public void detachTemplate(UUID templateId) {
+        List<VehicleChecklistItem> copied = extraRepository.findByTemplateId(templateId);
+        copied.forEach(item -> item.setTemplateId(null));
+        extraRepository.saveAll(copied);
     }
 
     static String sameControlKey(String label, ChecklistSection section) {
@@ -196,13 +244,13 @@ public class VehicleChecklistService {
             return toExtraDto(extra);
         }
 
-        ChecklistItemDef base = ChecklistCatalog.preTripItems().stream()
+        ChecklistItemDef base = allBaseFor(vehicleId).stream()
                 .filter(i -> i.id().equals(itemId))
                 .findFirst()
                 .orElseThrow(() -> new ChecklistItemNotFoundException(itemId));
-        if (base.required()) {
+        if (ChecklistCatalog.isLocked(base)) {
             throw new VehicleStateConflictException("ITEM_LOCKED",
-                    "\"" + base.label() + "\" es obligatorio y no se puede quitar del checklist");
+                    "\"" + base.label() + "\" es fijo y no se puede quitar del checklist");
         }
         Optional<VehicleDisabledChecklistItem> row = disabledRepository.findByVehicleIdAndBaseItemId(vehicleId, itemId);
         if (enabled) {
@@ -219,7 +267,7 @@ public class VehicleChecklistService {
     public void deleteExtra(String vehicleIdRaw, String itemId) {
         UUID vehicleId = requireVehicle(vehicleIdRaw);
         if (!itemId.startsWith(VehicleChecklistItem.ID_PREFIX)) {
-            boolean base = ChecklistCatalog.preTripItems().stream().anyMatch(i -> i.id().equals(itemId));
+            boolean base = allBaseFor(vehicleId).stream().anyMatch(i -> i.id().equals(itemId));
             if (!base) {
                 throw new ChecklistItemNotFoundException(itemId);
             }
@@ -239,6 +287,23 @@ public class VehicleChecklistService {
         return extraRepository.findById(id)
                 .filter(e -> e.getVehicleId().equals(vehicleId))
                 .orElseThrow(() -> new ChecklistItemNotFoundException(itemId));
+    }
+
+    /** CAM-159: el catálogo base según el tipo: un remolque tiene el suyo. */
+    private List<ChecklistItemDef> baseFor(UUID vehicleId) {
+        return ChecklistCatalog.preTripBaseItems(typeOf(vehicleId));
+    }
+
+    /** CAM-159: los base del pre-viaje y del post-viaje, los dos configurables. */
+    private List<ChecklistItemDef> allBaseFor(UUID vehicleId) {
+        VehicleType type = typeOf(vehicleId);
+        List<ChecklistItemDef> all = new ArrayList<>(ChecklistCatalog.preTripBaseItems(type));
+        all.addAll(ChecklistCatalog.postTripItems(type));
+        return all;
+    }
+
+    private VehicleType typeOf(UUID vehicleId) {
+        return vehicleRepository.findById(vehicleId).map(Vehicle::getVehicleType).orElse(null);
     }
 
     private Set<String> disabledBaseIds(UUID vehicleId) {

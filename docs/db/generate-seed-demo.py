@@ -804,7 +804,7 @@ too_long = [x for x in [p["name"] for p in PLANS] + [d["description"] for d in d
             + [s["title"] for s in schedules] + [o["title"] for o in work_orders] if len(x) > 30]
 assert not too_long, f"Títulos de más de 30 caracteres: {sorted(set(too_long))}"
 
-# ---- CAM-150/156/157: tipos de vehículo, utilitarios, remolques, plantillas, combustible y cubiertas
+# ---- CAM-150/156/157: tipos de vehículo, utilitarios, remolques, plantillas, combustible y neumáticos
 # Va al final y con su propio random, así no cambian los ids ni los escenarios de lo de arriba.
 rnd = random.Random(157)
 
@@ -815,7 +815,7 @@ for v in VEHICLES:
     v["type"] = TYPES[v["key"]]
 
 # Sin viajes simulados: los km salen de un promedio diario. La Ducato tiene un tipo viejo de texto libre que no
-# es del catálogo ("Sin definir"): sin cubiertas hasta que el admin le elija uno.
+# es del catálogo ("Sin definir"): sin neumáticos hasta que el admin le elija uno.
 EXTRA = [
     dict(key="kangoo", plate="AG508UV", brand="Renault", model="Kangoo Furgón 1.6", year=2023, type="utilitario",
          km=48_200, kmday=95, vin="8A1FC1615PL204871", driver="pablo.acosta"),
@@ -899,7 +899,7 @@ for tpl in TEMPLATES:
             if any(c["vehicle"] == k and c["label"].lower() == label.lower() and c["section"] == sec for c in checklist_extras):
                 continue
             checklist_extras.append(dict(id=uid("checklistitem"), vehicle=k, label=label, type=typ, section=sec,
-                                         active=True, created=tpl["day"]))
+                                         active=True, created=tpl["day"], template=tpl["id"]))
 
 # ---- CAM-156: cargas de combustible. Tanque lleno la mayoría; algunas parciales en el medio de un tramo.
 CONS = {"larga": 33.0, "regional": 27.0, "urbano": 19.0, "kangoo": 8.4, "hilux": 10.6}
@@ -983,7 +983,7 @@ assert [a[0]["vehicle"] for a in FUEL_ALERTS] == ["volvo"], f"tiene que haber un
 for f, cons, avg, _ in FUEL_ALERTS:
     f["alert"], f["avg"] = cons, avg
 
-# ---- CAM-157: cubiertas. Cada vehículo con tipo arranca con todas sus posiciones montadas; después rotaciones,
+# ---- CAM-157: neumáticos. Cada vehículo con tipo arranca con todas sus posiciones montadas; después rotaciones,
 # cambios y bajas guionados, y lo que reportaron los choferes en los defectos de "Neumáticos".
 AXLES = {"utilitario": "SS", "camion_4x2": "SD", "camion_6x4": "SDD", "tractor_4x2": "SD", "tractor_6x4": "SDD",
          "semirremolque_2_ejes": "DD", "semirremolque_3_ejes": "DDD", "acoplado": "DD"}
@@ -1123,8 +1123,8 @@ def mounted_on(k, day):
             and (m["removed"] is None or m["removed"][0] > day)]
 
 
-# ---- Estado visual de las cubiertas: cada defecto de "Neumáticos" dice qué cubierta y qué se vio. El del
-# Delivery sigue abierto (la cubierta queda "a revisar"); los del historial están resueltos.
+# ---- Estado visual de los neumáticos: cada defecto de "Neumáticos" dice qué neumático y qué se vio. El del
+# Delivery sigue abierto (el neumático queda "a revisar"); los del historial están resueltos.
 ANSWER_OF = {a["id"]: (i, a["item"]) for i in inspections for a in i["answers"]}
 D_TIRE_INS = ANSWER_OF[D_TIRE["answer"]][0]
 LOW = current[("delivery", "e2-der-ext")]   # la del defecto "Neumático gastado, se ve tela"
@@ -1154,10 +1154,10 @@ for d in defects:
                                   conditions=codes, day=d["day"], hh=d["hh"], mm=d["mm"], by=ins["driver"],
                                   inspection=ins["id"], defect=d["id"]))
     # Como el backend: el resumen se suma al detalle del defecto.
-    summary = f"Cubiertas: {position_label(ALLV[k]['type'], m['position'])}: {', '.join(LABEL[c] for c in codes)}."
+    summary = f"Neumáticos: {position_label(ALLV[k]['type'], m['position'])}: {', '.join(LABEL[c] for c in codes)}."
     d["details"] = (DEFECT_DETAILS[d["description"]] + "\n\n" + summary) if d["description"] in DEFECT_DETAILS else summary
 active = [r for r in condition_reports if r["defect"] == D_TIRE["id"]]
-assert len(active) == 1 and D_TIRE["status"] == "open", "la cubierta del Delivery tiene que quedar a revisar"
+assert len(active) == 1 and D_TIRE["status"] == "open", "el neumático del Delivery tiene que quedar a revisar"
 
 
 def ar(n, decimals=1):
@@ -1178,7 +1178,7 @@ for f, cons, avg, km in FUEL_ALERTS:
                               link=f"/vehiculos/{ALLV[f['vehicle']]['id']}/combustible", at=(f["day"], f["hh"], f["mm"])))
 lt = TIRE[LOW["tire"]]
 plate = VBY["delivery"]["plate"]
-notifications.append(dict(type="TIRE_PROBLEM_REPORTED", title=f"Cubierta con problemas en {plate}",
+notifications.append(dict(type="TIRE_PROBLEM_REPORTED", title=f"Neumático con problemas en {plate}",
                           message=f"{D_TIRE_INS['driver']} reportó en {plate}: "
                                   f"{position_label('camion_4x2', 'e2-der-ext')} ({tire_label(lt)}): "
                                   f"se ve la tela o el alambre, poco dibujo.",
@@ -1201,7 +1201,7 @@ KNOWN_COLUMNS = {
                    "external_provider assignee technician_id status closing_description created_at updated_at finalized_at",
     "work_order_expenses": "id work_order_id category description amount created_at",
     "work_order_photos": "id work_order_id photo_url created_at",
-    "vehicle_checklist_items": "id vehicle_id label type section active created_at",
+    "vehicle_checklist_items": "id vehicle_id label type section active created_at template_id",
     "vehicle_disabled_checklist_items": "id vehicle_id base_item_id",
     "vehicle_documents": "id vehicle_id type name number issued_at expires_at file_url replaced_by_id active created_at",
     "checklist_templates": "id name created_at",
@@ -1217,7 +1217,7 @@ out = []
 w = out.append
 w("-- Datos demo: 10 camiones con 6 meses de operación simulada (viajes, inspecciones DVIR, defectos,")
 w("-- planes de mantenimiento, programaciones y órdenes de trabajo), utilitarios, remolques enganchados, plantillas")
-w("-- de checklist, cargas de combustible y cubiertas. Generado por docs/db/generate-seed-demo.py.")
+w("-- de checklist, cargas de combustible y neumáticos. Generado por docs/db/generate-seed-demo.py.")
 w("--")
 w("-- ATENCIÓN: borra TODOS los datos operativos y todos los usuarios salvo 'admin'.")
 w("-- Correr con el backend apagado:")
@@ -1260,11 +1260,11 @@ w("alter table if exists work_orders drop constraint if exists work_orders_statu
 w("alter table if exists notifications drop constraint if exists notifications_type_check;")
 w("alter table if exists notification_settings drop constraint if exists notification_settings_type_check;")
 w("alter table if exists inspections drop constraint if exists inspections_type_check;")
-w("-- CAM-157: las posiciones de las cubiertas cambiaron de nombre, y el tipo de vehículo reemplazó a tire_layout.")
+w("-- CAM-157: las posiciones de los neumáticos cambiaron de nombre, y el tipo de vehículo reemplazó a tire_layout.")
 w("alter table if exists tire_mountings drop constraint if exists tire_mountings_position_check;")
 w("alter table if exists tire_condition_reports drop constraint if exists tire_condition_reports_position_check;")
 w("alter table if exists vehicles drop column if exists tire_layout;")
-w("-- CAM-157: la medición del dibujo en mm se reemplazó por el estado visual de la cubierta.")
+w("-- CAM-157: la medición del dibujo en mm se reemplazó por el estado visual del neumático.")
 w("drop table if exists tire_tread_readings;")
 w("alter table if exists tires drop column if exists initial_tread_mm;")
 w("alter table if exists tires drop column if exists tread_alerted_at;")
@@ -1336,9 +1336,10 @@ insert("inspection_answers", ["id", "inspection_id", "item_id", "item_label", "o
          str(a["number"]) if a["number"] is not None else "null"]
         for i in inspections for a in i["answers"]])
 w("-- Checklist pre-trip propio de cada camión (CAM-31)")
-insert("vehicle_checklist_items", ["id", "vehicle_id", "label", "type", "section", "active", "created_at"],
+# CAM-159: los copiados de una plantilla la recuerdan, para poder quitarla.
+insert("vehicle_checklist_items", ["id", "vehicle_id", "label", "type", "section", "active", "created_at", "template_id"],
        [[q(c["id"]), q(ALLV[c["vehicle"]]["id"]), q(c["label"]), q(c["type"]), q(c["section"]), "true" if c["active"] else "false",
-         ts(c.get("created", -30), 10)] for c in checklist_extras])
+         ts(c.get("created", -30), 10), qn(c.get("template"))] for c in checklist_extras])
 w("-- Defectos")
 insert("defects", ["id", "inspection_answer_id", "severity", "description", "details", "photo_url", "created_at", "status",
                    "resolved_at"],
@@ -1387,7 +1388,7 @@ insert("fuel_loads", ["id", "vehicle_id", "loaded_at", "liters", "amount", "odom
        [[q(f["id"]), q(ALLV[f["vehicle"]]["id"]), ts(f["day"], f["hh"], f["mm"]), f"{f['liters']:.2f}", f"{f['amount']:.2f}",
          str(f["km"]), "true" if f["full"] else "false", q(DRIVER_IDS[f["by"]]), ts(f["day"], f["hh"], f["mm"]),
          f"{f['alert']:.2f}" if "alert" in f else "null", f"{f['avg']:.2f}" if "avg" in f else "null"] for f in fuel_loads])
-w("-- Cubiertas, montajes y lo que reportaron los choferes (CAM-157)")
+w("-- Neumáticos, montajes y lo que reportaron los choferes (CAM-157)")
 insert("tires", ["id", "code", "brand", "model", "size", "purchase_date", "cost", "status", "retired_at",
                  "retired_reason", "created_at"],
        [[q(t["id"]), q(t["code"]), q(t["brand"]), q(t["model"]), q(t["size"]), dt(t["purchase"]), f"{t['cost']:.2f}",
@@ -1402,7 +1403,7 @@ insert("tire_condition_reports", ["id", "tire_id", "vehicle_id", "position", "co
        [[q(r["id"]), q(r["tire"]), q(ALLV[r["vehicle"]]["id"]), q(r["position"].upper().replace("-", "_")),
          q(",".join(r["conditions"])), ts(r["day"], r["hh"], r["mm"]), q(DRIVER_IDS[r["by"]]), q(r["by"]),
          q(r["inspection"]), q(r["defect"])] for r in condition_reports])
-w("-- Avisos de consumo alto y cubierta con problemas, para el admin (los demás los genera el backend)")
+w("-- Avisos de consumo alto y neumático con problemas, para el admin (los demás los genera el backend)")
 insert("notifications", ["id", "recipient_id", "type", "title", "message", "link", "created_at"],
        [["gen_random_uuid()", ADMIN_ID, q(n["type"]), q(n["title"]), q(n["message"]), q(n["link"]), ts(*n["at"])]
         for n in notifications])

@@ -53,7 +53,7 @@ desde la pantalla "Vehículos".
 
 `plate`, `brand`, `model` obligatorios (ya lo eran antes de CAM-25).
 Desde CAM-157 también `vehicleType`, de un catálogo cerrado que define las
-cubiertas (ver CAM-157-tires-contract.md §1); los vehículos viejos sin tipo
+neumáticos (ver CAM-157-tires-contract.md §1); los vehículos viejos sin tipo
 siguen andando y se completa al editarlos.
 `year`, `chassisNumber`, `odometerKm` opcionales — la card
 (CAM-25) los pide como parte de "cargar la información del vehículo", pero

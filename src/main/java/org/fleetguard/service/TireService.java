@@ -61,8 +61,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * CAM-157: cubiertas, dónde está montada cada una, sus km y los problemas que reportan los choferes. Ver docs/api/CAM-157-tires-contract.md.
- * Los km de una cubierta salen de sus montajes y del odómetro de cada vehículo: rotarla cierra un montaje y
+ * CAM-157: neumáticos, dónde está montado cada uno, sus km y los problemas que reportan los choferes. Ver docs/api/CAM-157-tires-contract.md.
+ * Los km de un neumático salen de sus montajes y del odómetro de cada vehículo: rotarlo cierra un montaje y
  * abre otro, así que sigue sumando sin lógica aparte.
  */
 @Service
@@ -70,7 +70,7 @@ public class TireService {
 
     private static final ZoneId FLEET_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
     static final BigDecimal MAX_COST = new BigDecimal("9999999999.99");
-    // Para comparar marcas: una cubierta con pocos km todavía da un costo por km engañoso.
+    // Para comparar marcas: un neumático con pocos km todavía da un costo por km engañoso.
     static final long COMPARISON_MIN_KM = 1000;
 
     private final TireRepository tireRepository;
@@ -91,7 +91,7 @@ public class TireService {
         this.clock = clock;
     }
 
-    // ---------------------------------------------------------------- cubiertas
+    // ---------------------------------------------------------------- neumáticos
 
     @Transactional(readOnly = true)
     public List<TireDto> list(String statusParam) {
@@ -142,15 +142,15 @@ public class TireService {
         return snapshot().toDto(tireRepository.save(tire));
     }
 
-    /** Dar de baja una cubierta del stock. Una montada se da de baja al sacarla del vehículo. */
+    /** Dar de baja un neumático del stock. Uno montado se da de baja al sacarlo del vehículo. */
     @Transactional
     public TireDto retire(String id, RetireTireRequest request) {
         Tire tire = find(id);
         if (tire.getStatus() == TireStatus.MOUNTED) {
-            throw new VehicleStateConflictException("TIRE_MOUNTED", "La cubierta está montada: sacala del vehículo para darla de baja");
+            throw new VehicleStateConflictException("TIRE_MOUNTED", "El neumático está montado: sacalo del vehículo para darlo de baja");
         }
         if (tire.getStatus() == TireStatus.RETIRED) {
-            throw new VehicleStateConflictException("TIRE_RETIRED", "La cubierta ya está dada de baja");
+            throw new VehicleStateConflictException("TIRE_RETIRED", "El neumático ya está dado de baja");
         }
         tire.retire(clock.instant(), reason(request == null ? null : request.reason()));
         return snapshot().toDto(tireRepository.save(tire));
@@ -162,7 +162,7 @@ public class TireService {
         Tire tire = find(id);
         if (mountingRepository.existsByTire_Id(tire.getId())) {
             throw new VehicleStateConflictException("TIRE_HAS_HISTORY",
-                    "La cubierta ya estuvo montada: no se borra, se da de baja");
+                    "El neumático ya estuvo montado: no se borra, se da de baja");
         }
         tireRepository.delete(tire);
     }
@@ -184,8 +184,8 @@ public class TireService {
         Tire tire = find(request.tireId());
         if (tire.getStatus() != TireStatus.STOCK) {
             throw new VehicleStateConflictException("TIRE_NOT_IN_STOCK", tire.getStatus() == TireStatus.RETIRED
-                    ? "La cubierta está dada de baja"
-                    : "La cubierta ya está montada: sacala o rotala desde su vehículo");
+                    ? "El neumático está dado de baja"
+                    : "El neumático ya está montado: sacalo o rotalo desde su vehículo");
         }
         Instant now = clock.instant();
         Optional<TireMounting> current = openAt(vehicle, position);
@@ -193,7 +193,7 @@ public class TireService {
             String replaced = request.replaced();
             if (replaced == null || replaced.isBlank()) {
                 throw new VehicleStateConflictException("POSITION_OCCUPIED",
-                        labelOf(vehicle, position) + " ya tiene una cubierta: elegí si vuelve al stock o se da de baja");
+                        labelOf(vehicle, position) + " ya tiene un neumático: elegí si vuelve al stock o se da de baja");
             }
             if (!replaced.equals("stock") && !replaced.equals("retired")) {
                 throw invalid("Datos inválidos", "replaced", "Debe ser 'stock' o 'retired'");
@@ -210,12 +210,12 @@ public class TireService {
         Vehicle vehicle = findVehicle(vehicleId);
         TirePosition position = requirePosition(vehicle, request == null ? null : request.position(), "position");
         TireMounting current = openAt(vehicle, position).orElseThrow(() ->
-                new VehicleStateConflictException("POSITION_EMPTY", labelOf(vehicle, position) + " no tiene cubierta"));
+                new VehicleStateConflictException("POSITION_EMPTY", labelOf(vehicle, position) + " no tiene neumático"));
         remove(current, clock.instant(), Boolean.TRUE.equals(request.retire()), request.reason());
         return toVehicleDto(vehicle);
     }
 
-    /** Pasa la cubierta de from a to; si to tiene una, se intercambian. Los km siguen sumando en la nueva posición. */
+    /** Pasa el neumático de from a to; si to tiene uno, se intercambian. Los km siguen sumando en la nueva posición. */
     @Transactional
     public VehicleTiresDto rotate(String vehicleId, RotateTiresRequest request) {
         Vehicle vehicle = findActiveVehicle(vehicleId);
@@ -225,7 +225,7 @@ public class TireService {
             throw invalid("Datos inválidos", "to", "Elegí otra posición");
         }
         TireMounting moving = openAt(vehicle, from).orElseThrow(() ->
-                new VehicleStateConflictException("POSITION_EMPTY", labelOf(vehicle, from) + " no tiene cubierta"));
+                new VehicleStateConflictException("POSITION_EMPTY", labelOf(vehicle, from) + " no tiene neumático"));
         Optional<TireMounting> other = openAt(vehicle, to);
         Instant now = clock.instant();
         long km = vehicle.getOdometerKm();
@@ -241,13 +241,14 @@ public class TireService {
         return toVehicleDto(vehicle);
     }
 
-    /** Para el pre-viaje del chofer: el dibujo del vehículo; solo se pueden marcar las posiciones con cubierta. */
+    /** Para el pre-viaje del chofer: el dibujo del vehículo; solo se pueden marcar las posiciones con neumático. */
     @Transactional(readOnly = true)
     public TirePositionsDto positions(String vehicleId) {
         Vehicle vehicle = findVehicle(vehicleId);
         VehicleType type = vehicle.getVehicleType();
-        if (type == null || type.isTrailer()) {
-            return new TirePositionsDto(VehicleType.toJson(type), List.of());
+        // CAM-159: también un remolque: el chofer marca sus neumáticos en el pre y el post-viaje.
+        if (type == null) {
+            return new TirePositionsDto(null, List.of());
         }
         Set<TirePosition> mounted = openByPosition(vehicle).keySet();
         return new TirePositionsDto(type.toJson(), type.positions().stream()
@@ -259,22 +260,28 @@ public class TireService {
 
     // ---------------------------------------------------------------- estado visual
 
-    /** Lo que el chofer vio en una cubierta, ya validado: la que está montada en esa posición. */
+    /** Lo que el chofer vio en un neumático, ya validado: el que está montado en esa posición. */
     public record ConditionReport(TireMounting mounting, Set<TireCondition> conditions) {
     }
 
     /**
-     * CAM-157: valida las cubiertas con problemas antes de guardar la inspección. Van solo con "Neumáticos" en
-     * defecto; sin cubiertas marcadas también vale (por ejemplo, un vehículo sin tipo).
+     * CAM-157: valida los neumáticos con problemas antes de guardar la inspección. Van solo con "Neumáticos" en
+     * defecto; sin neumáticos marcados también vale (por ejemplo, un vehículo sin tipo).
      */
     public List<ConditionReport> validateInspectionConditions(Vehicle vehicle, List<TireConditionInput> inputs,
                                                               boolean tiresInDefect) {
+        return validateInspectionConditions(vehicle, inputs, tiresInDefect, "tireConditions");
+    }
+
+    /** CAM-159: igual, con el nombre del campo para los errores ("trailerTireConditions" en el remolque). */
+    public List<ConditionReport> validateInspectionConditions(Vehicle vehicle, List<TireConditionInput> inputs,
+                                                              boolean tiresInDefect, String fieldName) {
         if (inputs == null || inputs.isEmpty()) {
             return List.of();
         }
         if (!tiresInDefect) {
-            throw new InspectionValidationException("Las cubiertas con problemas van con Neumáticos en defecto.",
-                    List.of(new ValidationErrorDetail("tireConditions", "Marcá Neumáticos con defecto.")));
+            throw new InspectionValidationException("Los neumáticos con problemas van con Neumáticos en defecto.",
+                    List.of(new ValidationErrorDetail(fieldName, "Marcá Neumáticos con defecto.")));
         }
         Map<TirePosition, TireMounting> open = openByPosition(vehicle);
         Set<TirePosition> seen = EnumSet.noneOf(TirePosition.class);
@@ -282,11 +289,11 @@ public class TireService {
         List<ConditionReport> reports = new ArrayList<>();
         for (int i = 0; i < inputs.size(); i++) {
             TireConditionInput input = inputs.get(i);
-            String field = "tireConditions[" + i + "]";
+            String field = fieldName + "[" + i + "]";
             TirePosition position = input == null ? null : TirePosition.fromJson(input.position());
             TireMounting mounting = position == null ? null : open.get(position);
             if (mounting == null) {
-                details.add(new ValidationErrorDetail(field + ".position", "No hay una cubierta montada en esa posición."));
+                details.add(new ValidationErrorDetail(field + ".position", "No hay un neumático montado en esa posición."));
                 continue;
             }
             if (!seen.add(position)) {
@@ -310,16 +317,16 @@ public class TireService {
             }
         }
         if (!details.isEmpty()) {
-            throw new InspectionValidationException("Las cubiertas con problemas no son válidas.", details);
+            throw new InspectionValidationException("Los neumáticos con problemas no son válidos.", details);
         }
         return reports;
     }
 
-    /** Lo que se suma al detalle del defecto de Neumáticos: "Cubiertas: Delantera izquierda: pinchada." */
+    /** Lo que se suma al detalle del defecto de Neumáticos: "Neumáticos: Delantera izquierda: pinchado." */
     public String summary(Vehicle vehicle, List<ConditionReport> reports) {
         return reports.stream()
                 .map(r -> labelOf(vehicle, r.mounting().getPosition()) + ": " + conditionsText(r.conditions()))
-                .collect(Collectors.joining(". ", "Cubiertas: ", "."));
+                .collect(Collectors.joining(". ", "Neumáticos: ", "."));
     }
 
     @Transactional
@@ -398,7 +405,7 @@ public class TireService {
     private TirePosition requirePosition(Vehicle vehicle, String raw, String field) {
         if (vehicle.getVehicleType() == null) {
             throw new VehicleStateConflictException("NO_VEHICLE_TYPE",
-                    "Primero elegí el tipo de " + vehicle.getPlate() + ": de ahí salen sus cubiertas");
+                    "Primero elegí el tipo de " + vehicle.getPlate() + ": de ahí salen sus neumáticos");
         }
         TirePosition position = TirePosition.fromJson(raw);
         if (position == null || !vehicle.getVehicleType().has(position)) {
@@ -414,7 +421,7 @@ public class TireService {
     private ValidTire validate(TireRequest request) {
         List<FieldValidationErrorDetail> details = new ArrayList<>();
         if (request == null) {
-            throw invalid("Datos inválidos para la cubierta", "brand", "Obligatoria");
+            throw invalid("Datos inválidos para el neumático", "brand", "Obligatoria");
         }
         String brand = text(request.brand(), "brand", 60, true, details);
         String size = text(request.size(), "size", 30, true, details);
@@ -442,7 +449,7 @@ public class TireService {
             details.add(new FieldValidationErrorDetail("cost", "Hasta 2 decimales"));
         }
         if (!details.isEmpty()) {
-            throw new VehicleValidationException("Datos inválidos para la cubierta", details);
+            throw new VehicleValidationException("Datos inválidos para el neumático", details);
         }
         return new ValidTire(code, brand, model, size, purchaseDate, cost);
     }
@@ -470,7 +477,7 @@ public class TireService {
     }
 
     private static VehicleStateConflictException duplicateCode(String code) {
-        return new VehicleStateConflictException("DUPLICATE_TIRE_CODE", "Ya hay una cubierta con el código " + code);
+        return new VehicleStateConflictException("DUPLICATE_TIRE_CODE", "Ya hay un neumático con el código " + code);
     }
 
     private Tire find(String id) {
@@ -539,7 +546,7 @@ public class TireService {
                 r.isActive());
     }
 
-    /** Montajes y último problema abierto de todas las cubiertas, leídos una vez por pedido. */
+    /** Montajes y último problema abierto de todos los neumáticos, leídos una vez por pedido. */
     private Snapshot snapshot() {
         Map<UUID, List<TireMounting>> mountings = mountingRepository.findAllWithTireAndVehicle().stream()
                 .collect(Collectors.groupingBy(m -> m.getTire().getId()));

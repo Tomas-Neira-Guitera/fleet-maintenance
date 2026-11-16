@@ -195,19 +195,43 @@ class VehicleChecklistServiceTest {
     }
 
     @Test
-    void extraItemRequiresLabelTypeAndPreTripSection() {
+    void extraItemRequiresLabelTypeAndSection() {
         VehicleValidationException ex = assertThrows(VehicleValidationException.class,
-                () -> service.addExtra(vehicleId.toString(), new CreateVehicleChecklistItemRequest(" ", "texto", "posttrip")));
+                () -> service.addExtra(vehicleId.toString(), new CreateVehicleChecklistItemRequest(" ", "texto", "techo")));
 
         assertEquals(3, ex.getDetails().size());
     }
 
     @Test
-    void postTripChecklistIsNotConfigurable() throws Exception {
+    void sinCambiosElPostViajeEsElDeSiempre() throws Exception {
         VehicleChecklistItem extra = new VehicleChecklistItem(vehicleId, "Rampa", ChecklistItemType.CHECK, ChecklistSection.EXTERIOR);
         setId(extra, UUID.randomUUID());
         extras.add(extra);
 
         assertEquals(ChecklistCatalog.postTripItems(), service.resolve(vehicleId, InspectionType.POST_TRIP));
+    }
+
+    // CAM-159: el post-viaje se configura como el pre-viaje; los km finales siguen al final y no se quitan.
+    @Test
+    void elPostViajeSeConfiguraYLosKmQuedanAlFinal() throws Exception {
+        service.setEnabled(vehicleId.toString(), "post-fugas", new UpdateVehicleChecklistItemRequest(false));
+        VehicleChecklistItemDto rampa = service.addExtra(vehicleId.toString(),
+                new CreateVehicleChecklistItemRequest("Rampa guardada", "check", "posttrip"));
+
+        List<String> ids = service.resolve(vehicleId, InspectionType.POST_TRIP).stream().map(ChecklistItemDef::id).toList();
+
+        assertEquals(List.of("post-danos", "post-luces", "post-neumaticos", rampa.id(), "post-km"), ids);
+        assertTrue(service.resolve(vehicleId, InspectionType.PRE_TRIP).stream().noneMatch(i -> i.id().equals(rampa.id())));
+        assertTrue(service.getConfig(vehicleId.toString()).stream().anyMatch(i -> i.id().equals("post-fugas") && !i.enabled()));
+        VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class,
+                () -> service.setEnabled(vehicleId.toString(), "post-km", new UpdateVehicleChecklistItemRequest(false)));
+        assertEquals("ITEM_LOCKED", ex.getErrorCode());
+        // CAM-159: Neumáticos tampoco se quita, ni en el pre ni en el post-viaje.
+        for (String tires : List.of("ext-neumaticos", "post-neumaticos")) {
+            assertEquals("ITEM_LOCKED", assertThrows(VehicleStateConflictException.class, () -> service.setEnabled(
+                    vehicleId.toString(), tires, new UpdateVehicleChecklistItemRequest(false))).getErrorCode());
+        }
+        assertTrue(service.getConfig(vehicleId.toString()).stream()
+                .anyMatch(i -> i.id().equals("post-neumaticos") && i.locked() && !i.required()));
     }
 }
