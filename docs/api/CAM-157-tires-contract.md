@@ -90,13 +90,16 @@ lo que se ve a simple vista; no hay mediciones en mm en ningún lado.
   `pinchada`, `baja-presion`, `desgaste-irregular`, `poco-dibujo`. Se pueden marcar varios por neumático.
 - En la **inspección**, solo si el control "Neumáticos" (`ext-neumaticos`) va en defecto:
   `tireConditions: [{ position, conditions: [...] }]`, opcional. Las posiciones salen de
-  `GET /vehicles/{id}/tire-positions`: todas las del tipo, auxilio incluido, con `mounted`; solo se reportan
+  `GET /vehicles/{id}/tire-positions` (CAM-159: también de un remolque): todas las del tipo, auxilio incluido,
+  con `mounted`; solo se reportan
   las que tienen neumático. Errores (`422`, la inspección no se guarda):
   - `tireConditions` sin "Neumáticos" en defecto: `itemId = "tireConditions"`.
   - Posición sin neumático o repetida: `"tireConditions[i].position"`.
   - Sin estados, o con uno desconocido: `"tireConditions[i].conditions"`.
 
   Viaja con la inspección, así que también sale de la cola sin conexión (CAM-153).
+- CAM-159: en el post-viaje, igual con su "Neumáticos" (`post-neumaticos`), que se compara con el del
+  pre-viaje para "ocurrido en el viaje" (CAM-146).
 - **Va con el defecto, no aparte**:
   - El resumen se suma al detalle del defecto de Neumáticos ("Neumáticos: Trasera derecha exterior: se ve la
     tela o el alambre."). Así entra al circuito de siempre: defecto → programación → OT.

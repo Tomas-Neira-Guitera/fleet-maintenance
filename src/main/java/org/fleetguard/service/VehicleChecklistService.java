@@ -66,7 +66,9 @@ public class VehicleChecklistService {
         if (type != InspectionType.PRE_TRIP) {
             List<ChecklistItemDef> base = ChecklistCatalog.postTripItems(typeOf(vehicleId));
             List<ChecklistItemDef> items = new ArrayList<>();
-            base.stream().filter(i -> !i.required() && !disabled.contains(i.id())).forEach(items::add);
+            base.stream()
+                    .filter(i -> !i.required() && (ChecklistCatalog.isLocked(i) || !disabled.contains(i.id())))
+                    .forEach(items::add);
             extras.stream()
                     .filter(e -> e.getSection() == ChecklistSection.POSTTRIP)
                     .map(VehicleChecklistService::toDef)
@@ -80,7 +82,7 @@ public class VehicleChecklistService {
         for (ChecklistSection section : List.of(ChecklistSection.EXTERIOR, ChecklistSection.INTERIOR)) {
             base.stream()
                     .filter(i -> i.section() == section)
-                    .filter(i -> i.required() || !disabled.contains(i.id()))
+                    .filter(i -> ChecklistCatalog.isLocked(i) || !disabled.contains(i.id()))
                     .forEach(items::add);
             extras.stream()
                     .filter(e -> e.getSection() == section)
@@ -108,9 +110,10 @@ public class VehicleChecklistService {
         Set<String> disabled = disabledBaseIds(vehicleId);
         List<VehicleChecklistItemDto> result = new ArrayList<>();
         for (ChecklistItemDef base : allBaseFor(vehicleId)) {
-            boolean enabled = base.required() || !disabled.contains(base.id());
+            boolean locked = ChecklistCatalog.isLocked(base);
+            boolean enabled = locked || !disabled.contains(base.id());
             result.add(new VehicleChecklistItemDto(base.id(), base.label(), base.type().toJson(),
-                    base.section().toJson(), base.required(), "base", enabled, base.required()));
+                    base.section().toJson(), base.required(), "base", enabled, locked));
         }
         for (VehicleChecklistItem extra : extraRepository.findByVehicleIdOrderByCreatedAtAsc(vehicleId)) {
             result.add(toExtraDto(extra));
@@ -245,9 +248,9 @@ public class VehicleChecklistService {
                 .filter(i -> i.id().equals(itemId))
                 .findFirst()
                 .orElseThrow(() -> new ChecklistItemNotFoundException(itemId));
-        if (base.required()) {
+        if (ChecklistCatalog.isLocked(base)) {
             throw new VehicleStateConflictException("ITEM_LOCKED",
-                    "\"" + base.label() + "\" es obligatorio y no se puede quitar del checklist");
+                    "\"" + base.label() + "\" es fijo y no se puede quitar del checklist");
         }
         Optional<VehicleDisabledChecklistItem> row = disabledRepository.findByVehicleIdAndBaseItemId(vehicleId, itemId);
         if (enabled) {

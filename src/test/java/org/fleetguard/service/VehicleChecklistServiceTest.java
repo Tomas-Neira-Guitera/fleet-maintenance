@@ -220,11 +220,18 @@ class VehicleChecklistServiceTest {
 
         List<String> ids = service.resolve(vehicleId, InspectionType.POST_TRIP).stream().map(ChecklistItemDef::id).toList();
 
-        assertEquals(List.of("post-danos", "post-luces", rampa.id(), "post-km"), ids);
+        assertEquals(List.of("post-danos", "post-luces", "post-neumaticos", rampa.id(), "post-km"), ids);
         assertTrue(service.resolve(vehicleId, InspectionType.PRE_TRIP).stream().noneMatch(i -> i.id().equals(rampa.id())));
         assertTrue(service.getConfig(vehicleId.toString()).stream().anyMatch(i -> i.id().equals("post-fugas") && !i.enabled()));
         VehicleStateConflictException ex = assertThrows(VehicleStateConflictException.class,
                 () -> service.setEnabled(vehicleId.toString(), "post-km", new UpdateVehicleChecklistItemRequest(false)));
         assertEquals("ITEM_LOCKED", ex.getErrorCode());
+        // CAM-159: Neumáticos tampoco se quita, ni en el pre ni en el post-viaje.
+        for (String tires : List.of("ext-neumaticos", "post-neumaticos")) {
+            assertEquals("ITEM_LOCKED", assertThrows(VehicleStateConflictException.class, () -> service.setEnabled(
+                    vehicleId.toString(), tires, new UpdateVehicleChecklistItemRequest(false))).getErrorCode());
+        }
+        assertTrue(service.getConfig(vehicleId.toString()).stream()
+                .anyMatch(i -> i.id().equals("post-neumaticos") && i.locked() && !i.required()));
     }
 }

@@ -246,8 +246,9 @@ public class TireService {
     public TirePositionsDto positions(String vehicleId) {
         Vehicle vehicle = findVehicle(vehicleId);
         VehicleType type = vehicle.getVehicleType();
-        if (type == null || type.isTrailer()) {
-            return new TirePositionsDto(VehicleType.toJson(type), List.of());
+        // CAM-159: también un remolque: el chofer marca sus neumáticos en el pre y el post-viaje.
+        if (type == null) {
+            return new TirePositionsDto(null, List.of());
         }
         Set<TirePosition> mounted = openByPosition(vehicle).keySet();
         return new TirePositionsDto(type.toJson(), type.positions().stream()

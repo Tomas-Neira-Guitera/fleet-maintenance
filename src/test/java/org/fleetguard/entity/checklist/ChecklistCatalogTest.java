@@ -26,7 +26,7 @@ class ChecklistCatalogTest {
     @Test
     void postTripItemsMatchTheFrontendDefinitionsExactly() {
         List<String> ids = ChecklistCatalog.postTripItems().stream().map(ChecklistItemDef::id).toList();
-        assertEquals(List.of("post-danos", "post-luces", "post-fugas", "post-km"), ids);
+        assertEquals(List.of("post-danos", "post-luces", "post-neumaticos", "post-fugas", "post-km"), ids);
     }
 
     @Test
@@ -52,6 +52,18 @@ class ChecklistCatalogTest {
         assertEquals("rem-luces", ChecklistCatalog.controlKey("rem-post-luces"));
         assertEquals("rem-neumaticos", ChecklistCatalog.controlKey("rem-post-neumaticos"));
         assertEquals("rem-enganche", ChecklistCatalog.controlKey("rem-post-enganche"));
+    }
+
+    // CAM-159: Neumáticos no se quita en ningún checklist, pero no es obligatorio como los km.
+    @Test
+    void neumaticosEsFijoEnTodosLosChecklists() {
+        for (String id : List.of("ext-neumaticos", "post-neumaticos", "rem-neumaticos", "rem-post-neumaticos")) {
+            ChecklistItemDef item = java.util.stream.Stream.of(ChecklistCatalog.preTripItems(), ChecklistCatalog.postTripItems(),
+                            ChecklistCatalog.trailerItems(VehicleType.ACOPLADO), ChecklistCatalog.trailerPostTripItems())
+                    .flatMap(List::stream).filter(i -> i.id().equals(id)).findFirst().orElseThrow();
+            assertTrue(ChecklistCatalog.isLocked(item));
+        }
+        assertEquals("ext-neumaticos", ChecklistCatalog.controlKey("post-neumaticos"));
     }
 
     @Test

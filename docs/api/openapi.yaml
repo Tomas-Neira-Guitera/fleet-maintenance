@@ -716,10 +716,10 @@ paths:
 
   /api/vehicles/{id}/tire-positions:
     get:
-      summary: Posiciones del vehículo, para marcar neumáticos con problemas en el pre-viaje (CAM-157)
+      summary: Posiciones del vehículo, para marcar neumáticos con problemas en el pre y el post-viaje (CAM-157)
       description: >
         ADMIN o CHOFER. Todas las del tipo, auxilio incluido, con `mounted` en las que tienen neumático (solo esas
-        se pueden reportar). Sin tipo o en un remolque, positions vacío.
+        se pueden reportar). Sin tipo, positions vacío. CAM-159: un remolque también las tiene.
       security:
         - bearerAuth: []
       parameters:
@@ -864,7 +864,8 @@ paths:
       summary: Configuración del checklist pre-trip de un vehículo (admin, CAM-31)
       description: >
         Todos los ítems del catálogo base (con enabled según el vehículo) más los
-        ítems extra vigentes. locked=true son obligatorios y no se pueden quitar.
+        ítems extra vigentes. locked=true no se pueden quitar: los obligatorios (km) y, desde CAM-159,
+        Neumáticos en el pre-viaje y en el post-viaje (no obligatorio: arranca en OK).
       parameters:
         - name: vehicleId
           in: path
@@ -3867,7 +3868,8 @@ components:
           type: array
           nullable: true
           description: >-
-            CAM-157: opcional, solo con "Neumáticos" (ext-neumaticos) en defecto. Qué neumáticos tienen problemas y
+            CAM-157: opcional, solo con "Neumáticos" (ext-neumaticos; post-neumaticos en el post-viaje, CAM-159) en
+            defecto. Qué neumáticos tienen problemas y
             cuáles (GET /api/vehicles/{id}/tire-positions). Se suman al detalle del defecto y quedan en cada
             neumático. Sin el defecto, 422 con itemId tireConditions; una posición sin neumático o repetida,
             tireConditions[i].position; sin estados o uno desconocido, tireConditions[i].conditions.

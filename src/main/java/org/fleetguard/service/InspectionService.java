@@ -131,7 +131,9 @@ public class InspectionService {
         List<ChecklistItemDef> checklist = checklistService.resolve(vehicleId, type);
         InspectionValidator.ValidationOutcome outcome = validator.validate(type, checklist, answers);
         // CAM-157: qué neumáticos tienen problemas, solo si "Neumáticos" va en defecto.
-        boolean tiresInDefect = outcome.recognizedAnswers().stream().anyMatch(a -> TIRES_ITEM_ID.equals(a.itemId())
+        // CAM-159: en el post-viaje, su propio Neumáticos.
+        String tiresItemId = type == InspectionType.PRE_TRIP ? TIRES_ITEM_ID : ChecklistCatalog.POST_TRIP_TIRES_ITEM_ID;
+        boolean tiresInDefect = outcome.recognizedAnswers().stream().anyMatch(a -> tiresItemId.equals(a.itemId())
                 && CheckOutcome.fromJson(a.outcome()) == CheckOutcome.DEFECT && a.defect() != null);
         List<TireService.ConditionReport> tireReports =
                 tireService.validateInspectionConditions(vehicle, submission.tireConditions(), tiresInDefect);
@@ -165,10 +167,10 @@ public class InspectionService {
         Inspection inspection = new Inspection(trip, vehicleId, driver.id().toString(), driver.username(), type, now,
                 outcome.odometerKm(), submission.notes(), outcome.hasBlockingDefect());
         inspection.setClientSubmissionId(clientSubmissionId);
-        addAnswers(inspection, vehicle, checklist, outcome, tireReports, TIRES_ITEM_ID, now);
+        addAnswers(inspection, vehicle, checklist, outcome, tireReports, tiresItemId, now);
         inspectionRepository.save(inspection);
         tireService.recordInspectionConditions(vehicle, tireReports, now, driver, inspection.getId(),
-                defectOf(inspection, TIRES_ITEM_ID));
+                defectOf(inspection, tiresItemId));
 
         // CAM-159: la del remolque va aparte, a su nombre y en el mismo viaje, ligada a la del vehículo.
         Inspection trailerInspection = null;

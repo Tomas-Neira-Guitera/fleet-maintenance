@@ -5,6 +5,7 @@ import org.fleetguard.entity.VehicleType;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.fleetguard.entity.checklist.ChecklistItemType.CHECK;
@@ -42,9 +43,13 @@ public final class ChecklistCatalog {
             new ChecklistItemDef("int-testigos", "Testigos de tablero", CHECK, INTERIOR)
     );
 
+    // CAM-159: Neumáticos también en el post-viaje, con su dibujo.
+    public static final String POST_TRIP_TIRES_ITEM_ID = "post-neumaticos";
+
     public static final List<ChecklistItemDef> POST_TRIP_ITEMS = List.of(
             new ChecklistItemDef("post-danos", "Daños nuevos en la carrocería", CHECK, POSTTRIP),
             new ChecklistItemDef("post-luces", "Luces", CHECK, POSTTRIP),
+            new ChecklistItemDef(POST_TRIP_TIRES_ITEM_ID, "Neumáticos", CHECK, POSTTRIP),
             new ChecklistItemDef("post-fugas", "Fugas visibles", CHECK, POSTTRIP),
             new ChecklistItemDef(ODOMETER_ITEM_ID_POST_TRIP, "Kilómetros finales", NUMBER, POSTTRIP, true)
     );
@@ -82,12 +87,22 @@ public final class ChecklistCatalog {
     private static final Map<String, String> SAME_CONTROL_IN_PRE_TRIP = Map.of(
             "post-luces", "ext-luces",
             "post-fugas", "ext-fugas",
+            POST_TRIP_TIRES_ITEM_ID, "ext-neumaticos",
             "rem-post-luces", "rem-luces",
             TRAILER_POST_TRIP_TIRES_ITEM_ID, TRAILER_TIRES_ITEM_ID,
             "rem-post-enganche", "rem-enganche"
     );
 
     private ChecklistCatalog() {
+    }
+
+    // CAM-159: Neumáticos no se quita de ningún checklist, aunque no es obligatorio como los km.
+    private static final Set<String> FIXED_ITEM_IDS =
+            Set.of("ext-neumaticos", POST_TRIP_TIRES_ITEM_ID, TRAILER_TIRES_ITEM_ID, TRAILER_POST_TRIP_TIRES_ITEM_ID);
+
+    /** Si el ítem base no se puede quitar del checklist del vehículo: los obligatorios y Neumáticos. */
+    public static boolean isLocked(ChecklistItemDef item) {
+        return item.required() || FIXED_ITEM_IDS.contains(item.id());
     }
 
     /** La clave del control: el id del pre-viaje si el ítem tiene uno equivalente, si no el mismo id. */

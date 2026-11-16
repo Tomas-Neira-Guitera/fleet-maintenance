@@ -35,7 +35,9 @@ sin otra consulta.
 
 ### 3. Obligatorios no se quitan
 Los ítems base con `required=true` (`int-km` y `post-km`, los kilómetros) vuelven como
-`locked: true` y un `PATCH { enabled: false }` sobre ellos responde `409 ITEM_LOCKED`.
+`locked: true` y un `PATCH { enabled: false }` sobre ellos responde `409 ITEM_LOCKED`. CAM-159: Neumáticos
+(`ext-neumaticos`, `post-neumaticos` y los del remolque) también es `locked`, sin ser `required`: no se
+quita de ningún checklist, pero una inspección que no lo trae no se rechaza.
 Los ítems extra nunca son obligatorios: uno numérico se puede dejar vacío.
 
 ### 4. Validación contra el checklist del vehículo

@@ -326,8 +326,11 @@ class TireServiceTest {
                 positions.positions().stream().map(p -> p.position()).toList());
         assertEquals(List.of(true, false, false, false, true),
                 positions.positions().stream().map(p -> p.mounted()).toList());
+        // CAM-159: un remolque también: el chofer marca sus neumáticos en el pre y el post-viaje.
         type(VehicleType.ACOPLADO);
-        assertTrue(service.positions(truck.getId().toString()).positions().isEmpty());
+        var trailer = service.positions(truck.getId().toString());
+        assertEquals("acoplado", trailer.vehicleType());
+        assertEquals("e1-izq-ext", trailer.positions().get(0).position());
     }
 
     @Test
