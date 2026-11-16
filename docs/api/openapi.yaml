@@ -3638,7 +3638,7 @@ components:
             properties:
               label: { type: string, maxLength: 60 }
               type: { type: string, enum: [check, number], default: check }
-              section: { type: string, enum: [exterior, interior] }
+              section: { type: string, enum: [exterior, interior, posttrip], description: "posttrip: del post-viaje (CAM-159)." }
 
     ChecklistTemplate:
       type: object
@@ -3655,7 +3655,7 @@ components:
               id: { type: string }
               label: { type: string }
               type: { type: string, enum: [check, number] }
-              section: { type: string, enum: [exterior, interior] }
+              section: { type: string, enum: [exterior, interior, posttrip], description: "posttrip: del post-viaje (CAM-159)." }
         createdAt: { type: string, format: date-time }
         appliedVehicleIds:
           type: array
@@ -3804,7 +3804,7 @@ components:
       properties:
         label: { type: string, minLength: 1, maxLength: 60 }
         type: { type: string, enum: [check, number], default: check, description: "Opcional. El panel de admin siempre crea ítems check." }
-        section: { type: string, enum: [exterior, interior] }
+        section: { type: string, enum: [exterior, interior, posttrip], description: "posttrip: del post-viaje (CAM-159)." }
         enabled: { type: boolean, default: true, description: "false = el ítem queda cargado en el vehículo pero no entra en el checklist del chofer." }
 
     UpdateVehicleChecklistItemRequest:

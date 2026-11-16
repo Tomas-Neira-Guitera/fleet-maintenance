@@ -13,16 +13,20 @@ libres por vehículo el admin carga esos mismos controles sin un catálogo de ac
 
 ## Decisiones
 
-### 1. Base − desactivados + extras, solo en pre-trip
+### 1. Base − desactivados + extras (pre-trip y, desde CAM-159, post-trip)
 - `ChecklistCatalog` sigue siendo el checklist base, definido en código.
 - `vehicle_disabled_checklist_items(vehicle_id, base_item_id)`: ítems base que no aplican
   a ese vehículo.
 - `vehicle_checklist_items(id, vehicle_id, label, type, section, active, created_at)`:
-  ítems extra. `section` es `exterior` o `interior`; `active` indica si entra en el checklist.
+  ítems extra. `section` es `exterior` o `interior` (pre-trip) o `posttrip` (CAM-159); `active` indica si
+  entra en el checklist.
   `type` es `check` salvo que se pida `number` por API: el panel de admin siempre crea `check`.
 - El checklist del chofer para un vehículo es base − desactivados + extras activos. Los
   extras van al final de su sección.
-- **El post-trip no se configura**: sigue siendo la lista corta fija de CAM-11.
+- **El post-trip se configura igual** (CAM-159): sus ítems base vienen activos por defecto y se pueden quitar
+  (salvo `post-km`), y los extras con `section: posttrip` van antes de los km finales, que siguen al final. Los
+  extras del post-trip no se marcan como "ocurrido en el viaje" (CAM-146): no tienen equivalente en el
+  pre-trip. La configuración del admin trae los base de los dos.
 
 ### 2. Ids de ítems extra
 Un ítem extra se identifica como `extra-<uuid>`. El prefijo evita choques con los ids del
@@ -30,7 +34,7 @@ catálogo base (`ext-luces`, `int-km`, ...) y le permite al servidor saber de qu
 sin otra consulta.
 
 ### 3. Obligatorios no se quitan
-Los ítems base con `required=true` (hoy `int-km`, kilómetros actuales) vuelven como
+Los ítems base con `required=true` (`int-km` y `post-km`, los kilómetros) vuelven como
 `locked: true` y un `PATCH { enabled: false }` sobre ellos responde `409 ITEM_LOCKED`.
 Los ítems extra nunca son obligatorios: uno numérico se puede dejar vacío.
 
@@ -123,7 +127,6 @@ Endpoints (solo ADMIN; sin token `401`, otro rol `403`):
 
 - Desde una plantilla, quitar controles base, y sincronizar los vehículos cuando cambia (CAM-150). Quitar
   la plantilla borra lo que se copió en su momento, no lo que tiene hoy.
-- Configurar el post-trip.
 - Editar el nombre de un ítem extra (se elimina y se agrega otro).
 - Protección por rol del checklist de cada vehículo: queda para CAM-73. Las plantillas
   (CAM-150) sí piden ADMIN.

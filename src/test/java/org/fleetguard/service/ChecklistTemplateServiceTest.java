@@ -136,7 +136,7 @@ class ChecklistTemplateServiceTest {
         VehicleValidationException ex = assertThrows(VehicleValidationException.class,
                 () -> service.create(new ChecklistTemplateRequest(" ", List.of(
                         new ChecklistTemplateItemInput("Temperatura", "texto", "interior"),
-                        new ChecklistTemplateItemInput("Temperatura", "number", "posttrip"),
+                        new ChecklistTemplateItemInput("Temperatura", "number", "techo"),
                         new ChecklistTemplateItemInput("Equipo de frío", null, "exterior"),
                         new ChecklistTemplateItemInput("equipo de FRIO", null, "exterior")))));
 
@@ -268,6 +268,22 @@ class ChecklistTemplateServiceTest {
                 new ApplyChecklistTemplateRequest(List.of(UUID.randomUUID().toString()))));
         assertThrows(ChecklistTemplateNotFoundException.class, () -> service.apply("no-existe",
                 new ApplyChecklistTemplateRequest(List.of(UUID.randomUUID().toString()))));
+    }
+
+    // CAM-159: una plantilla puede traer controles del post-viaje.
+    @Test
+    void unControlDelPostViajeSeCopiaAlPostViaje() throws Exception {
+        ChecklistTemplateDto template = service.create(new ChecklistTemplateRequest("Con rampa", List.of(
+                new ChecklistTemplateItemInput("Rampa guardada", null, "posttrip"))));
+        Vehicle vehicle = vehicle("AA111AA", true);
+
+        service.apply(template.id(), new ApplyChecklistTemplateRequest(List.of(vehicle.getId().toString())));
+
+        assertEquals("posttrip", template.items().get(0).section());
+        assertTrue(checklistService.resolve(vehicle.getId(), InspectionType.POST_TRIP).stream()
+                .anyMatch(i -> i.label().equals("Rampa guardada")));
+        assertTrue(checklistService.resolve(vehicle.getId(), InspectionType.PRE_TRIP).stream()
+                .noneMatch(i -> i.label().equals("Rampa guardada")));
     }
 
     @Test
